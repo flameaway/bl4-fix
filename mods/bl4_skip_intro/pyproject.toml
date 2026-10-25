@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Skip Intro"
+version = "0.2.0"
+description = "No 2K / Gearbox logo movies at launch (moves the two logo files aside; disabling puts them back)."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

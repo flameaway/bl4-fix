@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Build Presets"
+version = "0.1.0"
+description = "Five build slots per character in the inventory: save and load your equipped gear, skills and specializations with a click. Needs the BL4 Mod Menu for the inventory squares; or use the build console command."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

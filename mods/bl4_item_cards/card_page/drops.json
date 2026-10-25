@@ -1,0 +1,4795 @@
+{
+ "abyss": [
+  {
+   "item": "bor_sr.comp_05_legendary_abyss",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.0,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "acey may": [
+  {
+   "item": "dad_sg.comp_05_legendary_heartgun",
+   "sources": [
+    {
+     "boss": "Arjay",
+     "encore": 0.3,
+     "encore_id": 36,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "adrenaline pump": [
+  {
+   "item": "vla_repair_kit.comp_05_legendary_adrenalinepump",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.3,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "aegon's dream": [
+  {
+   "item": "vla_ar.comp_05_legendary_dualdamage",
+   "sources": [
+    {
+     "boss": "Horace",
+     "encore": 0.3,
+     "encore_id": 53,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "aerodramatic": [
+  {
+   "item": "tor_sg.comp_05_legendary_aerodramatic",
+   "sources": [
+    {
+     "boss": "Vile Grasp",
+     "encore": 0.09,
+     "encore_id": 42,
+     "encore_map": "Dark Side of Elpis",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "alignment": [
+  {
+   "item": "ord_grenade_gadget.comp_05_legendary_alignment",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "anarchy": [
+  {
+   "item": "ted_sg.comp_05_legendary_anarchy",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.3,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "anchor": [
+  {
+   "item": "ord_turret_gadget.comp_05_legendary_anchor",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "ancient": [
+  {
+   "item": "ord_grenade_gadget.comp_05_legendary_alignment",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "arc-tan": [
+  {
+   "item": "tor_sg.comp_05_legendary_arctic",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "artificer": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_raid2",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "artillery sphere": [
+  {
+   "item": "borg_grenade_gadget.comp_05_legendary_pellet",
+   "sources": [
+    {
+     "boss": "Brain Zane",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "asher's rise": [
+  {
+   "item": "mal_sr.comp_05_legendary_asher",
+   "sources": [
+    {
+     "boss": "The Oppressor",
+     "encore": 0.3,
+     "encore_id": 69,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "astonisher": [
+  {
+   "item": "bor_sg.comp_05_legendary_relay",
+   "sources": [
+    {
+     "boss": "Lieutenant Harmony",
+     "encore": 0.09,
+     "encore_id": 45,
+     "encore_map": "Tediore FOB Bravo Lima 4.2",
+     "uvh0": 0.0,
+     "uvh5": 0.0125
+    }
+   ],
+   "world": false
+  }
+ ],
+ "atling gun": [
+  {
+   "item": "vla_hw.comp_05_legendary_atlinggun",
+   "sources": [
+    {
+     "boss": "Callous Harbinger of Annihilating Death",
+     "encore": 0.3,
+     "encore_id": 68,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "augmenter af1000": [
+  {
+   "item": "bor_repair_kit.comp_05_legendary_augmenter",
+   "sources": [
+    {
+     "boss": "Rocken Roller",
+     "encore": 0.3,
+     "encore_id": 60,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "avarice": [
+  {
+   "item": "ord_ar.comp_05_legendary_avarice",
+   "sources": [
+    {
+     "boss": "Vulkorr",
+     "encore": 0.3,
+     "encore_id": 16,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "avatar": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_02",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Inceptus",
+     "encore": 0.3,
+     "encore_id": 38,
+     "encore_map": "Vault Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "barb'ara": [
+  {
+   "item": "vla_grenade_gadget.comp_05_legendary_barb",
+   "sources": [
+    {
+     "boss": "Crazed Earl",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "bio-robot": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_01",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "birt's bees": [
+  {
+   "item": "vla_sm.comp_05_legendary_beegun",
+   "sources": [
+    {
+     "boss": "Sludgemaw",
+     "encore": 0.3,
+     "encore_id": 48,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "bismuth-tipped dagger": [
+  {
+   "item": "jak_grenade_gadget.comp_05_legendary_bismuth",
+   "sources": [
+    {
+     "boss": "Corporal Brennan",
+     "encore": 0.3,
+     "encore_id": 9,
+     "encore_map": "The Whispering Glacier",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "blacksmith": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_03",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "blockbuster": [
+  {
+   "item": "vla_grenade_gadget.comp_05_legendary_blockbuster",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "blood analyzer": [
+  {
+   "item": "mal_repair_kit.comp_05_legendary_bloodanalyzer",
+   "sources": [
+    {
+     "boss": "The Oppressor",
+     "encore": 0.3,
+     "encore_id": 69,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "blood moon": [
+  {
+   "item": "ord_repair_kit.comp_05_legendary_paleblood",
+   "sources": [
+    {
+     "boss": "Colonel Crash",
+     "encore": 0.3,
+     "encore_id": 5,
+     "encore_map": "The Whispering Glacier",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "bloody lumberjack": [
+  {
+   "item": "dad_ar.comp_05_legendary_lumberjack",
+   "sources": [
+    {
+     "boss": "Sal the Engineer",
+     "encore": 0.3,
+     "encore_id": 73,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "bod": [
+  {
+   "item": "dad_sg.comp_05_legendary_bod",
+   "sources": [
+    {
+     "boss": "Axemaul",
+     "encore": 0.3,
+     "encore_id": 50,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "bombastic": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_raid2",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "bonnie and clyde": [
+  {
+   "item": "jak_ar.comp_05_legendary_bonnieclyde",
+   "sources": [
+    {
+     "boss": "Directive-0",
+     "encore": 0.3,
+     "encore_id": 49,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "boomer": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_raid1",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "boomslang": [
+  {
+   "item": "jak_sr.comp_05_legendary_boomslang",
+   "sources": [
+    {
+     "boss": "Bramblesong",
+     "encore": 0.3,
+     "encore_id": 58,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "borstel ballista": [
+  {
+   "item": "jak_sr.comp_05_legendary_ballista",
+   "sources": [
+    {
+     "boss": "The Timekeeper",
+     "encore": 0.3,
+     "encore_id": 37,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "bottled lightning": [
+  {
+   "item": "mal_hw.comp_05_legendary_bottledlightning",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "brickhouse": [
+  {
+   "item": "vla_sm.comp_05_legendary_brickhouse",
+   "sources": [
+    {
+     "boss": "Brain Zane",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "broken wings": [
+  {
+   "item": "mal_sm.comp_05_legendary_songbird",
+   "sources": [
+    {
+     "boss": "Stone Demon",
+     "encore": 0.3,
+     "encore_id": 1,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "bubbles": [
+  {
+   "item": "vla_ar.comp_05_legendary_bubbles",
+   "sources": [
+    {
+     "boss": "Chiselbella",
+     "encore": 0.3,
+     "encore_id": 4,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "budget deity": [
+  {
+   "item": "ted_ps.comp_05_legendary_atlien",
+   "sources": [
+    {
+     "boss": "Bio-Bulkhead",
+     "encore": 0.3,
+     "encore_id": 65,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "bugbear": [
+  {
+   "item": "tor_ar.comp_05_legendary_bugbear",
+   "sources": [
+    {
+     "boss": "Bio-Thresher Omega",
+     "encore": 0.3,
+     "encore_id": 67,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "The Battle Wagon",
+     "encore": 0.3,
+     "encore_id": 61,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "bully": [
+  {
+   "item": "ord_ps.comp_05_legendary_bully",
+   "sources": [
+    {
+     "boss": "Core Observer",
+     "encore": 0.3,
+     "encore_id": 54,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "buoy": [
+  {
+   "item": "borg_grenade_gadget.comp_05_legendary_buoy",
+   "sources": [
+    {
+     "boss": "Voraxis",
+     "encore": 0.3,
+     "encore_id": 59,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "buster": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_04",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "buzz axe": [
+  {
+   "item": "dad_grenade_gadget.comp_05_legendary_axe",
+   "sources": [
+    {
+     "boss": "Axemaul",
+     "encore": 0.3,
+     "encore_id": 50,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "buzzymuzz": [
+  {
+   "item": "vla_ar.comp_05_legendary_dualdamage",
+   "sources": [
+    {
+     "boss": "Horace",
+     "encore": 0.3,
+     "encore_id": 53,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "chaumurky": [
+  {
+   "item": "ord_grenade_gadget.comp_05_legendary_aggrovator",
+   "sources": [
+    {
+     "boss": "Frank the Furnace",
+     "encore": 0.3,
+     "encore_id": 73,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "chirurgeon": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_tuba",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "chuck": [
+  {
+   "item": "ted_ar.comp_05_legendary_chuck",
+   "sources": [
+    {
+     "boss": "Hank the Welder",
+     "encore": 0.3,
+     "encore_id": 73,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Fractis",
+     "encore": 0.3,
+     "encore_id": 55,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "cindershelly": [
+  {
+   "item": "ord_shield.comp_05_legendary_cindershelly",
+   "sources": [
+    {
+     "boss": "The Backhive",
+     "encore": 0.3,
+     "encore_id": 57,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "clarity": [
+  {
+   "item": "mal_sr.comp_05_legendary_clarity",
+   "sources": [
+    {
+     "boss": "Vile Grasp",
+     "encore": 0.3,
+     "encore_id": 42,
+     "encore_map": "Dark Side of Elpis",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "cold shoulder": [
+  {
+   "item": "tor_ar.comp_05_legendary_coldshoulder",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "collector": [
+  {
+   "item": "ord_shield.comp_05_legendary_collector",
+   "sources": [
+    {
+     "boss": "Subjugator the Invincible",
+     "encore": 0.15,
+     "encore_id": 35,
+     "encore_map": "Lair of the Subjugator",
+     "uvh0": 0.15,
+     "uvh5": 0.25
+    }
+   ],
+   "world": false
+  }
+ ],
+ "compleation": [
+  {
+   "item": "tor_shield.comp_05_legendary_compleat",
+   "sources": [
+    {
+     "boss": "The Battle Wagon",
+     "encore": 0.3,
+     "encore_id": 61,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "complex root": [
+  {
+   "item": "mal_sr.comp_05_legendary_complex_root",
+   "sources": [
+    {
+     "boss": "Mimicron",
+     "encore": 0.3,
+     "encore_id": 56,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "configuration": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_cowbell",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "conflux": [
+  {
+   "item": "mal_sr.comp_05_legendary_conflux",
+   "sources": [
+    {
+     "boss": "Ten-Toes",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    },
+    {
+     "boss": "Slayowulf",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    },
+    {
+     "boss": "Theylob",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    },
+    {
+     "boss": "Tiny Bigs",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    },
+    {
+     "boss": "King Crosis",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "constable": [
+  {
+   "item": "jak_sg.comp_06_pearl_constable",
+   "sources": [
+    {
+     "boss": "Bloomreaper the Invincible",
+     "encore": 0.0,
+     "encore_id": 34,
+     "encore_map": "The Bloom",
+     "uvh0": 0.0,
+     "uvh5": 0.025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "convergence": [
+  {
+   "item": "bor_sg.comp_05_legendary_convergence",
+   "sources": [
+    {
+     "boss": "Bramblesong",
+     "encore": 0.3,
+     "encore_id": 58,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "cooler": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_04",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "cooper duper": [
+  {
+   "item": "mal_hw.comp_05_legendary_barrel",
+   "sources": [
+    {
+     "boss": "CL34n.R",
+     "encore": 0.3,
+     "encore_id": 31,
+     "encore_map": "Mandolin 1",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "cormano": [
+  {
+   "item": "tor_sg.comp_05_legendary_cormano",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "countermeasure": [
+  {
+   "item": "tor_grenade_gadget.comp_05_legendary_flare",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "crazed earl": [
+  {
+   "item": "bor_sg.comp_05_legendary_crazedearl",
+   "sources": [
+    {
+     "boss": "Crazed Earl",
+     "encore": 0.09,
+     "encore_id": 10,
+     "encore_map": "The Whispering Glacier",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "critical decay": [
+  {
+   "item": "tor_ps.comp_05_legendary_sledge",
+   "sources": [
+    {
+     "boss": "Logistics Manager Reyes",
+     "encore": 0.3,
+     "encore_id": 24,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "crow-sourced": [
+  {
+   "item": "ord_ar.comp_05_legendary_crowsourced",
+   "sources": [
+    {
+     "boss": "Captain Willis",
+     "encore": 0.3,
+     "encore_id": 41,
+     "encore_map": "The Maelstrom",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "damned": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_tuba",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "dancer": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_01",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "darkbeast": [
+  {
+   "item": "dad_sm.comp_05_legendary_bloodstarved",
+   "sources": [
+    {
+     "boss": "Voraxis",
+     "encore": 0.3,
+     "encore_id": 59,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "decompiler": [
+  {
+   "item": "mal_sg.comp_05_legendary_assembler",
+   "sources": [
+    {
+     "boss": "Blackgrin",
+     "encore": 0.3,
+     "encore_id": 19,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "defibrillator": [
+  {
+   "item": "jak_repair_kit.comp_05_legendary_defibrillator",
+   "sources": [
+    {
+     "boss": "Core Observer",
+     "encore": 0.3,
+     "encore_id": 54,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "destructo disco": [
+  {
+   "item": "mal_grenade_gadget.comp_05_legendary_disco_disc",
+   "sources": [
+    {
+     "boss": "Bramblesong",
+     "encore": 0.3,
+     "encore_id": 58,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "devourer": [
+  {
+   "item": "bor_sr.comp_05_legendary_devourer",
+   "sources": [
+    {
+     "boss": "Ducky",
+     "encore": 0.3,
+     "encore_id": 21,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  },
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_01",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "disc jockey": [
+  {
+   "item": "bor_hw.comp_05_legendary_discjockey",
+   "sources": [
+    {
+     "boss": "Sidney Pointylegs",
+     "encore": 0.3,
+     "encore_id": 64,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "discy business": [
+  {
+   "item": "mal_sg.comp_05_legendary_discybusiness",
+   "sources": [
+    {
+     "boss": "F1x.R",
+     "encore": 0.3,
+     "encore_id": 32,
+     "encore_map": "Mandolin 1",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "divided focus": [
+  {
+   "item": "ted_ar.comp_05_legendary_dividedfocus",
+   "sources": [
+    {
+     "boss": "Core Observer",
+     "encore": 0.3,
+     "encore_id": 54,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "divided glow": [
+  {
+   "item": "ord_ar.comp_05_legendary_testament",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "doeshot": [
+  {
+   "item": "jak_sg.comp_05_legendary_doeshot",
+   "sources": [
+    {
+     "boss": "Bore-Tex",
+     "encore": 0.3,
+     "encore_id": 4,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "draupner": [
+  {
+   "item": "bor_hw.comp_05_legendary_draupner",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "driver": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_04",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "eigenburst": [
+  {
+   "item": "ted_sg.comp_05_legendary_eigenburst",
+   "sources": [
+    {
+     "boss": "Ten-Toes",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    },
+    {
+     "boss": "Slayowulf",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    },
+    {
+     "boss": "Theylob",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    },
+    {
+     "boss": "Tiny Bigs",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    },
+    {
+     "boss": "King Crosis",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "elementalist": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_02",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Inceptus",
+     "encore": 0.3,
+     "encore_id": 38,
+     "encore_map": "Vault Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "enumeration": [
+  {
+   "item": "bor_sm.comp_05_legendary_enumeration",
+   "sources": [
+    {
+     "boss": "Test Zero",
+     "encore": 0.3,
+     "encore_id": 44,
+     "encore_map": "Nuada Cove",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "eradication": [
+  {
+   "item": "vla_ar.comp_05_legendary_extinction",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "esgrimidor": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_05",
+   "sources": [
+    {
+     "boss": "Callis, the Ripper Queen",
+     "encore": 0.3,
+     "encore_id": 14,
+     "encore_map": "Fortress Shatteredlands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "exfoliatrix": [
+  {
+   "item": "jak_shield.comp_05_legendary_exfoliatrix",
+   "sources": [
+    {
+     "boss": "Blackspot Vilethorn",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Gutslinger",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Grimebag Gilbert",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Unreal Steel Jayson",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Cosmicreep",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "exhibition": [
+  {
+   "item": "vla_sr.comp_05_legendary_exhibition",
+   "sources": [
+    {
+     "boss": "Drilla Killa",
+     "encore": 0.3,
+     "encore_id": 20,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "falke": [
+  {
+   "item": "bor_sm.comp_05_legendary_falke",
+   "sources": [
+    {
+     "boss": "Ol' Thrash",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Kraggula",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Fulgur",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Krag'thulu",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Slithertongue",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Skullfire",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Ice Maw",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Bitterblight",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Thresh O' War",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Botpopper",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Bone Boogie",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Oldbeard Worldthroat",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    }
+   ],
+   "world": false
+  }
+ ],
+ "faulty detonator": [
+  {
+   "item": "ted_grenade_gadget.comp_05_legendary_faultydetonator",
+   "sources": [
+    {
+     "boss": "Skull Orchid",
+     "encore": 0.3,
+     "encore_id": 63,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "fearstalker": [
+  {
+   "item": "jak_sr.comp_05_legendary_fearstalker",
+   "sources": [
+    {
+     "boss": "Ol' Thrash",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Kraggula",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Fulgur",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Krag'thulu",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Slithertongue",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Skullfire",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Ice Maw",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Bitterblight",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Thresh O' War",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Botpopper",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Bone Boogie",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Oldbeard Worldthroat",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    }
+   ],
+   "world": false
+  }
+ ],
+ "fil\u00e1ntropo": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_02",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Inceptus",
+     "encore": 0.3,
+     "encore_id": 38,
+     "encore_map": "Vault Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "finnity xxx-l": [
+  {
+   "item": "vla_sr.comp_05_legendary_finnty",
+   "sources": [
+    {
+     "boss": "The Battle Wagon",
+     "encore": 0.3,
+     "encore_id": 61,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "firebreak": [
+  {
+   "item": "bor_shield.comp_05_legendary_firewall",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "firepot": [
+  {
+   "item": "tor_grenade_gadget.comp_05_legendary_firepot",
+   "sources": [
+    {
+     "boss": "Leader Willem",
+     "encore": 0.3,
+     "encore_id": 51,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "firewerks": [
+  {
+   "item": "tor_shield.comp_05_legendary_firewerks",
+   "sources": [
+    {
+     "boss": "Splashzone",
+     "encore": 0.3,
+     "encore_id": 77,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "first impression": [
+  {
+   "item": "dad_ar.comp_05_legendary_firstimpression",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "fisheye": [
+  {
+   "item": "ord_sr.comp_05_legendary_fisheye",
+   "sources": [
+    {
+     "boss": "Arjay",
+     "encore": 0.3,
+     "encore_id": 36,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "fishward": [
+  {
+   "item": "jak_ar.comp_05_legendary_fishward",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "flak cannon": [
+  {
+   "item": "vla_hw.comp_05_legendary_flak",
+   "sources": [
+    {
+     "boss": "Thol the Invincible",
+     "encore": 0.15,
+     "encore_id": 35,
+     "encore_map": "Lair of the Subjugator",
+     "uvh0": 0.15,
+     "uvh5": 0.25
+    }
+   ],
+   "world": false
+  }
+ ],
+ "flash cyclone": [
+  {
+   "item": "mal_sm.comp_05_legendary_flashcyclone",
+   "sources": [
+    {
+     "boss": "The Penitent Steel",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "flash fuel": [
+  {
+   "item": "jak_ar.comp_05_legendary_flashfuel",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "fleabag": [
+  {
+   "item": "tor_ar.comp_05_legendary_fleabag",
+   "sources": [
+    {
+     "boss": "Stone Demon",
+     "encore": 0.3,
+     "encore_id": 1,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "font of life": [
+  {
+   "item": "ted_repair_kit.comp_05_legendary_font",
+   "sources": [
+    {
+     "boss": "Volcanus",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "forge master": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_06",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.3,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "forsaken chaos": [
+  {
+   "item": "ted_sg.comp_05_legendary_commbd",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "fourier's malady": [
+  {
+   "item": "ted_sg.comp_05_legendary_fourier",
+   "sources": [
+    {
+     "boss": "Lieutenant Bume",
+     "encore": 0.3,
+     "encore_id": 25,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "functional human": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_06",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.3,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "furnace": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_01",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "fuse": [
+  {
+   "item": "dad_grenade_gadget.comp_05_legendary_fuse",
+   "sources": [
+    {
+     "boss": "Driller Hole",
+     "encore": 0.3,
+     "encore_id": 78,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "g.m.r.": [
+  {
+   "item": "ord_ar.comp_05_legendary_gmr",
+   "sources": [
+    {
+     "boss": "Driller Hole",
+     "encore": 0.3,
+     "encore_id": 78,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "gamer": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_dlc1",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "gamma void": [
+  {
+   "item": "mal_hw.comp_05_legendary_gammavoid",
+   "sources": [
+    {
+     "boss": "Moon-Maddened Callis",
+     "encore": 0.3,
+     "encore_id": 11,
+     "encore_map": "Elpis Orbital Shatterfield",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "generator": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_03",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "goalkeeper": [
+  {
+   "item": "ord_ar.comp_05_legendary_goalkeeper",
+   "sources": [
+    {
+     "boss": "Vile Ted",
+     "encore": 0.3,
+     "encore_id": 52,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Experiment 42",
+     "encore": 0.3,
+     "encore_id": 52,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Experiment 1709",
+     "encore": 0.3,
+     "encore_id": 52,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "goat": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_harmonica",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "golden god": [
+  {
+   "item": "bor_sg.comp_05_legendary_goldengod",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "gomie": [
+  {
+   "item": "jak_ar.comp_05_legendary_gomie",
+   "sources": [
+    {
+     "boss": "Thol the Invincible",
+     "encore": 0.0,
+     "encore_id": 35,
+     "encore_map": "Lair of the Subjugator",
+     "uvh0": 0.0,
+     "uvh5": 0.025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "goremaster": [
+  {
+   "item": "bor_sg.comp_05_legendary_goremaster",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "grenazerker": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_06",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.3,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "grim sister": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_raid2",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "guardian angel": [
+  {
+   "item": "dad_shield.comp_05_legendary_angel",
+   "sources": [
+    {
+     "boss": "Arjay",
+     "encore": 0.3,
+     "encore_id": 36,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "hair trigger": [
+  {
+   "item": "bor_sg.comp_05_legendary_demo",
+   "sources": [
+    {
+     "boss": "Sturm",
+     "encore": 0.3,
+     "encore_id": 4,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Drang",
+     "encore": 0.3,
+     "encore_id": 4,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hand frag": [
+  {
+   "item": "dad_sm.comp_05_legendary_handfrag",
+   "sources": [
+    {
+     "boss": "RelaxMech",
+     "encore": 0.3,
+     "encore_id": 17,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "handcannon": [
+  {
+   "item": "tor_ps.comp_05_legendary_handcannon",
+   "sources": [
+    {
+     "boss": "Stone Demon",
+     "encore": 0.09,
+     "encore_id": 1,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hard dark": [
+  {
+   "item": "dad_ar.comp_05_legendary_harddark",
+   "sources": [
+    {
+     "boss": "CL34n.R",
+     "encore": 0.3,
+     "encore_id": 31,
+     "encore_map": "Mandolin 1",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hardpoint": [
+  {
+   "item": "tor_ps.comp_05_legendary_breadth",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "healthraiser": [
+  {
+   "item": "dad_repair_kit.comp_05_legendary_healthraiser",
+   "sources": [
+    {
+     "boss": "Minister Screw",
+     "encore": 0.3,
+     "encore_id": 0,
+     "encore_map": "Ministry of Culture",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Donk",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "heavyweight": [
+  {
+   "item": "vla_shield.comp_05_legendary_heavyweight",
+   "sources": [
+    {
+     "boss": "Vile Prototype",
+     "encore": 0.3,
+     "encore_id": 76,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "heimdahl": [
+  {
+   "item": "tor_hw.comp_05_legendary_dahlfather",
+   "sources": [
+    {
+     "boss": "Captain Willis",
+     "encore": 0.3,
+     "encore_id": 41,
+     "encore_map": "The Maelstrom",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hellfire": [
+  {
+   "item": "bor_sm.comp_05_legendary_hellfire",
+   "sources": [
+    {
+     "boss": "Skyspanner Kratch",
+     "encore": 0.3,
+     "encore_id": 70,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "hellhound": [
+  {
+   "item": "bor_sg.comp_05_legendary_convergence",
+   "sources": [
+    {
+     "boss": "Bramblesong",
+     "encore": 0.3,
+     "encore_id": 58,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "hellwalker": [
+  {
+   "item": "jak_sg.comp_05_legendary_hellwalker",
+   "sources": [
+    {
+     "boss": "The Immortal Boneface",
+     "encore": 0.3,
+     "encore_id": 74,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "hemorrhage": [
+  {
+   "item": "vla_sr.comp_05_legendary_hemorrhage",
+   "sources": [
+    {
+     "boss": "Colonel Crash",
+     "encore": 0.3,
+     "encore_id": 5,
+     "encore_map": "The Whispering Glacier",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "herald": [
+  {
+   "item": "tor_ps.comp_06_pearl_herald",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Inceptus",
+     "encore": 0.0,
+     "encore_id": 38,
+     "encore_map": "Vault Grasslands",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hippo gun": [
+  {
+   "item": "jak_sg.comp_05_legendary_hippogun",
+   "sources": [
+    {
+     "boss": "Kolavalin",
+     "encore": 0.3,
+     "encore_id": 47,
+     "encore_map": "Tediore FOB Bravo Lima 4.2",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hoarder": [
+  {
+   "item": "vla_shield.comp_05_legendary_hoarder",
+   "sources": [
+    {
+     "boss": "Skyspanner Kratch",
+     "encore": 0.3,
+     "encore_id": 70,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "honey badger": [
+  {
+   "item": "dad_shield.comp_05_legendary_honeybadger",
+   "sources": [
+    {
+     "boss": "Big Oil",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "honeymooner": [
+  {
+   "item": "mal_sm.comp_05_legendary_accretion",
+   "sources": [
+    {
+     "boss": "Megan",
+     "encore": 0.3,
+     "encore_id": 23,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hooligan": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_raid1",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "hopscotch": [
+  {
+   "item": "ted_shield.comp_05_legendary_hopscotch",
+   "sources": [
+    {
+     "boss": "Stone Demon",
+     "encore": 0.3,
+     "encore_id": 1,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hot slugger": [
+  {
+   "item": "jak_sg.comp_05_legendary_slugger",
+   "sources": [
+    {
+     "boss": "Callous Harbinger of Annihilating Death",
+     "encore": 0.3,
+     "encore_id": 68,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "hotshot": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_03",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "hugger": [
+  {
+   "item": "bor_repair_kit.comp_05_legendary_hugger",
+   "sources": [
+    {
+     "boss": "F1x.R",
+     "encore": 0.3,
+     "encore_id": 32,
+     "encore_map": "Mandolin 1",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "husky friend": [
+  {
+   "item": "ted_sg.comp_05_legendary_heavyturret",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Inceptus",
+     "encore": 0.3,
+     "encore_id": 38,
+     "encore_map": "Vault Grasslands",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "hydrowerks": [
+  {
+   "item": "tor_shield.comp_05_legendary_hydrowerks",
+   "sources": [
+    {
+     "boss": "MAXXXSUPREMENOOLIVES",
+     "uvh0": 0.3,
+     "uvh5": 0.3
+    }
+   ],
+   "world": false
+  }
+ ],
+ "ichor": [
+  {
+   "item": "mal_hw.comp_05_legendary_ichor",
+   "sources": [
+    {
+     "boss": "Ol' Thrash",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Kraggula",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Fulgur",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Krag'thulu",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Slithertongue",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Skullfire",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Ice Maw",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Bitterblight",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Thresh O' War",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Botpopper",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Bone Boogie",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Oldbeard Worldthroat",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    }
+   ],
+   "world": false
+  }
+ ],
+ "illusionist": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_05",
+   "sources": [
+    {
+     "boss": "Callis, the Ripper Queen",
+     "encore": 0.3,
+     "encore_id": 14,
+     "encore_map": "Fortress Shatteredlands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "infection": [
+  {
+   "item": "jak_ps.comp_05_legendary_infection",
+   "sources": [
+    {
+     "boss": "Lieutenant Harmony",
+     "encore": 0.3,
+     "encore_id": 45,
+     "encore_map": "Tediore FOB Bravo Lima 4.2",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "inkling": [
+  {
+   "item": "vla_hw.comp_05_legendary_splatoon",
+   "sources": [
+    {
+     "boss": "Divisioner",
+     "encore": 0.3,
+     "encore_id": 71,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "inscriber": [
+  {
+   "item": "ted_ps.comp_05_legendary_inscriber",
+   "sources": [
+    {
+     "boss": "Minister Screw",
+     "encore": 0.3,
+     "encore_id": 0,
+     "encore_map": "Ministry of Culture",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Donk",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "instigator": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_03",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "ishmael": [
+  {
+   "item": "ord_sr.comp_05_legendary_ishmael",
+   "sources": [
+    {
+     "boss": "Child of Terramorphous",
+     "uvh0": 0.15,
+     "uvh5": 0.275
+    }
+   ],
+   "world": false
+  }
+ ],
+ "jail-broken gatling": [
+  {
+   "item": "bor_sm.comp_05_legendary_jailbroken",
+   "sources": [
+    {
+     "boss": "Subjugator the Invincible",
+     "encore": 0.0,
+     "encore_id": 35,
+     "encore_map": "Lair of the Subjugator",
+     "uvh0": 0.0,
+     "uvh5": 0.1
+    },
+    {
+     "boss": "Thol the Invincible",
+     "encore": 0.0,
+     "encore_id": 35,
+     "encore_map": "Lair of the Subjugator",
+     "uvh0": 0.0,
+     "uvh5": 0.1
+    }
+   ],
+   "world": false
+  }
+ ],
+ "jelly": [
+  {
+   "item": "borg_grenade_gadget.comp_05_legendary_rubber",
+   "sources": [
+    {
+     "boss": "Splashzone",
+     "encore": 0.3,
+     "encore_id": 77,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "jetsetter": [
+  {
+   "item": "bor_hw.comp_05_legendary_jetset",
+   "sources": [
+    {
+     "boss": "Bloomreaper the Invincible",
+     "encore": 0.25,
+     "encore_id": 34,
+     "encore_map": "The Bloom",
+     "uvh0": 0.15,
+     "uvh5": 0.25
+    }
+   ],
+   "world": false
+  }
+ ],
+ "juliet's sparkle": [
+  {
+   "item": "mal_sm.comp_06_pearl_juliet",
+   "sources": [
+    {
+     "boss": "Callis, the Ripper Queen",
+     "encore": 0.0,
+     "encore_id": 14,
+     "encore_map": "Fortress Shatteredlands",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "kaleidosplode": [
+  {
+   "item": "mal_sg.comp_05_legendary_kaleidosplode",
+   "sources": [
+    {
+     "boss": "Callous Harbinger of Annihilating Death",
+     "encore": 0.3,
+     "encore_id": 68,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "kaos": [
+  {
+   "item": "dad_ar.comp_05_legendary_kaos",
+   "sources": [
+    {
+     "boss": "Subjugator the Invincible",
+     "encore": 0.0,
+     "encore_id": 35,
+     "encore_map": "Lair of the Subjugator",
+     "uvh0": 0.0,
+     "uvh5": 0.025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "kaoson": [
+  {
+   "item": "vla_sm.comp_05_legendary_kaoson",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "katagawa's revenge": [
+  {
+   "item": "mal_sr.comp_05_legendary_katagawa",
+   "sources": [
+    {
+     "boss": "Driller Hole",
+     "encore": 0.3,
+     "encore_id": 78,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "kickballer": [
+  {
+   "item": "mal_sg.comp_05_legendary_kickballer",
+   "sources": [
+    {
+     "boss": "Sludgemaw",
+     "encore": 0.3,
+     "encore_id": 48,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "kill spring": [
+  {
+   "item": "ted_repair_kit.comp_05_legendary_killspring",
+   "sources": [
+    {
+     "boss": "Axemaul",
+     "encore": 0.3,
+     "encore_id": 50,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "kindread spirits": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_04",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "king's gambit": [
+  {
+   "item": "jak_ps.comp_05_legendary_kingsgambit",
+   "sources": [
+    {
+     "boss": "Vile Prototype",
+     "encore": 0.3,
+     "encore_id": 76,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "lamplighter": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_raid1",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "laser disker": [
+  {
+   "item": "ted_ar.comp_05_legendary_laserdisc",
+   "sources": [
+    {
+     "boss": "Sturm",
+     "encore": 0.3,
+     "encore_id": 4,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Drang",
+     "encore": 0.3,
+     "encore_id": 4,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "laser-cutter": [
+  {
+   "item": "vla_ar.comp_05_legendary_lasercutter",
+   "sources": [
+    {
+     "boss": "Corporal Brennan",
+     "encore": 0.3,
+     "encore_id": 9,
+     "encore_map": "The Whispering Glacier",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "lead balloon": [
+  {
+   "item": "tor_sg.comp_05_legendary_leadballoon",
+   "sources": [
+    {
+     "boss": "Splashzone",
+     "encore": 0.3,
+     "encore_id": 77,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "li'l brudder": [
+  {
+   "item": "mal_grenade_gadget.comp_05_legendary_brudder",
+   "sources": [
+    {
+     "boss": "Big Bada Boom Drone",
+     "encore": 0.3,
+     "encore_id": 18,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "light gun": [
+  {
+   "item": "vla_sr.comp_05_legendary_lightgun",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "linebacker": [
+  {
+   "item": "tor_sg.comp_05_legendary_linebacker",
+   "sources": [
+    {
+     "boss": "Skyspanner Kratch",
+     "encore": 0.3,
+     "encore_id": 70,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "little sister": [
+  {
+   "item": "ted_shield.comp_05_legendary_pocketbuddies",
+   "sources": [
+    {
+     "boss": "Gilgathresh",
+     "uvh0": 0.06,
+     "uvh5": 0.1475
+    }
+   ],
+   "world": false
+  }
+ ],
+ "living weapon": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_tuba",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "lockjaw": [
+  {
+   "item": "tor_ar.comp_05_legendary_lockjaw",
+   "sources": [
+    {
+     "boss": "Thol the Invincible",
+     "encore": 0.15,
+     "encore_id": 35,
+     "encore_map": "Lair of the Subjugator",
+     "uvh0": 0.15,
+     "uvh5": 0.25
+    }
+   ],
+   "world": false
+  }
+ ],
+ "loiter sploiter": [
+  {
+   "item": "tor_hw.comp_05_legendary_loiter",
+   "sources": [
+    {
+     "boss": "Infamous Dave",
+     "encore": 0.3,
+     "encore_id": 28,
+     "encore_map": "The Toxic Scowl",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "lovelorn": [
+  {
+   "item": "ted_ar.comp_05_legendary_hotmod",
+   "sources": [
+    {
+     "boss": "Dr. Elena Smith",
+     "encore": 0.3,
+     "encore_id": 15,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "lucian's flank": [
+  {
+   "item": "vla_ar.comp_05_legendary_lucian",
+   "sources": [
+    {
+     "boss": "Saddleback",
+     "encore": 0.3,
+     "encore_id": 74,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "The Immortal Boneface",
+     "encore": 0.3,
+     "encore_id": 74,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "lucky clover": [
+  {
+   "item": "ord_ps.comp_05_legendary_rocketreload",
+   "sources": [
+    {
+     "boss": "Horace",
+     "encore": 0.3,
+     "encore_id": 53,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "ludopath": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_02",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Inceptus",
+     "encore": 0.3,
+     "encore_id": 38,
+     "encore_map": "Vault Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "luty madlad": [
+  {
+   "item": "dad_sm.comp_05_legendary_luty",
+   "sources": [
+    {
+     "boss": "Mimicron",
+     "encore": 0.3,
+     "encore_id": 56,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "mantra": [
+  {
+   "item": "mal_sg.comp_05_legendary_mantra",
+   "sources": [
+    {
+     "boss": "Bloomreaper the Invincible",
+     "encore": 0.25,
+     "encore_id": 34,
+     "encore_map": "The Bloom",
+     "uvh0": 0.15,
+     "uvh5": 0.25
+    }
+   ],
+   "world": false
+  }
+ ],
+ "marshall's claw": [
+  {
+   "item": "mal_sr.comp_05_legendary_manifest",
+   "sources": [
+    {
+     "boss": "Crackclaw",
+     "uvh0": 0.06,
+     "uvh5": 0.1475
+    }
+   ],
+   "world": false
+  }
+ ],
+ "martyr": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_dlc1",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "masochist": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_harmonica",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "matador's match": [
+  {
+   "item": "mal_sm.comp_05_legendary_firework",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "memory hoarder": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_04",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "mercredi": [
+  {
+   "item": "dad_ar.comp_05_legendary_mercredi",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "mercurious": [
+  {
+   "item": "vla_sm.comp_05_legendary_mercury",
+   "sources": [
+    {
+     "boss": "Chiselbella",
+     "encore": 0.3,
+     "encore_id": 4,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "midnight defiance": [
+  {
+   "item": "vla_sr.comp_05_legendary_crowdsourced",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "misericorde": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_raid1",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "missilaser": [
+  {
+   "item": "dad_sg.comp_05_legendary_misslaser",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "montage maker": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_03",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "murmur": [
+  {
+   "item": "ted_ar.comp_05_legendary_murder",
+   "sources": [
+    {
+     "boss": "Genone",
+     "encore": 0.3,
+     "encore_id": 66,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "noisy cricket": [
+  {
+   "item": "ord_ps.comp_05_legendary_noisycricket",
+   "sources": [
+    {
+     "boss": "Sidney Pointylegs",
+     "encore": 0.3,
+     "encore_id": 64,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "oak-aged cask": [
+  {
+   "item": "jak_shield.comp_05_legendary_barrelaged",
+   "sources": [
+    {
+     "boss": "Skull Orchid",
+     "encore": 0.3,
+     "encore_id": 63,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "ohm i got": [
+  {
+   "item": "mal_sm.comp_05_legendary_ohmigot",
+   "sources": [
+    {
+     "boss": "Moon-Maddened Callis",
+     "encore": 0.3,
+     "encore_id": 11,
+     "encore_map": "Elpis Orbital Shatterfield",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "onion": [
+  {
+   "item": "jak_shield.comp_05_legendary_onionlayeredguard",
+   "sources": [
+    {
+     "boss": "Sludgemaw",
+     "encore": 0.3,
+     "encore_id": 48,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "onslaught": [
+  {
+   "item": "vla_sm.comp_05_legendary_onslaught",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "ordinance": [
+  {
+   "item": "ted_grenade_gadget.comp_05_legendary_ordinance",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "oscar mike": [
+  {
+   "item": "dad_ar.comp_05_legendary_om",
+   "sources": [
+    {
+     "boss": "Genone",
+     "encore": 0.3,
+     "encore_id": 66,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "outburst": [
+  {
+   "item": "tor_repair_kit.comp_05_legendary_outburst",
+   "sources": [
+    {
+     "boss": "Vile Grasp",
+     "encore": 0.3,
+     "encore_id": 42,
+     "encore_map": "Dark Side of Elpis",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "over swarm": [
+  {
+   "item": "bor_shield.comp_05_legendary_overswarm",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "overconsumption": [
+  {
+   "item": "ted_ps.comp_05_legendary_earlyexcess",
+   "sources": [
+    {
+     "boss": "MAXXXSUPREMENOOLIVES",
+     "uvh0": 0.3,
+     "uvh5": 0.3
+    }
+   ],
+   "world": false
+  }
+ ],
+ "overdriver": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_raid1",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "oxidation": [
+  {
+   "item": "vla_repair_kit.comp_05_legendary_bloodiron",
+   "sources": [
+    {
+     "boss": "BETAMAXXX",
+     "encore": 0.3,
+     "encore_id": 27,
+     "encore_map": "The Toxic Scowl",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "pacemaker": [
+  {
+   "item": "dad_repair_kit.comp_05_legendary_pacemaker",
+   "sources": [
+    {
+     "boss": "Horace",
+     "encore": 0.3,
+     "encore_id": 53,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "pachonk": [
+  {
+   "item": "ord_ar.comp_05_legendary_pchonk",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.0,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "parasite": [
+  {
+   "item": "vla_sm.comp_06_pearl_locust",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.0,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "petanque": [
+  {
+   "item": "ord_sr.comp_05_legendary_petanque",
+   "sources": [
+    {
+     "boss": "Unreal Steel",
+     "encore": 0.3,
+     "encore_id": 26,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "phantom flame": [
+  {
+   "item": "jak_ps.comp_05_legendary_phantom_flame",
+   "sources": [
+    {
+     "boss": "Pango",
+     "encore": 0.3,
+     "encore_id": 75,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Bango",
+     "encore": 0.3,
+     "encore_id": 75,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "phlebotomist": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_cowbell",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "plague engineer": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_raid2",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "plasma coil": [
+  {
+   "item": "mal_sm.comp_05_legendary_plasmacoil",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Timekeeper",
+     "encore": 0.3,
+     "encore_id": 37,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "plasmaphile": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_raid2",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "plumb bob": [
+  {
+   "item": "bor_sg.comp_05_legendary_plumbbob",
+   "sources": [
+    {
+     "boss": "Skank Eyes",
+     "encore": 0.3,
+     "encore_id": 30,
+     "encore_map": "The Toxic Scowl",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "pocketshot": [
+  {
+   "item": "ted_ps.comp_05_legendary_sideshow",
+   "sources": [
+    {
+     "boss": "Divisioner",
+     "encore": 0.3,
+     "encore_id": 71,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "potato thrower iv": [
+  {
+   "item": "tor_ar.comp_05_legendary_potatothrower",
+   "sources": [
+    {
+     "boss": "Voraxis",
+     "encore": 0.3,
+     "encore_id": 59,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Gruntabulous Vork",
+     "encore": 0.3,
+     "encore_id": 72,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Li'l Grunt",
+     "encore": 0.3,
+     "encore_id": 72,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Baby Grunt",
+     "encore": 0.3,
+     "encore_id": 72,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "power-puncher": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_tuba",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "pragmate": [
+  {
+   "item": "dad_sg.comp_05_legendary_pragmate",
+   "sources": [
+    {
+     "boss": "Hybrid Thresher",
+     "encore": 0.3,
+     "encore_id": 43,
+     "encore_map": "Dark Side of Elpis",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "pressure kettle": [
+  {
+   "item": "dad_grenade_gadget.comp_05_legendary_pressurecooker",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "prestidigitator": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_raid2",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "prince harming": [
+  {
+   "item": "bor_sm.comp_05_legendary_prince",
+   "sources": [
+    {
+     "boss": "Bango",
+     "encore": 0.3,
+     "encore_id": 75,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "principal": [
+  {
+   "item": "ted_shield.comp_05_legendary_shieldboi",
+   "sources": [
+    {
+     "boss": "Divisioner",
+     "encore": 0.3,
+     "encore_id": 71,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "prism": [
+  {
+   "item": "jak_sr.comp_05_legendary_burrow",
+   "sources": [
+    {
+     "boss": "BETAMAXXX",
+     "encore": 0.09,
+     "encore_id": 27,
+     "encore_map": "The Toxic Scowl",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "programmer": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_dlc2",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "protean cell": [
+  {
+   "item": "ord_shield.comp_05_legendary_proteancell",
+   "sources": [
+    {
+     "boss": "Fractis",
+     "encore": 0.3,
+     "encore_id": 55,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "prowler": [
+  {
+   "item": "dad_sm.comp_05_legendary_follower",
+   "sources": [
+    {
+     "boss": "Air Raider Scremulous",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "puppetmaster": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_tuba",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "quadratus": [
+  {
+   "item": "vla_hw.comp_05_legendary_quattro",
+   "sources": [
+    {
+     "boss": "Blackspot Vilethorn",
+     "encore": 0.09,
+     "uvh0": 0.0,
+     "uvh5": 0.0125
+    },
+    {
+     "boss": "Gutslinger",
+     "encore": 0.09,
+     "uvh0": 0.0,
+     "uvh5": 0.0125
+    },
+    {
+     "boss": "Grimebag Gilbert",
+     "encore": 0.09,
+     "uvh0": 0.0,
+     "uvh5": 0.0125
+    },
+    {
+     "boss": "Unreal Steel Jayson",
+     "encore": 0.09,
+     "uvh0": 0.0,
+     "uvh5": 0.0125
+    },
+    {
+     "boss": "Cosmicreep",
+     "encore": 0.09,
+     "uvh0": 0.0,
+     "uvh5": 0.0125
+    }
+   ],
+   "world": false
+  }
+ ],
+ "queen's rest": [
+  {
+   "item": "tor_ps.comp_05_legendary_queensrest",
+   "sources": [
+    {
+     "boss": "Callis, the Ripper Queen",
+     "encore": 0.3,
+     "encore_id": 14,
+     "encore_map": "Fortress Shatteredlands",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "raiden": [
+  {
+   "item": "dad_sm.comp_05_legendary_raiden",
+   "sources": [
+    {
+     "boss": "Brain Zane",
+     "encore": 0.09,
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "rainbow vomit": [
+  {
+   "item": "jak_sg.comp_05_legendary_rainbowvomit",
+   "sources": [
+    {
+     "boss": "Leader Willem",
+     "encore": 0.3,
+     "encore_id": 51,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "rainmaker": [
+  {
+   "item": "bor_sr.comp_05_legendary_rainmaker",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "rangefinder": [
+  {
+   "item": "dad_ps.comp_05_legendary_rangefinder",
+   "sources": [
+    {
+     "boss": "Vile Prototype",
+     "encore": 0.3,
+     "encore_id": 76,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "ravenfire": [
+  {
+   "item": "tor_hw.comp_05_legendary_ravenfire",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Inceptus",
+     "encore": 0.3,
+     "encore_id": 38,
+     "encore_map": "Vault Grasslands",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "reactor": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_02",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "reaparici\u00f3n": [
+  {
+   "item": "classmod_exo_soldier.comp_05_legendary_cowbell",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "recursive": [
+  {
+   "item": "mal_grenade_gadget.comp_05_legendary_recursive",
+   "sources": [
+    {
+     "boss": "Genone",
+     "encore": 0.3,
+     "encore_id": 66,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "reminisce": [
+  {
+   "item": "mal_sg.comp_05_legendary_reminisce",
+   "sources": [
+    {
+     "boss": "Captain Willis",
+     "encore": 0.3,
+     "encore_id": 41,
+     "encore_map": "The Maelstrom",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "rhythm": [
+  {
+   "item": "ord_ps.comp_05_legendary_rhythm",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "ripple": [
+  {
+   "item": "tor_ar.comp_05_legendary_ripple",
+   "sources": [
+    {
+     "boss": "Experiment C-23",
+     "encore": 0.3,
+     "encore_id": 46,
+     "encore_map": "Tediore FOB Bravo Lima 4.2",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "roach": [
+  {
+   "item": "tor_ps.comp_05_legendary_roach",
+   "sources": [
+    {
+     "boss": "Skull Orchid",
+     "encore": 0.3,
+     "encore_id": 63,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "roil": [
+  {
+   "item": "bor_sm.comp_05_legendary_roil",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "rooker": [
+  {
+   "item": "ord_sr.comp_05_legendary_seamstress",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "roulette": [
+  {
+   "item": "ord_ps.comp_05_legendary_roulette",
+   "sources": [
+    {
+     "boss": "Bore-Tex",
+     "encore": 0.3,
+     "encore_id": 4,
+     "encore_map": "The Demon's Domain",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "rounder": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_01",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "rowan's charge": [
+  {
+   "item": "jak_ar.comp_05_legendary_rowan",
+   "sources": [
+    {
+     "boss": "Directive-0",
+     "encore": 0.3,
+     "encore_id": 49,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "rowdy rider": [
+  {
+   "item": "jak_ar.comp_05_legendary_rowdy",
+   "sources": [
+    {
+     "boss": "Minister Screw",
+     "encore": 0.3,
+     "encore_id": 0,
+     "encore_map": "Ministry of Culture",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Donk",
+     "encore": 0.3,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "ruby's grasp": [
+  {
+   "item": "ted_ps.comp_05_legendary_rubysgrasp",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "san saba songbird": [
+  {
+   "item": "jak_ps.comp_05_legendary_quickdraw",
+   "sources": [
+    {
+     "boss": "Rocken Roller",
+     "encore": 0.3,
+     "encore_id": 60,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "scientist": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_06",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.3,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "scoot'n'shoot": [
+  {
+   "item": "tor_ps.comp_05_legendary_scootshoot",
+   "sources": [
+    {
+     "boss": "Crazed Earl",
+     "encore": 0.3,
+     "encore_id": 10,
+     "encore_map": "The Whispering Glacier",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "screwstonian": [
+  {
+   "item": "dad_sm.comp_06_pearl_screwed",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.0,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "seeker": [
+  {
+   "item": "ord_grenade_gadget.comp_05_legendary_alignment",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "seventh sense": [
+  {
+   "item": "jak_ps.comp_05_legendary_seventh_sense",
+   "sources": [
+    {
+     "boss": "Vile Ted",
+     "encore": 0.3,
+     "encore_id": 52,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Experiment 42",
+     "encore": 0.3,
+     "encore_id": 52,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Experiment 1709",
+     "encore": 0.3,
+     "encore_id": 52,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "shalashaska": [
+  {
+   "item": "jak_ps.comp_05_legendary_shalashaska",
+   "sources": [
+    {
+     "boss": "Ten-Toes",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Slayowulf",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Theylob",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Tiny Bigs",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "King Crosis",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "shammy kablammy": [
+  {
+   "item": "ted_ps.comp_05_legendary_shammy",
+   "sources": [
+    {
+     "boss": "Subjugator the Invincible",
+     "encore": 0.15,
+     "encore_id": 35,
+     "encore_map": "Lair of the Subjugator",
+     "uvh0": 0.15,
+     "uvh5": 0.25
+    }
+   ],
+   "world": false
+  }
+ ],
+ "shardenfreude": [
+  {
+   "item": "dad_ar.comp_05_legendary_shardenfreude",
+   "sources": [
+    {
+     "boss": "Jr. Manager Warrant Baggett",
+     "encore": 0.3,
+     "encore_id": 22,
+     "encore_map": "Providence Island",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "sharkbait": [
+  {
+   "item": "ted_sg.comp_06_pearl_sharkbait",
+   "sources": [
+    {
+     "boss": "Child of Terramorphous",
+     "uvh0": 0.0,
+     "uvh5": 0.0875
+    }
+   ],
+   "world": false
+  }
+ ],
+ "shatterwight": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_04",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "shield overflow": [
+  {
+   "item": "dad_ps.comp_05_legendary_blackout",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "shiny war paint": [
+  {
+   "item": "tor_repair_kit.comp_05_legendary_shinywarpaint",
+   "sources": [
+    {
+     "boss": "Saddleback",
+     "encore": 0.3,
+     "encore_id": 74,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "sho kunai": [
+  {
+   "item": "jak_grenade_gadget.comp_05_legendary_shokunai",
+   "sources": [
+    {
+     "boss": "Bio-Bulkhead",
+     "encore": 0.3,
+     "encore_id": 65,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "shoals": [
+  {
+   "item": "jak_ps.comp_05_legendary_shoals",
+   "sources": [
+    {
+     "boss": "Child of Terramorphous",
+     "uvh0": 0.15,
+     "uvh5": 0.275
+    }
+   ],
+   "world": false
+  }
+ ],
+ "sideshow": [
+  {
+   "item": "ted_ps.comp_05_legendary_sideshow",
+   "sources": [
+    {
+     "boss": "Divisioner",
+     "encore": 0.3,
+     "encore_id": 71,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "sidewinder": [
+  {
+   "item": "tor_hw.comp_05_legendary_sidewinder",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "silver sliver": [
+  {
+   "item": "dad_ps.comp_05_legendary_silversliver",
+   "sources": [
+    {
+     "boss": "BETAMAXXX",
+     "encore": 0.3,
+     "encore_id": 27,
+     "encore_map": "The Toxic Scowl",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "skeptic": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_05",
+   "sources": [
+    {
+     "boss": "Callis, the Ripper Queen",
+     "encore": 0.3,
+     "encore_id": 14,
+     "encore_map": "Fortress Shatteredlands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "skully": [
+  {
+   "item": "ord_grenade_gadget.comp_05_legendary_skully",
+   "sources": [
+    {
+     "boss": "The Immortal Boneface",
+     "encore": 0.3,
+     "encore_id": 74,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "slippy": [
+  {
+   "item": "tor_grenade_gadget.comp_05_legendary_slippy",
+   "sources": [
+    {
+     "boss": "Shadowpelt",
+     "encore": 0.3,
+     "encore_id": 62,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "solar temper": [
+  {
+   "item": "ord_sr.comp_05_legendary_temper",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Timekeeper",
+     "encore": 0.0,
+     "encore_id": 37,
+     "encore_map": "Upper City",
+     "uvh0": 0.0,
+     "uvh5": 0.00375
+    }
+   ],
+   "world": false
+  }
+ ],
+ "soul survivor": [
+  {
+   "item": "dad_ps.comp_05_legendary_soulsurvivor",
+   "sources": [
+    {
+     "boss": "The Penitent Steel",
+     "uvh0": 0.0,
+     "uvh5": 0.0025
+    }
+   ],
+   "world": false
+  }
+ ],
+ "sparky shield": [
+  {
+   "item": "bor_shield.comp_05_legendary_lightning",
+   "sources": [
+    {
+     "boss": "Shadowpelt",
+     "encore": 0.3,
+     "encore_id": 62,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "sprezzatura": [
+  {
+   "item": "tor_hw.comp_05_legendary_javelin",
+   "sources": [],
+   "world": true
+  }
+ ],
+ "star helix": [
+  {
+   "item": "dad_ar.comp_05_legendary_star_helix",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Timekeeper",
+     "encore": 0.3,
+     "encore_id": 37,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "stealth & seek": [
+  {
+   "item": "mal_sr.comp_05_legendary_stealth",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "stop gap": [
+  {
+   "item": "vla_sr.comp_05_legendary_stopgap",
+   "sources": [
+    {
+     "boss": "The Backhive",
+     "encore": 0.3,
+     "encore_id": 57,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "stray": [
+  {
+   "item": "bor_sr.comp_05_legendary_stray",
+   "sources": [
+    {
+     "boss": "Pango",
+     "encore": 0.3,
+     "encore_id": 75,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "streamer": [
+  {
+   "item": "bor_hw.comp_05_legendary_streamer",
+   "sources": [
+    {
+     "boss": "The Oppressor",
+     "encore": 0.3,
+     "encore_id": 69,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "sunspot": [
+  {
+   "item": "ord_ps.comp_05_legendary_sunspot",
+   "sources": [
+    {
+     "boss": "Big Oil",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "super soldier": [
+  {
+   "item": "dad_shield.comp_05_legendary_supersoldier",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "superconducting plasma coil": [
+  {
+   "item": "mal_sm.comp_05_legendary_plasmacoil",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Timekeeper",
+     "encore": 0.3,
+     "encore_id": 37,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "swan song": [
+  {
+   "item": "dad_sg.comp_05_legendary_cannonbrawl",
+   "sources": [
+    {
+     "boss": "Tidebreaker",
+     "uvh0": 0.06,
+     "uvh5": 0.1475
+    }
+   ],
+   "world": false
+  }
+ ],
+ "swarm": [
+  {
+   "item": "ord_grenade_gadget.comp_05_legendary_swarm",
+   "sources": [
+    {
+     "boss": "Sidney Pointylegs",
+     "encore": 0.3,
+     "encore_id": 64,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "sweet embrace": [
+  {
+   "item": "mal_sg.comp_05_legendary_sweet_embrace",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "symmetry": [
+  {
+   "item": "ord_sr.comp_05_legendary_symmetry",
+   "sources": [
+    {
+     "boss": "The Timekeeper",
+     "encore": 0.3,
+     "encore_id": 37,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "t.k's wave": [
+  {
+   "item": "jak_sg.comp_05_legendary_tkswave",
+   "sources": [
+    {
+     "boss": "Rocken Roller",
+     "encore": 0.3,
+     "encore_id": 60,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "table hopper": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_harmonica",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "tankbuster": [
+  {
+   "item": "bor_sr.comp_05_legendary_tankbuster",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "technomancer": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_01",
+   "sources": [
+    {
+     "boss": "Idolator Sol",
+     "encore": 0.3,
+     "encore_id": 12,
+     "encore_map": "Fortress Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "teen witch": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_06",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.3,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "tempered essence": [
+  {
+   "item": "vla_sm.comp_05_legendary_aura",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "tempest": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_cowbell",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "throwing knife": [
+  {
+   "item": "jak_grenade_gadget.comp_05_legendary_bismuth",
+   "sources": [
+    {
+     "boss": "Corporal Brennan",
+     "encore": 0.3,
+     "encore_id": 9,
+     "encore_map": "The Whispering Glacier",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "timekeeper's new shield": [
+  {
+   "item": "ted_shield.comp_05_legendary_timekeeper",
+   "sources": [
+    {
+     "boss": "The Timekeeper",
+     "encore": 0.3,
+     "encore_id": 37,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Primordial Guardian Timekeeper",
+     "encore": 0.3,
+     "encore_id": 37,
+     "encore_map": "Upper City",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "trackstar": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_05",
+   "sources": [
+    {
+     "boss": "Callis, the Ripper Queen",
+     "encore": 0.3,
+     "encore_id": 14,
+     "encore_map": "Fortress Shatteredlands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "trainer": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_tuba",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "transmitter": [
+  {
+   "item": "borg_grenade_gadget.comp_05_legendary_transmission",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "triple bypass": [
+  {
+   "item": "ord_repair_kit.comp_05_legendary_triplebypass",
+   "sources": [
+    {
+     "boss": "The Backhive",
+     "encore": 0.3,
+     "encore_id": 57,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "triplicate": [
+  {
+   "item": "vla_ar.comp_05_legendary_triplicate",
+   "sources": [
+    {
+     "boss": "Test Zero",
+     "encore": 0.3,
+     "encore_id": 44,
+     "encore_map": "Nuada Cove",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "trooper": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_raid1",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "truck": [
+  {
+   "item": "jak_sr.comp_05_legendary_truck",
+   "sources": [
+    {
+     "boss": "Bio-Thresher Omega",
+     "encore": 0.3,
+     "encore_id": 67,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "uav": [
+  {
+   "item": "ted_grenade_gadget.comp_05_legendary_predatordrone",
+   "sources": [
+    {
+     "boss": "Mimicron",
+     "encore": 0.3,
+     "encore_id": 56,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Fractis",
+     "encore": 0.3,
+     "encore_id": 55,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "ultracapacitor": [
+  {
+   "item": "classmod_gravitar.comp_05_legendary_harmonica",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "undead eye": [
+  {
+   "item": "classmod_dark_siren.comp_05_legendary_03",
+   "sources": [
+    {
+     "boss": "Vile Lictor",
+     "encore": 0.3,
+     "encore_id": 13,
+     "encore_map": "Fortress Mountains"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "undershield": [
+  {
+   "item": "vla_shield.comp_05_legendary_undershield",
+   "sources": [
+    {
+     "boss": "Bloomreaper the Invincible",
+     "encore": 0.25,
+     "encore_id": 34,
+     "encore_map": "The Bloom",
+     "uvh0": 0.15,
+     "uvh5": 0.25
+    }
+   ],
+   "world": false
+  }
+ ],
+ "unstable kor": [
+  {
+   "item": "tor_sg.comp_05_legendary_unstable_kor",
+   "sources": [
+    {
+     "boss": "Ol' Thrash",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Kraggula",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Fulgur",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Krag'thulu",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Slithertongue",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Skullfire",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Ice Maw",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Bitterblight",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Thresh O' War",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Botpopper",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Bone Boogie",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    },
+    {
+     "boss": "Oldbeard Worldthroat",
+     "uvh0": 0.135,
+     "uvh5": 0.285
+    }
+   ],
+   "world": false
+  }
+ ],
+ "upgraded finnity xxx-l": [
+  {
+   "item": "vla_sr.comp_05_legendary_finnty",
+   "sources": [
+    {
+     "boss": "The Battle Wagon",
+     "encore": 0.3,
+     "encore_id": 61,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "urchin": [
+  {
+   "item": "ted_grenade_gadget.comp_05_legendary_urchin",
+   "sources": [
+    {
+     "boss": "Bloomreaper the Invincible",
+     "encore": 0.25,
+     "encore_id": 34,
+     "encore_map": "The Bloom",
+     "uvh0": 0.15,
+     "uvh5": 0.25
+    }
+   ],
+   "world": false
+  }
+ ],
+ "vamoose": [
+  {
+   "item": "bor_sr.comp_05_legendary_vamoose",
+   "sources": [
+    {
+     "boss": "Shadowpelt",
+     "encore": 0.3,
+     "encore_id": 62,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "verce": [
+  {
+   "item": "jak_sg.comp_05_legendary_verce",
+   "sources": [
+    {
+     "boss": "Ten-Toes",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Slayowulf",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Theylob",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Tiny Bigs",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "King Crosis",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "viking": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_05",
+   "sources": [
+    {
+     "boss": "Callis, the Ripper Queen",
+     "encore": 0.3,
+     "encore_id": 14,
+     "encore_map": "Fortress Shatteredlands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "virophile": [
+  {
+   "item": "classmod_corpohacker.comp_05_legendary_02",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Inceptus",
+     "encore": 0.3,
+     "encore_id": 38,
+     "encore_map": "Vault Grasslands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "virtue": [
+  {
+   "item": "ord_ps.comp_05_legendary_patience",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "vitae": [
+  {
+   "item": "jak_repair_kit.comp_05_legendary_vitae",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "wastelander": [
+  {
+   "item": "classmod_paladin.comp_05_legendary_harmonica",
+   "sources": [],
+   "world": false
+  }
+ ],
+ "waterfall": [
+  {
+   "item": "vla_grenade_gadget.comp_05_legendary_waterfall",
+   "sources": [
+    {
+     "boss": "Bio-Bulkhead",
+     "encore": 0.3,
+     "encore_id": 65,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "watts 4 dinner": [
+  {
+   "item": "bor_shield.comp_05_legendary_watts4dinner",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Origo",
+     "encore": 0.3,
+     "encore_id": 39,
+     "encore_map": "Vault Mountains",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "whale": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_05",
+   "sources": [
+    {
+     "boss": "Callis, the Ripper Queen",
+     "encore": 0.3,
+     "encore_id": 14,
+     "encore_map": "Fortress Shatteredlands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "whiskey foxtrot": [
+  {
+   "item": "vla_ar.comp_05_legendary_wf",
+   "sources": [
+    {
+     "boss": "Directive-0",
+     "encore": 0.3,
+     "encore_id": 49,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "wind skimmer": [
+  {
+   "item": "jak_sr.comp_05_legendary_outback",
+   "sources": [
+    {
+     "boss": "Hybrid Thresher",
+     "encore": 0.3,
+     "encore_id": 43,
+     "encore_map": "Dark Side of Elpis",
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": false
+  }
+ ],
+ "windrider": [
+  {
+   "item": "classmod_robodealer.comp_05_legendary_06",
+   "sources": [
+    {
+     "boss": "Primordial Guardian Radix",
+     "encore": 0.3,
+     "encore_id": 40,
+     "encore_map": "Vault Shattered Lands"
+    }
+   ],
+   "world": false
+  }
+ ],
+ "wombo combo": [
+  {
+   "item": "vla_ar.comp_05_legendary_wombocombo",
+   "sources": [
+    {
+     "boss": "Gruntabulous Vork",
+     "encore": 0.3,
+     "encore_id": 72,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Li'l Grunt",
+     "encore": 0.3,
+     "encore_id": 72,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    },
+    {
+     "boss": "Baby Grunt",
+     "encore": 0.3,
+     "encore_id": 72,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ],
+ "zipper": [
+  {
+   "item": "dad_ps.comp_05_legendary_zipgun",
+   "sources": [
+    {
+     "boss": "Leader Willem",
+     "encore": 0.3,
+     "encore_id": 51,
+     "uvh0": 0.09,
+     "uvh5": 0.19
+    }
+   ],
+   "world": true
+  }
+ ]
+}

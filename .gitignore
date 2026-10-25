@@ -1,0 +1,48 @@
+node_modules/
+dist/
+build/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+
+# local Claude Code settings and the Claude Fleet screenshot drop folder
+.claude/settings.local.json
+fleet-uploads/
+
+# local test harness state
+.bridge/
+# reverse-engineering scratch: a 650 MB image dump and a local capstone install
+dev/re/dump/
+dev/re/pylib/
+installer/build/
+installer/.venv/
+
+# profiler captures and symbol tables (dev/perf)
+.perf/
+
+# live UI editing scratch (tools/ui_live.py)
+dev/ui_live/
+
+# dev junctions (dev/bl4_x -> mods/bl4_x) so the SDK loads the repo copy of each mod. Every
+# dev/bl4_* is a junction except the two dev-only mods that live here.
+dev/bl4_*
+!dev/bl4_bridge/
+!dev/bl4_loot_spawner/
+
+# downloaded third-party mods, game files and crash dumps: never commit these
+*.zip
+*.pak
+*.utoc
+*.ucas
+*.sav
+*.dmp
+*.bk2
+oo2core_*.dll
+# mod settings and per-character data written by the mods at runtime
+settings/

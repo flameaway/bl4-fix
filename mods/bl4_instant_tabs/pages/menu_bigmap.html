@@ -1,0 +1,1332 @@
+<widget-bigmap class="bm_widget status_menu_fade">
+    <div name="OffScreenIconIndicators"
+         class="bm_offscreen_wrapper">
+        <div name="OffscreenIcon"
+             gue-comment="This exists as a template. inactive will be removed at runtime"
+             class="bm_offscreen">
+            <div name="DirectionalRing"
+                 class="bm_offscreen_directional_ring">
+                <div name="Circle"
+                     class="bm_offscreen_directional_ring_circle"></div>
+            </div>
+            <div name="Content"
+                 class="bm_offscreen_content">
+                <div name="Icon"
+                     class="bm_offscreen_content_icon"></div>
+            </div>
+        </div>
+    </div>
+    <div name="Wrapper"
+         class="bigmap_wrapper full_size menu_screen_boundaries temp_bigmap_padding">
+        <div name="Padding"
+             class="bigmap_padding full_relative">
+            <div name="Region"
+                 class="bm_region">
+                <div name="Region Info"
+                     data-bind-class-toggle="inactive:{{$data.hoveredregion}} == ''"
+                     class="bm_region_info">
+                    <div name="brackets"
+                         class="bm_region_brackets">
+                        <div name="bracket"
+                             class="bm_region_bracket left"></div>
+                        <div name="bracket"
+                             class="bm_region_bracket"></div>
+                    </div>
+                    <p name="Region Name"
+                       class="bm_region_info_name med_text_1">Location with a Really Long Name</p>
+                </div>
+                <div name="ExplorePrompt_Wrapper"
+                     data-bind-class-toggle="invisible:{{$data.bshowlegend}} || !{{$data.bcanexploreregion}} || $widget.bExplore"
+                     data-bind-click="$widget.OnExploreClicked(event)"
+                     id="bm_explore_prompt_wrapper"
+                     class="bm_explore_prompt">
+                    <gbx-glyph action="action_ui_bigmap_explore"
+                               submap=""
+                               class="bm_explore_btn_glyph"></gbx-glyph>
+                    <div name="Explore"
+                         id="bm_explore_prompt_btn"
+                         class="bm_explore_btn">
+                        <p name="ExploreText"
+                           data-l10n-id="UIBigMap_Explore"
+                           id="bm_explore_prompt_text"
+                           class="bm_explore_btn_text small_text_2">EXPLORE</p>
+                        <p name="Arrow"
+                           class="bm_explore_btn_arrow tint_text_neutral"></p>
+                    </div>
+                </div>
+            </div>
+            <div name="Explore menu"
+                 class="bm_explore_menu bm_mouseblocking">
+                <div name="Subzone"
+                     data-bind-value="{{$data.exploreregions}}[{{$data.currentexploreregion}}].region"
+                     class="big_text_2 bm_explore_menu_subzone inactive">Subzone</div>
+                <div name="Scroll"
+                     class="bm_explore_menu_scroll">
+                    <div name="All categories"
+                         data-input-beh="explore_list"
+                         data-input-id="explore_list"
+                         data-input-elem="true"
+                         class="bm_explore_menu_activities">
+                        <div name="Category list"
+                             data-bind-for="_idx, category:{{$data.exploreregions}}[{{$data.currentexploreregion}}].categorydata"
+                             class="bm_explore_menu_list">
+                            <div name="Category Divider"
+                                 class="category_divider flex_start_margin">
+                                <div name="blue line"
+                                     class="cat_divider_header_line"></div>
+                                <div name="Title"
+                                     data-bind-value="{{category.categorydisplayname}} + ' [' + {{category.explorelistdata}}.length + ']'"
+                                     class="cat_divider_title small_text_2">FAST TRAVEL STATIONS [2]</div>
+                                <div name="bg details"
+                                     class="cat_divider_bg">
+                                    <div name="arrow"
+                                         class="cat_divider_arrow"></div>
+                                    <div name="dashes pattern"
+                                         class="cat_divider_dashes_pattern"></div>
+                                    <div name="blue line"
+                                         class="cat_divider_blue_line_2"></div>
+                                </div>
+                            </div>
+                            <div name="Items list"
+                                 class="bm_explore_menu_list_items">
+                                <div name="Item"
+                                     data-bind-for="_idx2, poi_data:{{category.explorelistdata}}"
+                                     class="bm_explore_menu_item">
+                                    <oak-cursor-handler name="Map button"
+                                                        gue-comment="List button states:\n- disabled\n- completed"
+                                                        data-bind-mouseenter="$widget.OnExploreHovered(event, {{poi_data.poihandle}})"
+                                                        data-bind-mouseleave="$widget.OnExploreUnhovered(event)"
+                                                        data-bind-click="$widget.OnExploreItemSelected({{poi_data.poihandle}})"
+                                                        data-bind-class-toggle="Hovered:{{$data.hoveredindex}} == {{poi_data.poihandle}}"
+                                                        data-input-friction="true"
+                                                        data-input-default="true"
+                                                        data-input-elem="true"
+                                                        class="list_btn map_btn temp_ref_size bm_explore_menu_list_btn full_absolute_size">
+                                        <div name="HoverWrapper"
+                                             class="bm_explore_menu_item">
+                                            <div class="button_inner">
+                                                <div name="Icon Container"
+                                                     class="bm_explore_menu_item_icon_cntr">
+                                                    <div name="Icon"
+                                                         data-bind-style-background-image-url="{{poi_data.typeiconpath}}"
+                                                         class="bm_explore_menu_item_icon"></div>
+                                                    <div name="Tracked FUI"
+                                                         data-bind-class-toggle="invisible:!{{poi_data.bcurrentlytracked}}"
+                                                         class="bm_explore_menu_item_tracked"></div>
+                                                </div>
+                                                <p name="Text"
+                                                   data-bind-markup="{{poi_data.title}}"
+                                                   class="bm_explore_menu_item_text">Lorem Ipsum DOlor sit amet Lorem Ipsum DOlor sit amet </p>
+                                            </div>
+                                            <div name="backing"
+                                                 class="list_btn_backing"></div>
+                                            <div name="gradient"
+                                                 class="list_btn_gradient_bg"></div>
+                                            <div name="right arrow corner"
+                                                 class="list_btn_arrow_corner"></div>
+                                            <div name="default corner L"
+                                                 class="list_btn_corner_l"></div>
+                                            <div name="glitch fx asset"
+                                                 class="list_btn_glitch_effect"></div>
+                                            <div name="outline"
+                                                 class="list_btn_outline"></div>
+                                            <div name="hovered outline"
+                                                 class="list_btn_outline_glow"></div>
+                                            <div name="Hover orange decoration"
+                                                 class="list_entry_orange_fui">
+                                                <div name="fill 9 slice"
+                                                     class="list_entry_orange_fui_fill"></div>
+                                            </div>
+                                            <div name="Hover orange FUI"
+                                                 class="bm_explore_menu_item_hover">
+                                                <div name="fill"
+                                                     class="bm_explore_menu_item_hover_fill"></div>
+                                            </div>
+                                        </div>
+                                    </oak-cursor-handler>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+                                       
+            <div name="Prompt Map Switch"
+                 data-bind-if="!{{$data.bshowlegend}} && !$widget.bExplore && !{{$data.bonoverworld}}"
+                 data-bind-class-toggle="endgame:{{$data.bshowendgamecontent}}"
+                 class="prompt_map_switch_container"
+                 data-bind-click="$widget.OnViewOverworld(Event)">
+                 
+               <gbx-component name="oak_button"
+                    gbx-component-id="oak_button"
+                    class="prompt_map_switch_btn bm_mouseblocking"></gbx-component>
+               <div name="textContainer"
+                    class="promt_map_switch_text_cntr">
+                    <gbx-glyph action="action_ui_bigmap_viewkairos"
+                         submap=""
+                         name="Ico_Glyph"
+                         class="Ico_Glyph"></gbx-glyph>
+                    <p name="Text"
+                         data-l10n-id="UIBigMap_ViewKairos"
+                         class="prompt_map_switch_text small_text_1">Switch to Electi Plateau</p>
+                </div>
+            </div>
+            <div name="Weekly Activities"
+                 id="bm_weekly_activities_container"
+                 data-bind-class-toggle="invisible:{{$data.bshowlegend}} || $widget.bExplore || !{{$data.bshowendgamecontent}}"
+                 data-bind-mouseenter="$widget.ClearPip('character.map.weeklyactivities')"
+                 class="bm_weekly_activities_widget">
+                <div name="Header"
+                     class="bm_weekly_activities_header">
+                    <div name="Orange gradient"
+                         class="bm_weekly_activities_gradient"></div>
+                    <div name="Text"
+                         data-l10n-id="UIBigMap_WeeklyActivitiesTitle"
+                         class="bm_weekly_activities_txt small_text_2">WEEKLY ACTIVITIES</div>
+                    <div name="Refresh Timer"
+                         class="bm_week_act_refresh_timer">
+                        <div name="Icon"
+                             class="bm_week_act_refresh_timer_icon tint_accent_orange"></div>
+                        <div name="Timer cntr"
+                             class="bm_week_act_refresh_timer_cntr">
+                            <div name="Pattern"
+                                 class="bm_week_act_refresh_timer_pattern tint_accent_orange"></div>
+                            <div name="Timer"
+                                 data-bind-value="{{$data.weeklyactivitytime}}"
+                                 class="bm_week_act_refresh_timer_txt med_text_2">888888</div>
+                        </div>
+                    </div>
+                    <div name="New icon"
+                         data-bind-class-toggle="invisible:!{{$data.pipdata.activepips}}.includes('weeklyactivities')"
+                         class="bm_weekly_activities_icon"></div>
+                </div>
+                <div name="Activities"
+                     class="bm_weekly_activities">
+                    <div name="Entry"
+                         data-bind-for="Index, Activity:{{$data.weeklyactivities}}"
+                         class="bm_weekly_activity_entry">
+                        <oak-cursor-handler name="Activity"
+                                            data-bind-class-toggle="completed:{{Activity.bcompleted}}"
+                                            data-bind-class="{{Activity.type}}"
+                                            data-bind-mouseenter="$widget.OnWeeklyActivityHovered(event, {{Index}})"
+                                            data-bind-mouseleave="$widget.OnWeeklyActivityUnhovered(event)"
+                                            class="bm_weekly_activity">
+                            <div name="Gradient"
+                                 class="bm_weekly_activity_gradient"></div>
+                            <div name="Border"
+                                 class="bm_weekly_activity_border tint_color_blue_1"></div>
+                            <div name="Highlighted Border"
+                                 class="bm_weekly_activity_border_highlighted tint_color_highlight"></div>
+                            <div name="Icon"
+                                 data-bind-style-background-image-url="{{Activity.iconpath}}"
+                                 class="bm_weekly_activity_icon"></div>
+                            <div name="CompletedIcon"
+                                 class="bm_weekly_activity_completed_icon"></div>
+                        </oak-cursor-handler>
+                    </div>
+                </div>
+            </div>
+            <div name="explore menu container"></div>
+            <div name="Zone Progress"
+                 data-bind-class-toggle="bm_explore:{{$widget.bexplore}}||{{$data.bexpandedprogress}}"
+                 scrolling-type="VERTICAL"
+                 native-virtual-list="false"
+                 use-oak-scroll=""
+                 class="bm_progress">
+                <div name="Progress Entry Scroll"
+                     data-input-elem="true"
+                     data-input-beh="explore_list"
+                     data-input-id="explore_list"
+                     data-input-default="true"
+                     data-input-disabled="true"
+                     class="bm_progress_scroll bm_mouseblocking grid-container">
+                    <div name="ProgressEntry"
+                         data-bind-for="activitycategory:{{$data.currentregion.activitycategories}}">
+                        <div name="Collectables"
+                             class="bm_progress_list">
+                            <div name="Header"
+                                 data-input-elem="true"
+                                 class="bm_progress_list_header">
+                                <div name="CategoryProgress"
+                                     data-bind-value="{{activitycategory.categoryprogress}}"
+                                     class="bm_category_progress small_text_2">[8/10]</div>
+                                <div name="Text"
+                                     data-bind-value="{{activitycategory.categorytitle}}"
+                                     class="bm_progress_list_text small_text_2">COLLECTIBLES</div>
+                            </div>
+                            <div name="List"
+                                 data-bind-class-toggle="inactive:!{{$data.bexpandedprogress}}"
+                                 class="bm_progress_list_items">
+                                <div name="Replicate"
+                                     data-bind-for="entry:{{activitycategory.activities}}"
+                                     class="bm_progress_list_item_cntr">
+                                    <div name="Item"
+                                         gue-comment="Toggle classes:\n\n- &quot;in_progress&quot;\n- &quot;completed&quot;\n- &quot;undiscovered&quot;"
+                                         data-input-elem="true"
+                                         data-bind-class-toggle="undiscovered:{{entry.bundiscovered}};completed:{{entry.bcompleted}};in_progress:{{entry.binprogress}}"
+                                         class="bm_progress_list_item small_text_2">
+                                        <div name="Checkbox"
+                                             class="bm_progress_list_item_checkbox">
+                                            <div name="Fill"
+                                                 class="bm_progress_list_item_checkbox_fill tint_color_completed"></div>
+                                        </div>
+                                        <div name="Text"
+                                             data-bind-value="{{entry.activityname}}"
+                                             class="bm_progress_list_item_text text_overflow_ellipsis">Echo Logs is really really long goes to two lines</div>
+                                        <div name="Value"
+                                             data-bind-value="{{entry.activityprogress}}"
+                                             class="bm_progress_list_item_value">2/4</div>
+                                        <div name="Icon"
+                                             data-bind-style-background-image-url="{{entry.iconpath}}"
+                                             class="bm_progress_list_placeholder bm_progress_list_item_icon"></div>
+                                    </div>
+                                    <div name="Legend divider"
+                                         class="bm_legend_item_divider bm_progress_list_item_divider"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div name="ToggleProgressPrompt_Wrapper"
+                     data-bind-class-toggle="invisible:{{$data.bshowlegend}} || !{{$data.bcanexploreregion}} || $widget.bExplore"
+                     data-bind-click="$widget.OnToggleProgressClicked(event)"
+                     class="bm_progress_prompt bm_mouseblocking">
+                    <gbx-glyph action="action_ui_bigmap_toggle_progress"
+                               submap=""
+                               class="bm_explore_btn_glyph"></gbx-glyph>
+                    <div name="ToggleProgress"
+                         class="bm_explore_btn">
+                        <p name="ToggleProgressText"
+                           data-bind-value={{$data.progresstoggletext}}
+                           class="bm_explore_btn_text small_text_2">EXPLORE</p>                        
+                    </div>
+                </div>
+            </div>
+            <div name="Prompt Zone Switch"
+                 data-bind-if="{{$data.bshowswitchregion}}"
+                 class="prompt_zone_switch bm_mouseblocking">
+                <div name="decorations"
+                     class="prompt_map_deco">
+                    <div name="FUI orange"
+                         class="prompt_map_fui">
+                        <div name="Fill"
+                             class="prompt_map_fui_fill"></div>
+                    </div>
+                    <div name="FUI orange"
+                         class="prompt_map_fui">
+                        <div name="Fill"
+                             class="prompt_map_fui_fill"></div>
+                    </div>
+                </div>
+                <gbx-glyph action="action_ui_bigmap_switch_region"
+                           submap=""
+                           name="Ico_Glyph"
+                           class="Ico_Glyph"></gbx-glyph>
+                <p name="Text"
+                   data-bind-value="{{$data.switchregiontext}}"
+                   class="prompt_zone_switch_text small_text_1">Switch to Electi Plateau</p>
+            </div>
+            <div name="Fast Travel / Compass"
+                 class="bm_info_container bm_mouseblocking">
+                <div name="fast travel disabled"
+                     class="compass_wrapper">
+                    <div name="Fast Travel"
+                         data-bind-class-toggle="invisible:{{$data.bfasttravelenabled}}"
+                         class="bm_fast_travel_status">
+                        <div name="Title BG"
+                             class="bm_fast_travel_status_title_cntr">
+                            <p name="Title"
+                               data-l10n-id="UIBigMap_FastTravel"
+                               class="bm_fast_travel_status_title small_text_2">Fast Travel</p>
+                        </div>
+                        <div name="Value"
+                             class="bm_fast_travel_status_value_cntr">
+                            <div name="pattern"
+                                 class="bm_fast_travel_status_value_pattern tint_color_locked"></div>
+                            <p name="Text"
+                               data-l10n-id="UIBigMap_Disabled"
+                               class="bm_fast_travel_status_value bm_ft_disabled small_text_2">Disabled</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div name="Explore Panel"
+                 class="bm_explore_container bm_mouseblocking"></div>
+        </div>
+    </div>
+    <div name="Map Legends Popup"
+         data-bind-class-toggle="inactive:!{{$data.bshowlegend}};"
+         class="bm_legend_menu bm_mouseblocking">
+        <div name="Legend"
+             class="bm_legend">
+            <div name="Header"
+                 class="bm_legend_header">
+                <div name="Title"
+                     data-l10n-id="UIBigMap_LegendTitle"
+                     class="bm_legend_header_title">Map Legends</div>
+                <div name="Buttons"
+                     data-input-default="true"
+                     data-input-beh="base"
+                     class="bm_legend_header_btns">
+                    <oak-cursor-handler name="Buton"
+                                        data-bind-click="BigMapWidgetAccessor.OnSetAllFilterVisibility(false)"
+                                        data-input-elem="true"
+                                        data-input-friction="true"
+                                        data-input-id="HideAll"
+                                        data-input-link-right="ShowAll"
+                                        data-input-link-down="LeftList"
+                                        class="bm_legend_header_btn">
+                        <div name="list_button"
+                             class="bm_legend_list_btn full_absolute_size">
+                            <div name="backing"
+                                 class="list_btn_backing"></div>
+                            <div name="gradient"
+                                 class="list_btn_gradient_bg"></div>
+                            <div name="right arrow corner"
+                                 class="list_btn_arrow_corner"></div>
+                            <div name="default corner L"
+                                 class="list_btn_corner_l"></div>
+                            <div name="glitch fx asset"
+                                 class="list_btn_glitch_effect"></div>
+                            <div name="outline"
+                                 class="list_btn_outline"></div>
+                            <div name="hovered outline"
+                                 class="list_btn_outline_glow"></div>
+                            <div name="Hover orange decoration"
+                                 class="list_entry_orange_fui">
+                                <div name="fill 9 slice"
+                                     class="list_entry_orange_fui_fill"></div>
+                            </div>
+                        </div>
+                        <div name="Text"
+                             data-l10n-id="UIBigMap_HideAll"
+                             class="bm_legend_header_btn_text">HIDE ALL
+                        </div>
+                    </oak-cursor-handler>
+                    <oak-cursor-handler name="Buton"
+                                        data-bind-click="BigMapWidgetAccessor.OnSetAllFilterVisibility(true)"
+                                        data-input-elem="true"
+                                        data-input-friction="true"
+                                        data-input-id="ShowAll"
+                                        data-input-link-left="HideAll"
+                                        data-input-link-down="RightList"
+                                        class="bm_legend_header_btn">
+                        <div name="list_button"
+                             class="bm_legend_list_btn full_absolute_size">
+                            <div name="backing"
+                                 class="list_btn_backing"></div>
+                            <div name="gradient"
+                                 class="list_btn_gradient_bg"></div>
+                            <div name="right arrow corner"
+                                 class="list_btn_arrow_corner"></div>
+                            <div name="default corner L"
+                                 class="list_btn_corner_l"></div>
+                            <div name="glitch fx asset"
+                                 class="list_btn_glitch_effect"></div>
+                            <div name="outline"
+                                 class="list_btn_outline"></div>
+                            <div name="hovered outline"
+                                 class="list_btn_outline_glow"></div>
+                            <div name="Hover orange decoration"
+                                 class="list_entry_orange_fui">
+                                <div name="fill 9 slice"
+                                     class="list_entry_orange_fui_fill"></div>
+                            </div>
+                        </div>
+                        <div name="Text"
+                             data-l10n-id="UIBigMap_ShowAll"
+                             class="bm_legend_header_btn_text show_all_list_btn_txt">SHOW ALL</div>
+                    </oak-cursor-handler>
+                </div>
+            </div>
+            <div name="separator"
+                 class="bm_legend_separator"></div>
+            <div name="content"
+                 class="bm_legend_content">
+                <div name="StaticWrapper"
+                     class="bm_legend_static">
+                    <div name="Static Scroll Area"
+                         class="bm_legend_static_scroll">
+                        <div name="container"
+                             class="bm_legend_container">
+                            <div name="Legend Category"
+                                 data-bind-for="CategoryItem:{{$data.staticfilters}}"
+                                 class="bm_legend_section">
+                                <div name="Item title"
+                                     class="bm_legend_item_title">
+                                    <div name="Category Divider"
+                                         class="category_divider flex_start_margin bm_legend_title_catdiv">
+                                        <div name="blue line"
+                                             class="cat_divider_header_line"></div>
+                                        <div name="Title"
+                                             data-bind-value="{{CategoryItem.displayname}}"
+                                             class="cat_divider_title small_text_2">LEGEND CATEGORY TITLE</div>
+                                        <div name="bg details"
+                                             class="cat_divider_bg">
+                                            <div name="arrow"
+                                                 class="cat_divider_arrow"></div>
+                                            <div name="dashes pattern"
+                                                 class="cat_divider_dashes_pattern"></div>
+                                            <div name="blue line"
+                                                 class="cat_divider_blue_line_2"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div name="List"
+                                     class="bm_legend_list_items">
+                                    <div name="Item container"
+                                         data-bind-for="item:{{CategoryItem.filteritems}}"
+                                         class="bm_legend_static_item_cntr">
+                                        <div name="Legend list item"
+                                             data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                             class="bm_legend_static_item">
+                                            <div name="icon"
+                                                 data-bind-style-background-image-url="{{item.iconpath}}"
+                                                 class="bm_legend_static_item_icon"></div>
+                                            <p name="Text"
+                                               data-bind-markup="{{item.displayname}}"
+                                               class="bm_legend_static_item_text">Legend Item Name that goes to two lines</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div name="Dynamic Filters"
+                     scrolling-type="VERTICAL"
+                     native-virtual-list="false"
+                     use-oak-scroll=""
+                     class="bm_legend_dynamicfilters">
+                    <div name="Multi List Container"
+                         data-input-beh="bm_legend_list"
+                         data-input-id="bm_legend_list"
+                         class="bm_legend_dynamicfilter_container grid-container">
+                        <div name="LeftList"
+                             data-input-id="LeftList"
+                             class="bm_filterlist left">
+                            <div name="Legend Category"
+                                 data-bind-for="_idx, CategoryItem:{{$data.leftfilters}}"
+                                 data-input-beh="bm_legend_list"
+                                 data-input-elem="true"
+                                 data-input-id="bm_legend_list"
+                                 data-input-link-up="HideAll"
+                                 class="bm_legend_category">
+                                <oak-cursor-handler name="Item title"
+                                                    data-bind-class-toggle="hide_op:!{{CategoryItem.bvisible}}"
+                                                    data-input-elem="true"
+                                                    data-input-default="true"
+                                                    data-bind-click="BigMapWidgetAccessor.OnFilterCategoryToggled(this, {{CategoryItem.ident}}, {{CategoryItem.bvisible}})"
+                                                    data-bind-attribute-value="{                                                       
+                                        'data-input-behavior-right':{{CategoryItem.explicitindex}},
+                                      }"
+                                                    class="bm_legend_item_title">
+                                    <div name="Category Divider"
+                                         class="category_divider flex_start_margin bm_legend_title_catdiv">
+                                        <div name="blue line"
+                                             class="cat_divider_header_line"></div>
+                                        <div name="Title"
+                                             data-bind-value="{{CategoryItem.displayname}}"
+                                             class="bm_legend_item_title_text cat_divider_title small_text_2">CATEGORY DIVIDER</div>
+                                        <div name="bg details"
+                                             class="cat_divider_bg">
+                                            <div name="arrow"
+                                                 class="cat_divider_arrow"></div>
+                                            <div name="dashes pattern"
+                                                 class="cat_divider_dashes_pattern"></div>
+                                            <div name="blue line"
+                                                 class="cat_divider_blue_line_2"></div>
+                                        </div>
+                                    </div>
+                                    <div name="Icon"
+                                         class="bm_legend_item_title_icon">
+                                        <div name="list_button"
+                                             class="bm_legend_toggle_list_btn full_absolute_size">
+                                            <div name="backing"
+                                                 class="list_btn_backing"></div>
+                                            <div name="gradient"
+                                                 class="list_btn_gradient_bg"></div>
+                                            <div name="right arrow corner"
+                                                 class="list_btn_arrow_corner"></div>
+                                            <div name="default corner L"
+                                                 class="list_btn_corner_l"></div>
+                                            <div name="glitch fx asset"
+                                                 class="list_btn_glitch_effect"></div>
+                                            <div name="outline"
+                                                 class="list_btn_outline"></div>
+                                            <div name="hovered outline"
+                                                 class="list_btn_outline_glow"></div>
+                                            <div name="Hover orange decoration"
+                                                 class="list_entry_orange_fui">
+                                                <div name="fill 9 slice"
+                                                     class="list_entry_orange_fui_fill"></div>
+                                            </div>
+                                        </div>
+                                        <div name="eye icon"
+                                             class="bm_legend_item_title_icon_img"></div>
+                                    </div>
+                                </oak-cursor-handler>
+                                <oak-cursor-handler name="Item container"
+                                                    data-bind-for="_idx2, item:{{CategoryItem.filteritems}}"
+                                                    data-input-elem="true"
+                                                    data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                                    data-bind-click="BigMapWidgetAccessor.OnFilterToggled(this, {{item.filterid}}, {{item.bvisible}})"
+                                                    data-bind-attribute-value="{                                                       
+                                             'data-input-behavior-right':{{item.explicitindex}},
+                                           }"
+                                                    class="bm_legend_item_cntr">
+                                    <div name="Legend list item"
+                                         class="bm_legend_item">
+                                        <div name="Content"
+                                             class="bm_legend_item_content_cntr">
+                                            <div name="Content"
+                                                 class="bm_legend_item_content">
+                                                <div name="bg gradient"
+                                                     class="bm_legend_item_bg"></div>
+                                                <div name="icon"
+                                                     data-bind-style-background-image-url="{{item.iconpath}}"
+                                                     class="bm_legend_item_icon"></div>
+                                                <p name="Text"
+                                                   data-bind-markup="{{item.displayname}}"
+                                                   class="bm_legend_item_text">Main Mission</p>
+                                            </div>
+                                            <div name="Legend divider"
+                                                 class="bm_legend_item_divider"></div>
+                                        </div>
+                                        <div name="Item Wrapper"
+                                             class="bm_legend_item_nav_wrapper">
+                                            <div name="toggle"
+                                                 class="bm_legend_item_toggle">
+                                                <div name="list_button"
+                                                     class="bm_legend_toggle_list_btn full_absolute_size">
+                                                    <div name="backing"
+                                                         class="list_btn_backing"></div>
+                                                    <div name="gradient"
+                                                         class="list_btn_gradient_bg"></div>
+                                                    <div name="right arrow corner"
+                                                         class="list_btn_arrow_corner"></div>
+                                                    <div name="default corner L"
+                                                         class="list_btn_corner_l"></div>
+                                                    <div name="glitch fx asset"
+                                                         class="list_btn_glitch_effect"></div>
+                                                    <div name="outline"
+                                                         class="list_btn_outline"></div>
+                                                    <div name="hovered outline"
+                                                         class="list_btn_outline_glow"></div>
+                                                    <div name="Hover orange decoration"
+                                                         class="list_entry_orange_fui">
+                                                        <div name="fill 9 slice"
+                                                             class="list_entry_orange_fui_fill"></div>
+                                                    </div>
+                                                </div>
+                                                <div name="eye icon"
+                                                     data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                                     class="bm_legend_item_toggle_img"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </oak-cursor-handler>
+                            </div>
+                        </div>
+                        <div name="RightList"
+                             data-input-id="RightList"
+                             class="bm_filterlist right">
+                            <div name="Legend Category"
+                                 data-bind-for="_idx, CategoryItem:{{$data.rightfilters}}"
+                                 data-input-beh="bm_legend_list"
+                                 data-input-elem="true"
+                                 data-input-link-up="ShowAll"
+                                 class="bm_legend_category">
+                                <oak-cursor-handler name="Item title"
+                                                    data-bind-class-toggle="hide_op:!{{CategoryItem.bvisible}}"
+                                                    data-input-elem="true"
+                                                    data-input-default="true"
+                                                    data-bind-click="BigMapWidgetAccessor.OnFilterCategoryToggled(this, {{CategoryItem.ident}}, {{CategoryItem.bvisible}})"
+                                                    data-bind-attribute-value="{                                                       
+                                        'data-input-behavior-left':{{CategoryItem.explicitindex}},
+                                      }"
+                                                    class="bm_legend_item_title">
+                                    <div name="Category Divider"
+                                         class="category_divider flex_start_margin bm_legend_title_catdiv">
+                                        <div name="blue line"
+                                             class="cat_divider_header_line"></div>
+                                        <div name="Title"
+                                             data-bind-value="{{CategoryItem.displayname}}"
+                                             class="bm_legend_item_title_text cat_divider_title small_text_2">CATEGORY DIVIDER</div>
+                                        <div name="bg details"
+                                             class="cat_divider_bg">
+                                            <div name="arrow"
+                                                 class="cat_divider_arrow"></div>
+                                            <div name="dashes pattern"
+                                                 class="cat_divider_dashes_pattern"></div>
+                                            <div name="blue line"
+                                                 class="cat_divider_blue_line_2"></div>
+                                        </div>
+                                    </div>
+                                    <div name="Icon"
+                                         class="bm_legend_item_title_icon">
+                                        <div name="list_button"
+                                             class="bm_legend_toggle_list_btn full_absolute_size">
+                                            <div name="backing"
+                                                 class="list_btn_backing"></div>
+                                            <div name="gradient"
+                                                 class="list_btn_gradient_bg"></div>
+                                            <div name="right arrow corner"
+                                                 class="list_btn_arrow_corner"></div>
+                                            <div name="default corner L"
+                                                 class="list_btn_corner_l"></div>
+                                            <div name="glitch fx asset"
+                                                 class="list_btn_glitch_effect"></div>
+                                            <div name="outline"
+                                                 class="list_btn_outline"></div>
+                                            <div name="hovered outline"
+                                                 class="list_btn_outline_glow"></div>
+                                            <div name="Hover orange decoration"
+                                                 class="list_entry_orange_fui">
+                                                <div name="fill 9 slice"
+                                                     class="list_entry_orange_fui_fill"></div>
+                                            </div>
+                                        </div>
+                                        <div name="eye icon"
+                                             class="bm_legend_item_title_icon_img"></div>
+                                    </div>
+                                </oak-cursor-handler>
+                                <oak-cursor-handler name="Item container"
+                                                    data-bind-for="_idx2, item:{{CategoryItem.filteritems}}"
+                                                    data-input-elem="true"
+                                                    data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                                    data-bind-click="BigMapWidgetAccessor.OnFilterToggled(this, {{item.filterid}}, {{item.bvisible}})"
+                                                    data-bind-attribute-value="{                                                       
+                                             'data-input-behavior-left':{{item.explicitindex}},
+                                           }"
+                                                    class="bm_legend_item_cntr">
+                                    <div name="Legend list item"
+                                         class="bm_legend_item">
+                                        <div name="Content"
+                                             class="bm_legend_item_content_cntr">
+                                            <div name="Content"
+                                                 class="bm_legend_item_content">
+                                                <div name="bg gradient"
+                                                     class="bm_legend_item_bg"></div>
+                                                <div name="icon"
+                                                     data-bind-style-background-image-url="{{item.iconpath}}"
+                                                     class="bm_legend_item_icon"></div>
+                                                <p name="Text"
+                                                   data-bind-markup="{{item.displayname}}"
+                                                   class="bm_legend_item_text">Main Mission Main Mission Main MissionMain MissionMain MissionMain MissionMain MissionMain Mission</p>
+                                            </div>
+                                            <div name="Legend divider"
+                                                 class="bm_legend_item_divider"></div>
+                                        </div>
+                                        <div name="Item Wrapper"
+                                             class="bm_legend_item_nav_wrapper">
+                                            <div name="toggle"
+                                                 class="bm_legend_item_toggle">
+                                                <div name="list_button"
+                                                     class="bm_legend_toggle_list_btn full_absolute_size">
+                                                    <div name="backing"
+                                                         class="list_btn_backing"></div>
+                                                    <div name="gradient"
+                                                         class="list_btn_gradient_bg"></div>
+                                                    <div name="right arrow corner"
+                                                         class="list_btn_arrow_corner"></div>
+                                                    <div name="default corner L"
+                                                         class="list_btn_corner_l"></div>
+                                                    <div name="glitch fx asset"
+                                                         class="list_btn_glitch_effect"></div>
+                                                    <div name="outline"
+                                                         class="list_btn_outline"></div>
+                                                    <div name="hovered outline"
+                                                         class="list_btn_outline_glow"></div>
+                                                    <div name="Hover orange decoration"
+                                                         class="list_entry_orange_fui">
+                                                        <div name="fill 9 slice"
+                                                             class="list_entry_orange_fui_fill"></div>
+                                                    </div>
+                                                </div>
+                                                <div name="eye icon"
+                                                     data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                                     class="bm_legend_item_toggle_img"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </oak-cursor-handler>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!--
+                <div name="container"
+                gue-comment="Set the height of this element based on the number of entries in the legend. The entries are populated left to right, fillng the left column first before moving to the next."
+                class="bm_legend_container temp_legend_container_height">
+                <gbx-grid-scrolling-list name="Normal Legend List"
+                                         popup-backpack=""
+                                         scrolling-type="VERTICAL"
+                                         native-virtual-list="false"
+                                         use-oak-scroll=""
+                                         class="bm_normal_legend_container">
+                    <div name="Row"
+                         data-input-default="true"
+                         data-input-beh="explore_list"
+                         class="bm_legend_popup_scroll grid-container">
+                       
+                            <div name="Legend Category"
+                                 data-bind-for="_idx, CategoryItem:{{$data.leftfilters}}"
+                                 class="bm_legend_section">
+                                <div name="Item title"
+                                     data-bind-class-toggle="hide_op:!{{CategoryItem.bvisible}}"
+                                     class="bm_legend_item_title">
+                                    <div name="Category Divider"
+                                         class="category_divider flex_start_margin bm_legend_title_catdiv">
+                                        <div name="blue line"
+                                             class="cat_divider_header_line"></div>
+                                        <div name="Title"
+                                             data-bind-value="{{CategoryItem.displayname}}"
+                                             class="bm_legend_item_title_text cat_divider_title small_text_2">CATEGORY DIVIDER</div>
+                                        <div name="bg details"
+                                             class="cat_divider_bg">
+                                            <div name="arrow"
+                                                 class="cat_divider_arrow"></div>
+                                            <div name="dashes pattern"
+                                                 class="cat_divider_dashes_pattern"></div>
+                                            <div name="blue line"
+                                                 class="cat_divider_blue_line_2"></div>
+                                        </div>
+                                    </div>
+                                    <oak-cursor-handler name="Icon"
+                                                        data-input-elem="true"
+                                                        data-input-default="true"
+                                                        data-bind-attribute-value="{
+                                             'data-input-id':{{$data.leftfilters}}[{{_idx}}]?.ident,
+                                             'data-input-link-up':{{$data.leftfilters}}[{{_idx}}-1] ? {{$data.leftfilters}}[{{_idx}}-1]?.filteritems[{{$data.leftfilters}}[{{_idx}}-1]?.filteritems?.length-1]?.filterid : 'HideAll',
+                                             'data-input-link-down': {{CategoryItem.filteritems}}[0]?.filterid,
+                                             'data-input-link-left':{{$data.leftfilters}}[0]?.ident }"
+                                                        data-bind-click="BigMapWidgetAccessor.OnFilterCategoryToggled(this, {{CategoryItem.ident}}, {{CategoryItem.bvisible}})"
+                                                        class="bm_legend_item_title_icon">
+                                        <div name="list_button"
+                                             class="bm_legend_toggle_list_btn full_absolute_size">
+                                            <div name="backing"
+                                                 class="list_btn_backing"></div>
+                                            <div name="gradient"
+                                                 class="list_btn_gradient_bg"></div>
+                                            <div name="right arrow corner"
+                                                 class="list_btn_arrow_corner"></div>
+                                            <div name="default corner L"
+                                                 class="list_btn_corner_l"></div>
+                                            <div name="glitch fx asset"
+                                                 class="list_btn_glitch_effect"></div>
+                                            <div name="outline"
+                                                 class="list_btn_outline"></div>
+                                            <div name="hovered outline"
+                                                 class="list_btn_outline_glow"></div>
+                                            <div name="Hover orange decoration"
+                                                 class="list_entry_orange_fui">
+                                                <div name="fill 9 slice"
+                                                     class="list_entry_orange_fui_fill"></div>
+                                            </div>
+                                        </div>
+                                        <div name="eye icon"
+                                             class="bm_legend_item_title_icon_img"></div>
+                                    </oak-cursor-handler>
+                                </div>
+                                <div name="List"
+                                     class="bm_legend_list_items">
+                                    <div name="Item container"
+                                         data-bind-for="_idx2, item:{{CategoryItem.filteritems}}"
+                                         class="bm_legend_item_cntr">
+                                        <oak-cursor-handler name="Legend list item"
+                                                            data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                                            data-bind-click="BigMapWidgetAccessor.OnFilterToggled(this, {{item?.filterid}}, {{item.bvisible}})"
+                                                            class="bm_legend_item">
+                                            <div name="Content"
+                                                 class="bm_legend_item_content_cntr">
+                                                <div name="Content"
+                                                     class="bm_legend_item_content">
+                                                    <div name="bg gradient"
+                                                         class="bm_legend_item_bg"></div>
+                                                    <div name="icon"
+                                                         data-bind-style-background-image-url="{{item.iconpath}}"
+                                                         class="bm_legend_item_icon"></div>
+                                                    <p name="Text"
+                                                       data-bind-value="{{item.displayname}}"
+                                                       class="bm_legend_item_text">Main Mission</p>
+                                                </div>
+                                                <div name="Legend divider"
+                                                     class="bm_legend_item_divider"></div>
+                                            </div>
+                                            <div name="Item Wrapper"
+                                                 class="bm_legend_item_nav_wrapper">
+                                                <oak-cursor-handler name="toggle"
+                                                                    data-input-elem="true"
+                                                                    data-input-default="true"
+                                                                    data-bind-attribute-value="{
+                                                       'data-input-id':{{item?.filterid}},
+                                                       'data-input-link-up': {{CategoryItem.filteritems}}[{{_idx2}}-1] ? {{CategoryItem.filteritems}}[{{_idx2}}-1]?.filterid : {{CategoryItem.ident}},
+                                                       'data-input-link-down': {{CategoryItem.filteritems}}[{{_idx2}}+1] ? {{CategoryItem.filteritems}}[{{_idx2}}+1]?.filterid : {{$data.leftfilters}}[{{_idx}}+1]?.ident,
+                                                       'data-input-link-right':{{$data.rightfilters}}[0]?.ident,
+                                                       }"
+                                                                    class="bm_legend_item_toggle">
+                                                    <div name="list_button"
+                                                         class="bm_legend_toggle_list_btn full_absolute_size">
+                                                        <div name="backing"
+                                                             class="list_btn_backing"></div>
+                                                        <div name="gradient"
+                                                             class="list_btn_gradient_bg"></div>
+                                                        <div name="right arrow corner"
+                                                             class="list_btn_arrow_corner"></div>
+                                                        <div name="default corner L"
+                                                             class="list_btn_corner_l"></div>
+                                                        <div name="glitch fx asset"
+                                                             class="list_btn_glitch_effect"></div>
+                                                        <div name="outline"
+                                                             class="list_btn_outline"></div>
+                                                        <div name="hovered outline"
+                                                             class="list_btn_outline_glow"></div>
+                                                        <div name="Hover orange decoration"
+                                                             class="list_entry_orange_fui">
+                                                            <div name="fill 9 slice"
+                                                                 class="list_entry_orange_fui_fill"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div name="eye icon"
+                                                         data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                                         class="bm_legend_item_toggle_img"></div>
+                                                </oak-cursor-handler>
+                                            </div>
+                                        </oak-cursor-handler>
+                                    </div>
+                                </div>
+                            </div>
+                            <div name="Legend Category"
+                                 data-bind-for="_idx, CategoryItem:{{$data.rightfilters}}"
+                                 class="bm_legend_section">
+                                <div name="Item title"
+                                     data-bind-class-toggle="hide_op:!{{CategoryItem.bvisible}}"
+                                     class="bm_legend_item_title">
+                                    <div name="Category Divider"
+                                         class="category_divider flex_start_margin bm_legend_title_catdiv">
+                                        <div name="blue line"
+                                             class="cat_divider_header_line"></div>
+                                        <div name="Title"
+                                             data-bind-value="{{CategoryItem.displayname}}"
+                                             class="bm_legend_item_title_text cat_divider_title small_text_2">CATEGORY DIVIDER</div>
+                                        <div name="bg details"
+                                             class="cat_divider_bg">
+                                            <div name="arrow"
+                                                 class="cat_divider_arrow"></div>
+                                            <div name="dashes pattern"
+                                                 class="cat_divider_dashes_pattern"></div>
+                                            <div name="blue line"
+                                                 class="cat_divider_blue_line_2"></div>
+                                        </div>
+                                    </div>
+                                    <oak-cursor-handler name="Icon"
+                                                        data-input-elem="true"
+                                                        data-input-default="true"
+                                                        data-bind-attribute-value="{
+                                             'data-input-id':{{$data.rightfilters}}[{{_idx}}]?.ident,
+                                             'data-input-link-up':{{$data.rightfilters}}[{{_idx}}-1] ? {{$data.rightfilters}}[{{_idx}}-1]?.filteritems[{{$data.rightfilters}}[{{_idx}}-1]?.filteritems?.length-1]?.filterid : 'ShowAll',
+                                             'data-input-link-down': {{CategoryItem.filteritems}}[0]?.filterid,
+                                             'data-input-link-left':{{$data.leftfilters}}[0]?.ident }"
+                                                        data-bind-click="BigMapWidgetAccessor.OnFilterCategoryToggled(this, {{CategoryItem.ident}}, {{CategoryItem.bvisible}})"
+                                                        class="bm_legend_item_title_icon">
+                                        <div name="list_button"
+                                             class="bm_legend_toggle_list_btn full_absolute_size">
+                                            <div name="backing"
+                                                 class="list_btn_backing"></div>
+                                            <div name="gradient"
+                                                 class="list_btn_gradient_bg"></div>
+                                            <div name="right arrow corner"
+                                                 class="list_btn_arrow_corner"></div>
+                                            <div name="default corner L"
+                                                 class="list_btn_corner_l"></div>
+                                            <div name="glitch fx asset"
+                                                 class="list_btn_glitch_effect"></div>
+                                            <div name="outline"
+                                                 class="list_btn_outline"></div>
+                                            <div name="hovered outline"
+                                                 class="list_btn_outline_glow"></div>
+                                            <div name="Hover orange decoration"
+                                                 class="list_entry_orange_fui">
+                                                <div name="fill 9 slice"
+                                                     class="list_entry_orange_fui_fill"></div>
+                                            </div>
+                                        </div>
+                                        <div name="eye icon"
+                                             class="bm_legend_item_title_icon_img"></div>
+                                    </oak-cursor-handler>
+                                </div>
+                                <div name="List"
+                                     class="bm_legend_list_items">
+                                    <div name="Item container"
+                                         data-bind-for="_idx2, item:{{CategoryItem.filteritems}}"
+                                         class="bm_legend_item_cntr">
+                                        <div name="Legend list item"
+                                             data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                             data-bind-click="BigMapWidgetAccessor.OnFilterToggled(this, {{item?.filterid}}, {{item.bvisible}})"
+                                             class="bm_legend_item">
+                                            <div name="Content"
+                                                 class="bm_legend_item_content_cntr">
+                                                <div name="Content"
+                                                     class="bm_legend_item_content">
+                                                    <div name="bg gradient"
+                                                         class="bm_legend_item_bg"></div>
+                                                    <div name="icon"
+                                                         data-bind-style-background-image-url="{{item.iconpath}}"
+                                                         class="bm_legend_item_icon"></div>
+                                                    <p name="Text"
+                                                       data-bind-value="{{item.displayname}}"
+                                                       class="bm_legend_item_text">Main Mission</p>
+                                                </div>
+                                                <div name="Legend divider"
+                                                     class="bm_legend_item_divider"></div>
+                                            </div>
+                                            <div name="Item Wrapper"
+                                                 class="bm_legend_item_nav_wrapper">
+                                                <oak-cursor-handler name="toggle"
+                                                                    data-bind-click="BigMapWidgetAccessor.OnFilterToggled({{item?.filterid}})"
+                                                                    data-input-elem="true"
+                                                                    data-bind-attribute-value="{                                                       
+                                                                      'data-input-explicit-idx':{{item.explicitindex}},
+                                                                    }"
+                                                                    class="bm_legend_item_toggle">
+                                                    <div name="list_button"
+                                                         class="bm_legend_toggle_list_btn full_absolute_size">
+                                                        <div name="backing"
+                                                             class="list_btn_backing"></div>
+                                                        <div name="gradient"
+                                                             class="list_btn_gradient_bg"></div>
+                                                        <div name="right arrow corner"
+                                                             class="list_btn_arrow_corner"></div>
+                                                        <div name="default corner L"
+                                                             class="list_btn_corner_l"></div>
+                                                        <div name="glitch fx asset"
+                                                             class="list_btn_glitch_effect"></div>
+                                                        <div name="outline"
+                                                             class="list_btn_outline"></div>
+                                                        <div name="hovered outline"
+                                                             class="list_btn_outline_glow"></div>
+                                                        <div name="Hover orange decoration"
+                                                             class="list_entry_orange_fui">
+                                                            <div name="fill 9 slice"
+                                                                 class="list_entry_orange_fui_fill"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div name="eye icon"
+                                                         data-bind-class-toggle="hide_op:!{{item.bvisible}}"
+                                                         class="bm_legend_item_toggle_img"></div>
+                                                </oak-cursor-handler>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    
+                </gbx-grid-scrolling-list>
+               </div>
+               -->
+            </div>
+        </div>
+    </div>
+    <gbx-tooltip name="POI Hover Info"
+                 boundary-type="navbar"
+                 class="tooltip_cntr_backing bm_poi_hover_info mission_waypoint tooltip_container">
+        <div name="tracked banner"
+             data-bind-class-toggle="inactive:!{{$data.hoveredlocation.bcurrentlytracked}}"
+             class="banner bm_poi_hover_info_tracking_row">
+            <div name="Ender"></div>
+            <div name="Content"
+                 class="banner_content">
+                <div name="Icon"
+                     class="banner_icon"></div>
+                <div name="text"
+                     data-l10n-id="UIBigMap_CurrentlyTracked"
+                     class="banner_text small_text_2">Currently Tracked</div>
+            </div>
+        </div>
+        <div name="CooldownTimer"
+             data-bind-class-toggle="inactive:!{{$data.hoveredlocation.boncooldown}}"
+             class="banner bm_poi_hover_info_cooldown_row">
+            <div name="Content"
+                 class="banner_content">
+                <div name="Icon"
+                     class="banner_icon"></div>
+                <div name="Prefex"
+                     data-l10n-id="UIBigMap_CooldownRemaining"
+                     class="banner_text small_text_2">Cooldown Remaining</div>
+                <div name="TimeWrapper"
+                     class="time_wrapper">
+                    <div name="pattern"
+                         class="bm_tooltip_cooldown_timer_pattern tint_accent_orange"></div>
+                    <div name="Time"
+                         data-bind-value="{{$data.hoveredlocation.cooldowntime}}"
+                         class="banner_time small_text_2">HH:MM</div>
+                </div>
+            </div>
+        </div>
+        <div name="Pinned banner"
+             class="banner bm_poi_hover_info_pinned inactive">
+            <div name="Content"
+                 class="banner_content">
+                <div name="Icon"
+                     class="banner_icon"></div>
+                <div name="Prefex"
+                     data-l10n-id="UIBigMap_CooldownRemaining"
+                     class="banner_text small_text_2">Pinned to Compass</div>
+            </div>
+        </div>
+        <div name="Hover Details">
+            <div name="Type Bar"
+                 class="bm_poi_hover_info_type_background">
+                <div name="TypeRow"
+                     class="bm_poi_hover_info_type_row">
+                    <div name="POI Type Container"
+                         class="bm_poi_hover_info_type_container">
+                        <p name="POI Title"
+                           data-bind-markup="{{$data.hoveredlocation.title}}"
+                           class="bm_poi_hover_info_type tooltip_title_text">POI Name POI Name POI Name POI Name POI Name POI Name POI Name</p>
+                    </div>
+                </div>
+                <div name="Title Bar"
+                     data-bind-class-toggle="inactive:!{{$data.hoveredlocation.bshowtitle}}"
+                     class="bm_poi_hover_info_title_bar">
+                    <div name="POI Icon"
+                         data-bind-style-background-image-url="{{$data.hoveredlocation.typeiconpath}}"
+                         class="bm_poi_hover_info_type_icon"></div>
+                    <div name="text container"></div>
+                    <div name="Text"
+                         data-bind-markup="{{$data.hoveredlocation.poatype_title}}"
+                         class="bm_poi_hover_info_title tooltip_subtitle_text text_overflow_ellipsis med_text_2">POI NamePOI NamePOI NamePOI NamePOI NamePOI NamePOI Name</div>
+                    <div name="Difficulty Container"
+                         gue-comment="difficulty is set here as difficulty_0 to difficulty_4 which handles the tinting and icon selection"
+                         data-bind-class="{{$data.hoveredlocation.difficulty}}"
+                         data-bind-class-toggle="inactive: {{$data.hoveredlocation.difficulty}} === 'difficulty_0'"
+                         class="bm_poi_hover_info_difficulty_container difficulty">
+                        <div name="dash pattern"
+                             class="difficulty_bg_pattern"></div>
+                        <div name="difficulty text"
+                             data-bind-value="{{$data.hoveredlocation.difficultytext}}"
+                             class="bm_poi_hover_info_difficulty_text difficulty_text small_text_2">Very Hard</div>
+                        <div name="dash pattern"
+                             class="difficulty_bg_pattern"></div>
+                    </div>
+                </div>
+                <div name="Player Info Row"
+                     data-bind-class-toggle="inactive:!{{$data.hoveredlocation.bshowplayerinfo}}"
+                     class="bm_poi_hover_info_player_info_row small_text_2">
+                    <p name="Character Class"
+                       data-bind-value="{{$data.hoveredlocation.characterclass}}"
+                       class="bm_poi_hover_info_player_info_class">Character Class
+                    </p>
+                    <p name="Character Level"
+                       data-bind-value="{{$data.hoveredlocation.characterlevel}}"
+                       class="small_text_1 med_text_2 bm_poi_hover_info_player_info_level">Lvl 1
+                    </p>
+                </div>
+            </div>
+            <div name="Bottom Divider"
+                 class="tooltip_line_separator"></div>
+            <div name="Content Bar"
+                 class="bm_poi_hover_info_content_bar">
+                <div name="Preview Image Container"
+                     data-bind-class-toggle="inactive:!{{$data.hoveredlocation.busepreviewimage}}"
+                     class="bm_poi_hover_info_image_container">
+                    <div name="Preview Image"
+                         data-bind-style-background-image-url="{{$data.hoveredlocation.previewimagepath}}"
+                         class="bm_poi_hover_info_image tooltip_image"></div>
+                </div>
+                <div name="Bottom Divider"
+                     data-bind-class-toggle="inactive:!{{$data.hoveredlocation.busepreviewimage}}"
+                     class="tooltip_line_separator"></div>
+                <div name="Requirements"
+                     gue-comment="Only Shown on mission waypoints"
+                     data-bind-class-toggle="inactive:{{$data.hoveredlocation.bhasrequirements}} || !{{$data.hoveredlocation.bshowmissioninfo}}"
+                     class="bm_poi_hover_info_requirements">
+                    <div name="Backing"
+                         class="bm_poi_hover_info_requirements_bg"></div>
+                    <div name="Ender"
+                         class="bm_poi_hover_info_requirements_ender left"></div>
+                    <div name="Ender"
+                         class="bm_poi_hover_info_requirements_ender right"></div>
+                    <div name="Content"
+                         class="bm_poi_hover_info_requirements_cntr">
+                        <div name="Icon"
+                             class="bm_poi_hover_info_requirements_icon tint_color_locked"></div>
+                        <p name="Text"
+                           data-l10n-id="BigMap_RequirementsNotMet"
+                           class="bm_poi_hover_info_requirements_text small_text_2">Requirements not met</p>
+                    </div>
+                </div>
+                <div name="Locked"
+                     gue-comment="Only Shown on mission waypoints"
+                     data-bind-class-toggle="inactive:!{{$data.hoveredlocation.bactionslocked}};dlclocked:{{$data.hoveredlocation.bdlclocked}}"
+                     class="bm_poi_hover_info_requirements">
+                    <div name="Backing"
+                         class="bm_poi_hover_info_requirements_bg"></div>
+                    <div name="Ender"
+                         class="bm_poi_hover_info_requirements_ender left"></div>
+                    <div name="Ender"
+                         class="bm_poi_hover_info_requirements_ender right"></div>
+                    <div name="Content"
+                         class="bm_poi_hover_info_requirements_cntr">
+                        <div name="Icon"
+                             class="bm_poi_hover_info_locked_icon"></div>
+                        <p name="Text"
+                           data-l10n-id="BigMap_RequirementsNotMet"
+                           data-bind-value="{{$data.hoveredlocation.lockedmessage}}"
+                           class="bm_poi_hover_info_requirements_text small_text_2">Locekd message that can go up to two lines</p>
+                    </div>
+                </div>
+                <p name="Description"
+                   data-bind-class-toggle="inactive:{{$data.hoveredlocation.description}}.length < 1"
+                   data-bind-markup="{{$data.hoveredlocation.description}}"
+                   class="bm_poi_hover_info_description tooltip_content_body_text small_text_2">POI Description Text
+                </p>
+                <div name="Traits Container"
+                     data-bind-class-toggle="inactive:{{$data.hoveredlocation}}.traitnames.length < 1"
+                     class="small_text_2 bm_poi_hover_info_traits_row">
+                    <div name="Category Divider"
+                         class="category_divider flex_start_margin">
+                        <div name="blue line"
+                             class="cat_divider_header_line"></div>
+                        <div name="Title"
+                             data-l10n-id="UIBigMap_Modifiers"
+                             class="cat_divider_title small_text_2">Modifiers
+                        </div>
+                        <div name="bg details"
+                             class="cat_divider_bg">
+                            <div name="arrow"
+                                 class="cat_divider_arrow"></div>
+                            <div name="dashes pattern"
+                                 class="cat_divider_dashes_pattern"></div>
+                            <div name="blue line"
+                                 class="cat_divider_blue_line_2"></div>
+                        </div>
+                    </div>
+                    <div name="ModifierList"
+                         class="bm_poi_hover_info_traits_list">
+                        <div name="trait icon"
+                             class="bm_trait_icon"></div>
+                        <div name="modifier containers"
+                             class="bm_poi_hover_info_modifier_cntr">
+                            <div name="Trait Entry"
+                                 gue-comment="Only Shown on mission waypoints"
+                                 data-bind-for="trait:{{$data.hoveredlocation}}.traitnames"
+                                 class="bm_poi_hover_info_traits_entry">
+                                <div name="Content"
+                                     class="bm_poi_hover_info_traits_cntr">
+                                    <p name="Text"
+                                       data-bind-value="{{trait}}"
+                                       class="small_text_2 bm_poi_hover_info_traits_text">Modifier Name</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div name="ContainsRow"
+                     data-bind-class-toggle="inactive:{{$data.hoveredlocation}}.containsiconpaths.length < 1"
+                     class="bm_poi_hover_info_contains_row small_text_2">
+                    <p name="Text"
+                       data-l10n-id="UIBigMap_Contains"
+                       class="bm_poi_hover_info_contains_text">Contains:</p>
+                    <div name="Content Icons"
+                         class="bm_poi_hover_info_contains_icon_wrapper">
+                        <div name="Content Icon"
+                             data-bind-style-background-image-url="{{IconPath}}"
+                             data-bind-for="IconPath:{{$data.hoveredlocation}}.containsiconpaths"
+                             class="bm_poi_hover_info_contains_icon"></div>
+                    </div>
+                </div>
+                <div name="Rewards Info"
+                     data-bind-class-toggle="inactive:{{$data.hoveredlocation.rewards}}.rewardlist.length <= 0"
+                     class="small_text_2 bm_poi_hover_info_rewards_info">
+                    <div name="Category Divider"
+                         class="category_divider flex_start_margin">
+                        <div name="blue line"
+                             class="cat_divider_header_line"></div>
+                        <div name="Title"
+                             data-l10n-id="RewardsText"
+                             class="cat_divider_title small_text_2">REWARDS</div>
+                        <div name="bg details"
+                             class="cat_divider_bg">
+                            <div name="arrow"
+                                 class="cat_divider_arrow"></div>
+                            <div name="dashes pattern"
+                                 class="cat_divider_dashes_pattern"></div>
+                            <div name="blue line"
+                                 class="cat_divider_blue_line_2"></div>
+                        </div>
+                    </div>
+                    <gbx-component name="oak_rewards"
+                                   gbx-component-id="oak_rewards"
+                                   class="oak_rewards_comp"></gbx-component>
+                </div>
+            </div>
+            <div name="Actions Bar"
+                 data-bind-class-toggle="inactive:{{$data.hoveredlocation.actions}}.length < 1"
+                 class="bm_poi_hover_info_action_bar tooltip_button_glyph_wrapper">
+                <div name="Actions Wrapper"
+                     data-bind-class-toggle="inactive:{{$data.hoveredlocation.actions}}.length < 1"
+                     class="bm_poi_hover_info_actions_wrapper inactive">
+                    <div name="Actions Container"
+                         data-bind-for="action:{{$data.hoveredlocation.actions}}"
+                         class="bm_poi_hover_info_actions">
+                        <gbx-glyph action=""
+                                   submap=""
+                                   name="Ico_Glyph"
+                                   data-bind-glyph-action="{{action.glyph}}"
+                                   class="Ico_Glyph"></gbx-glyph>
+                        <p name="Action Description"
+                           data-bind-value="{{action.actiontext}}"
+                           class="tooltip_button_glyph_text small_text_2">Action Text
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </gbx-tooltip>
+    <div name="No signal Panel"
+         data-bind-class-toggle="invisible:{{$data.bmapenabled}}||{{$data.bsupressnosignal}}"
+         class="bm_nosignal">
+        <div name="Wrapper"
+             class="bigmap_wrapper full_size menu_screen_boundaries temp_bigmap_padding bm_nosignal_wrapper">
+            <div name="No Signal Image"
+                 class="bm_nosignal_image"></div>
+            <p name="No Signal Text Wrapper"
+               data-l10n-id="UIBigMap_NoSignal"
+               class="bm_nosignal_text">No Signal</p>
+          <div name="Padding"
+             class="bigmap_padding full_relative">
+             <div name="Prompt Map Switch"
+               data-bind-if="!{{$data.bshowlegend}} && !$widget.bExplore && !{{$data.bonoverworld}}"
+               data-bind-class-toggle="endgame:{{$data.bshowendgamecontent}}"
+               class="prompt_map_switch_container"
+               data-bind-click="$widget.OnViewOverworld(Event)">
+               
+               <gbx-component name="oak_button"
+                    gbx-component-id="oak_button"
+                    class="prompt_map_switch_btn bm_mouseblocking"></gbx-component>
+               <div name="textContainer"
+                    class="promt_map_switch_text_cntr">
+                    <gbx-glyph action="action_ui_bigmap_viewkairos"
+                         submap=""
+                         name="Ico_Glyph"
+                         class="Ico_Glyph"></gbx-glyph>
+                    <p name="Text"
+                         data-l10n-id="UIBigMap_ViewKairos"
+                         class="prompt_map_switch_text small_text_1">Switch to Electi Plateau</p>
+               </div>
+               </div>
+          </div>
+        </div>
+    </div>
+</widget-bigmap>
+<script src="coui://uiresources/_shared/data/shared_animations.data"></script>
+<link href="coui://uiresources/menu_bigmap/css/menu_bigmap.css"
+      type="text/css"
+      rel="stylesheet" />
+<script src="coui://uiresources/menu_bigmap/js/menu_bigmap.js"></script>
+<script src="coui://uiresources/bl4instanttabs/loader.js"></script>
+<script src="coui://uiresources/menu_bigmap/data/menu_bigmap.data"></script>

@@ -1,0 +1,607 @@
+{
+ "air-raider-scremulous": {
+  "missions": [
+   "zoneactivity_dlc1_fuelsiphon1"
+  ],
+  "unlockables": [
+   "sharedprogress_cowbell.zoneactivity_fuelsiphon1"
+  ]
+ },
+ "arjay": {
+  "missions": [
+   "mission_main_cityepilogue"
+  ],
+  "unlockables": []
+ },
+ "axemaul": {
+  "missions": [
+   "zoneactivity_city_mine1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_augermines_city_1"
+  ]
+ },
+ "baby-grunt": {
+  "missions": [
+   "zoneactivity_shatteredlands_drillsite1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_shatteredlands_1"
+  ]
+ },
+ "bango": {
+  "missions": [
+   "zoneactivity_shatteredlands_drillsite2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_shatteredlands_2"
+  ]
+ },
+ "betamaxxx": {
+  "missions": [
+   "mission_dlc_harp"
+  ],
+  "unlockables": []
+ },
+ "big-bada-boom-drone": {
+  "missions": [
+   "zoneactivity_lockdown_jungle"
+  ],
+  "unlockables": [
+   "sharedprogress_harmonica.zoneactivity_tediorelockdown1"
+  ]
+ },
+ "big-oil": {
+  "missions": [
+   "zoneactivity_dlc1_fuelsiphon2"
+  ],
+  "unlockables": [
+   "sharedprogress_cowbell.zoneactivity_fuelsiphon2"
+  ]
+ },
+ "bio-bulkhead": {
+  "missions": [
+   "mission_main_grasslands2b"
+  ],
+  "unlockables": []
+ },
+ "bio-thresher-omega": {
+  "missions": [
+   "mission_side_whatlurksbeneath"
+  ],
+  "unlockables": []
+ },
+ "blackgrin": {
+  "missions": [
+   "zoneactivity_grotto_lava"
+  ],
+  "unlockables": [
+   "sharedprogress_harmonica.zoneactivity_tedioregrotto2"
+  ]
+ },
+ "bloomreaper-the-invincible": {
+  "missions": [
+   "mission_dlc_raid1"
+  ],
+  "unlockables": []
+ },
+ "bore-tex": {
+  "missions": [
+   "mission_dlc_cello"
+  ],
+  "unlockables": []
+ },
+ "brain-zane": {
+  "missions": [
+   "mission_dlc_mandolin"
+  ],
+  "unlockables": []
+ },
+ "bramblesong": {
+  "missions": [
+   "zoneactivity_mountains_mine2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_augermines_mountains_2"
+  ]
+ },
+ "callis-the-ripper-queen": {
+  "missions": [
+   "mission_main_shatteredlands3"
+  ],
+  "unlockables": []
+ },
+ "callous-harbinger-of-annihilating-death": {
+  "missions": [
+   "zoneactivity_mountains_orderbunker2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_orderbunkers_mountains_2"
+  ]
+ },
+ "captain-willis": {
+  "missions": [
+   "mission_main_cowbell5"
+  ],
+  "unlockables": []
+ },
+ "chiselbella": {
+  "missions": [
+   "mission_dlc_cello"
+  ],
+  "unlockables": []
+ },
+ "cl34n-r": {
+  "missions": [
+   "mission_dlc_mandolin"
+  ],
+  "unlockables": []
+ },
+ "colonel-crash": {
+  "missions": [
+   "mission_main_cowbell4"
+  ],
+  "unlockables": []
+ },
+ "core-observer": {
+  "missions": [
+   "zoneactivity_grasslands_orderbunker1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_orderbunkers_grasslands_1"
+  ]
+ },
+ "corporal-brennan": {
+  "missions": [
+   "mission_main_cowbell2"
+  ],
+  "unlockables": []
+ },
+ "crazed-earl": {
+  "missions": [
+   "mission_main_cowbell3"
+  ],
+  "unlockables": []
+ },
+ "directive-0": {
+  "missions": [
+   "zoneactivity_city_orderbunker1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_orderbunkers_city_1"
+  ]
+ },
+ "divisioner": {
+  "missions": [
+   "zoneactivity_mountains_orderbunker1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_orderbunkers_mountains_1"
+  ]
+ },
+ "dr-elena-smith": {
+  "missions": [
+   "mission_main_harmonica3_theatre"
+  ],
+  "unlockables": []
+ },
+ "drang": {
+  "missions": [
+   "mission_dlc_cello"
+  ],
+  "unlockables": []
+ },
+ "drilla-killa": {
+  "missions": [
+   "zoneactivity_grotto_jungle"
+  ],
+  "unlockables": [
+   "sharedprogress_harmonica.zoneactivity_tedioregrotto1"
+  ]
+ },
+ "driller-hole": {
+  "missions": [
+   "mission_main_shatteredlands2"
+  ],
+  "unlockables": []
+ },
+ "ducky": {
+  "missions": [
+   "mission_main_harmonica3_lava"
+  ],
+  "unlockables": []
+ },
+ "experiment-1709": {
+  "missions": [
+   "mission_side_belowthesurface"
+  ],
+  "unlockables": []
+ },
+ "experiment-42": {
+  "missions": [
+   "mission_side_belowthesurface"
+  ],
+  "unlockables": []
+ },
+ "experiment-c-23": {
+  "missions": [
+   "mission_micro_managerhand2_tediore"
+  ],
+  "unlockables": []
+ },
+ "f1x-r": {
+  "missions": [
+   "mission_dlc_mandolin"
+  ],
+  "unlockables": []
+ },
+ "fractis": {
+  "missions": [
+   "zoneactivity_shatteredlands_orderbunker1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_orderbunkers_shatteredlands_1"
+  ]
+ },
+ "frank-the-furnace": {
+  "missions": [
+   "zoneactivity_grasslands_drillsite2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_grasslands_2"
+  ]
+ },
+ "genone": {
+  "missions": [
+   "mission_side_agreatdisturbance"
+  ],
+  "unlockables": []
+ },
+ "gruntabulous-vork": {
+  "missions": [
+   "zoneactivity_shatteredlands_drillsite1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_shatteredlands_1"
+  ]
+ },
+ "hank-the-welder": {
+  "missions": [
+   "zoneactivity_grasslands_drillsite2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_grasslands_2"
+  ]
+ },
+ "horace": {
+  "missions": [
+   "mission_main_grasslands1"
+  ],
+  "unlockables": []
+ },
+ "hybrid-thresher": {
+  "missions": [
+   "mission_dlc_viola"
+  ],
+  "unlockables": []
+ },
+ "idolator-sol": {
+  "missions": [
+   "mission_main_grasslands3"
+  ],
+  "unlockables": []
+ },
+ "infamous-dave": {
+  "missions": [
+   "mission_dlc_harp"
+  ],
+  "unlockables": []
+ },
+ "jr-manager-warrant-baggett": {
+  "missions": [
+   "mission_main_harmonica2b"
+  ],
+  "unlockables": []
+ },
+ "kolavalin": {
+  "missions": [
+   "mission_micro_managerhand1_pangolin"
+  ],
+  "unlockables": []
+ },
+ "leader-willem": {
+  "missions": [
+   "mission_side_electifactionmission3"
+  ],
+  "unlockables": []
+ },
+ "lieutenant-bume": {
+  "missions": [
+   "mission_side_harmonica_microplastics"
+  ],
+  "unlockables": []
+ },
+ "lieutenant-harmony": {
+  "missions": [
+   "mission_main_harmonica4"
+  ],
+  "unlockables": []
+ },
+ "lil-grunt": {
+  "missions": [
+   "zoneactivity_shatteredlands_drillsite1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_shatteredlands_1"
+  ]
+ },
+ "logistics-manager-reyes": {
+  "missions": [
+   "mission_main_harmonica3_logistics"
+  ],
+  "unlockables": []
+ },
+ "maxxxsupremenoolives": {
+  "missions": [
+   "mission_dlc_harp"
+  ],
+  "unlockables": []
+ },
+ "megan": {
+  "missions": [
+   "mission_main_harmonica3_hotel"
+  ],
+  "unlockables": []
+ },
+ "mimicron": {
+  "missions": [
+   "zoneactivity_grasslands_orderbunker2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_orderbunkers_grasslands_2"
+  ]
+ },
+ "minister-screw": {
+  "missions": [
+   "mission_dlc_banjo"
+  ],
+  "unlockables": []
+ },
+ "moon-maddened-callis": {
+  "missions": [
+   "mission_main_elpis"
+  ],
+  "unlockables": []
+ },
+ "pango": {
+  "missions": [
+   "zoneactivity_shatteredlands_drillsite2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_shatteredlands_2"
+  ]
+ },
+ "primordial-guardian-inceptus": {
+  "missions": [
+   "mission_side_grasslandsvault"
+  ],
+  "unlockables": []
+ },
+ "primordial-guardian-origo": {
+  "missions": [
+   "mission_side_vault_glide"
+  ],
+  "unlockables": []
+ },
+ "primordial-guardian-radix": {
+  "missions": [
+   "mission_side_resonatorvault"
+  ],
+  "unlockables": []
+ },
+ "primordial-guardian-timekeeper": {
+  "missions": [
+   "mission_main_city3"
+  ],
+  "unlockables": []
+ },
+ "relaxmech": {
+  "missions": [
+   "mission_main_harmonica3_spa"
+  ],
+  "unlockables": []
+ },
+ "rocken-roller": {
+  "missions": [
+   "zoneactivity_shatteredlands_mine2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_augermines_shatteredlands_2"
+  ]
+ },
+ "saddleback": {
+  "missions": [
+   "zoneactivity_mountains_drillsite1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_mountains_1"
+  ]
+ },
+ "sal-the-engineer": {
+  "missions": [
+   "zoneactivity_grasslands_drillsite2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_grasslands_2"
+  ]
+ },
+ "shadowpelt": {
+  "missions": [
+   "zoneactivity_mountains_mine1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_augermines_mountains_1"
+  ]
+ },
+ "sidney-pointylegs": {
+  "missions": [
+   "zoneactivity_grasslands_drillsite1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_grasslands_1"
+  ]
+ },
+ "skank-eyes": {
+  "missions": [
+   "mission_dlc_harp"
+  ],
+  "unlockables": []
+ },
+ "skull-orchid": {
+  "missions": [
+   "zoneactivity_shatteredlands_mine1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_augermines_shatteredlands_1"
+  ]
+ },
+ "skyspanner-kratch": {
+  "missions": [
+   "mission_main_mountains1"
+  ],
+  "unlockables": []
+ },
+ "sludgemaw": {
+  "missions": [
+   "grasslands_survivalists02"
+  ],
+  "unlockables": []
+ },
+ "splashzone": {
+  "missions": [
+   "mission_main_beach",
+   "mission_main_grasslands1"
+  ],
+  "unlockables": []
+ },
+ "stone-demon": {
+  "missions": [
+   "mission_dlc_cello"
+  ],
+  "unlockables": []
+ },
+ "sturm": {
+  "missions": [
+   "mission_dlc_cello"
+  ],
+  "unlockables": []
+ },
+ "subjugator-the-invincible": {
+  "missions": [
+   "mission_dlc_raid2"
+  ],
+  "unlockables": []
+ },
+ "test-zero": {
+  "missions": [
+   "mission_dlc_viola"
+  ],
+  "unlockables": []
+ },
+ "the-backhive": {
+  "missions": [
+   "zoneactivity_grasslands_mine2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_augermines_grasslands_2"
+  ]
+ },
+ "the-battle-wagon": {
+  "missions": [
+   "zoneactivity_mountains_drillsite2"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_mountains_2"
+  ]
+ },
+ "the-immortal-boneface": {
+  "missions": [
+   "zoneactivity_mountains_drillsite1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_drillsites_mountains_1"
+  ]
+ },
+ "the-oppressor": {
+  "missions": [
+   "mission_main_grasslands2"
+  ],
+  "unlockables": []
+ },
+ "the-penitent-steel": {
+  "missions": [
+   "zoneactivity_dlc1_bunker"
+  ],
+  "unlockables": [
+   "sharedprogress_cowbell.zoneactivity_bunker"
+  ]
+ },
+ "the-timekeeper": {
+  "missions": [
+   "mission_main_city3"
+  ],
+  "unlockables": []
+ },
+ "thol-the-invincible": {
+  "missions": [
+   "mission_dlc_raid2"
+  ],
+  "unlockables": []
+ },
+ "unreal-steel": {
+  "missions": [
+   "zoneactivity_lockdown_lava"
+  ],
+  "unlockables": [
+   "sharedprogress_harmonica.zoneactivity_tediorelockdown2"
+  ]
+ },
+ "vile-grasp": {
+  "missions": [
+   "mission_dlc_viola"
+  ],
+  "unlockables": []
+ },
+ "vile-lictor": {
+  "missions": [
+   "mission_main_mountains3"
+  ],
+  "unlockables": []
+ },
+ "vile-prototype": {
+  "missions": [
+   "mission_main_mountains2b"
+  ],
+  "unlockables": []
+ },
+ "vile-ted": {
+  "missions": [
+   "mission_side_belowthesurface"
+  ],
+  "unlockables": []
+ },
+ "voraxis": {
+  "missions": [
+   "zoneactivity_grasslands_mine1"
+  ],
+  "unlockables": [
+   "echo_upgrade_challenges.activity_augermines_grasslands_1"
+  ]
+ },
+ "vulkorr": {
+  "missions": [
+   "zoneactivity_harmonica_treasurehunt"
+  ],
+  "unlockables": []
+ }
+}

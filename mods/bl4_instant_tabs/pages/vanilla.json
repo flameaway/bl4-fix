@@ -1,0 +1,13 @@
+{
+    "game_build": "26007962",
+    "pages": {
+        "menu_equip/menu_equip.html": {
+            "sha1": "528e96af56f1747dca0f92c3e1e74f059116ff0e",
+            "source_pak": "pakchunk0-Windows_16_P.pak"
+        },
+        "menu_bigmap/menu_bigmap.html": {
+            "sha1": "f514ade256615a75c7c37532e0ba01340e8f6860",
+            "source_pak": "pakchunk0-Windows_23_P.pak"
+        }
+    }
+}

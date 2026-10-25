@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Loot Spawner (dev)"
+version = "0.1.0"
+description = "Dev only: spawn loot next to you for testing. Console: 'spawn lucky clover', 'spawn sm legendary x3', 'spawn classmod', 'spawn find <text>'."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

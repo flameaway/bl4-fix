@@ -1,0 +1,41 @@
+/* BL4 UVH Boss Teleport on the challenges menu's info card (challenges.js). */
+
+.bl4uvh_prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-top: 0.6rem;
+    pointer-events: none;
+}
+
+.bl4uvh_prompt .bl4uvh_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4uvh_key {
+    width: 3.2rem;
+    height: 3.2rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.bl4uvh_prompt .bl4uvh_text {
+    margin-left: 0.6rem;
+}
+
+.bl4uvh_prompt .bl4uvh_sub {
+    margin-left: 3.8rem;
+    opacity: 0.7;
+}
+
+.bl4uvh_prompt.bl4uvh_refused .bl4uvh_sub {
+    color: #ff6a5a;
+    opacity: 1;
+}
+
+.bl4uvh_prompt.bl4uvh_busy {
+    opacity: 0.5;
+}

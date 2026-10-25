@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Less Fog"
+version = "0.1.0"
+description = "Thin out the haze over the world: lower fog density and push it further away, live."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

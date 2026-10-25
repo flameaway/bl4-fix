@@ -1,0 +1,1217 @@
+/* Weapondex. Same look as the BL4 Mod Menu (the game's fonts and colours, the game's list buttons).
+   Gameface lays everything out with flexbox, so every container says its direction. Sizes in rem
+   like the game's stylesheets. Reloaded live by dex.js. */
+
+.bl4dex_hidden {
+    display: none !important;
+}
+
+.bl4dex_root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    /* Above the game's menus and the Mod Menu's screen (it opens from there too) */
+    z-index: 1000001;
+}
+
+.bl4dex_bg,
+.bl4dex_shade {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.bl4dex_shade {
+    background-color: rgba(2, 10, 16, 0.86);
+}
+
+.bl4dex_frame {
+    position: absolute;
+    left: 6rem;
+    right: 6rem;
+    top: 5rem;
+    bottom: 7rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4dex_below_tabs .bl4dex_frame {
+    top: 13rem;
+}
+
+.bl4dex_root p {
+    margin: 0;
+}
+
+/* region Header */
+
+.bl4dex_header {
+    flex: 0 0 8rem;
+    height: 8rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-bottom: 0.2rem solid rgba(63, 118, 157, 0.45);
+    margin-bottom: 1.6rem;
+}
+
+.bl4dex_root .bl4dex_title {
+    font-family: Industry-DemiBold;
+    font-size: 5.6rem;
+    color: #e4d9ce;
+    letter-spacing: 0.4rem;
+    margin-right: 4rem;
+}
+
+.bl4dex_progress {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-right: 3.6rem;
+}
+
+.bl4dex_stat_value {
+    font-family: Industry-DemiBold;
+    font-size: 2.8rem;
+    color: #00c6ff;
+}
+
+.bl4dex_stat_label {
+    font-family: Industry-Normal;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+    letter-spacing: 0.2rem;
+}
+
+.bl4dex_notice {
+    flex: 1 1;
+    font-family: Industry-Normal;
+    font-size: 1.8rem;
+    color: #ffbb00;
+    text-align: right;
+}
+
+/* endregion */
+/* region Tabs, search, sort */
+
+.bl4dex_bar {
+    flex: 0 0 5.6rem;
+    height: 5.6rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 1.2rem;
+}
+
+.bl4dex_tabs {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-right: 2rem;
+}
+
+.bl4dex_btn.list_btn {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 5.2rem;
+    height: 5.2rem;
+    min-height: 5.2rem;
+    max-height: 5.2rem;
+}
+
+.bl4dex_btn .button_inner {
+    position: relative;
+    z-index: 2;
+    padding: 0 2rem;
+    flex: 1 1;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+}
+
+.bl4dex_btn .button_txt {
+    font-family: Industry-DemiBold;
+    font-size: 2.3rem;
+    text-align: center;
+}
+
+.bl4dex_btn .list_btn_backing_cntr {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.bl4dex_tab.list_btn {
+    width: 20rem;
+    flex: 0 0 20rem;
+    margin-right: 1rem;
+}
+
+.bl4dex_tab.bl4dex_active .list_btn_backing_cntr {
+    background-color: rgba(0, 198, 255, 0.22);
+    border-bottom: 0.4rem solid #00c6ff;
+}
+
+.bl4dex_tab.bl4dex_active .button_txt {
+    color: #e4d9ce;
+}
+
+.bl4dex_search {
+    flex: 1 1;
+    height: 5.2rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 1.6rem;
+    margin-right: 2rem;
+    background-color: rgba(3, 16, 25, 0.9);
+    border: 0.2rem solid rgba(63, 118, 157, 0.6);
+}
+
+.bl4dex_search:hover {
+    border-color: rgba(0, 198, 255, 0.8);
+}
+
+.bl4dex_search.bl4dex_typing {
+    border-color: #00c6ff;
+    background-color: rgba(0, 60, 85, 0.85);
+}
+
+.bl4dex_root .bl4dex_search_label {
+    font-family: Industry-DemiBold;
+    font-size: 1.6rem;
+    color: #00c6ff;
+    letter-spacing: 0.2rem;
+    margin-right: 1.6rem;
+}
+
+.bl4dex_search_text {
+    flex: 1 1;
+    font-family: Industry-DemiBold;
+    font-size: 2.3rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_search_text.bl4dex_placeholder {
+    font-family: Industry-Normal;
+    color: #6d7c80;
+}
+
+.bl4dex_search_clear {
+    padding: 0.4rem 1.2rem;
+    border: 0.15rem solid rgba(160, 174, 177, 0.5);
+}
+
+.bl4dex_search_clear:hover {
+    border-color: #ff7a61;
+}
+
+/* endregion */
+/* region Filter chips */
+
+.bl4dex_filters {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 1.2rem;
+}
+
+.bl4dex_chip_row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 0.6rem;
+}
+
+.bl4dex_row_label {
+    flex: 0 0 9rem;
+    width: 9rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+    letter-spacing: 0.2rem;
+}
+
+.bl4dex_chip {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0.5rem 1.3rem;
+    margin: 0 0.8rem 0.6rem 0;
+    background-color: rgba(3, 16, 25, 0.85);
+    border: 0.15rem solid rgba(63, 118, 157, 0.55);
+}
+
+.bl4dex_chip:hover {
+    border-color: #00c6ff;
+}
+
+.bl4dex_chip_text {
+    font-family: Industry-Normal;
+    font-size: 1.7rem;
+    color: #c9d3d5;
+}
+
+.bl4dex_chip.bl4dex_active {
+    background-color: rgba(0, 198, 255, 0.25);
+    border-color: #00c6ff;
+}
+
+.bl4dex_chip.bl4dex_active .bl4dex_chip_text {
+    color: #ffffff;
+    font-family: Industry-DemiBold;
+}
+
+.bl4dex_toggle {
+    margin-left: 1.6rem;
+}
+
+.bl4dex_sort {
+    flex: 0 0 auto;
+    height: 5.2rem;
+    margin: 0;
+    padding: 0 2rem;
+}
+
+/* endregion */
+/* region List */
+
+.bl4dex_body {
+    flex: 1 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.bl4dex_list {
+    flex: 1 1;
+    height: 100%;
+    max-height: 100%;
+    margin-right: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-y: scroll;
+}
+
+/* The list's scroll bar (dex.js scrollbar()) */
+.bl4dex_sbar {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1.2rem;
+    height: 100%;
+    margin-right: 2.4rem;
+    background-color: rgba(10, 30, 44, 0.75);
+    border-left: 0.1rem solid rgba(63, 118, 157, 0.4);
+    border-right: 0.1rem solid rgba(63, 118, 157, 0.4);
+}
+
+.bl4dex_sbar.bl4dex_sbar_off .bl4dex_sbar_handle {
+    display: none;
+}
+
+.bl4dex_sbar_handle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 4rem;
+    background-color: rgba(0, 198, 255, 0.55);
+}
+
+.bl4dex_sbar_handle:hover,
+.bl4dex_sbar_handle.bl4dex_sbar_drag {
+    background-color: rgba(0, 198, 255, 0.95);
+}
+
+.bl4dex_list > *,
+.bl4dex_details > * {
+    flex: 0 0 auto;
+}
+
+.bl4dex_entry {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 6.2rem;
+    min-height: 6.2rem;
+    padding: 0 1.6rem;
+    margin-bottom: 0.6rem;
+    background-color: rgba(10, 30, 44, 0.75);
+    border-left: 0.5rem solid rgba(63, 118, 157, 0.4);
+}
+
+.bl4dex_entry:hover {
+    background-color: rgba(0, 120, 160, 0.35);
+}
+
+.bl4dex_entry.bl4dex_selected {
+    background-color: rgba(0, 198, 255, 0.22);
+    border-left-color: #00c6ff;
+}
+
+/* Boss pictures: a thumbnail on each row, a large one atop the details */
+
+.bl4dex_boss_entry {
+    height: 8.4rem;
+    min-height: 8.4rem;
+    padding-left: 0.8rem;
+}
+
+.bl4dex_thumb,
+.bl4dex_portrait {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 20, 32, 0.8);
+    border: 0.12rem solid rgba(63, 118, 157, 0.45);
+}
+
+.bl4dex_thumb {
+    flex: 0 0 7.4rem;
+    width: 7.4rem;
+    height: 7.4rem;
+    margin-right: 1.4rem;
+}
+
+.bl4dex_portrait {
+    flex: 0 0 34rem;
+    width: 100%;
+    height: 34rem;
+    margin-bottom: 1.6rem;
+    background-image: radial-gradient(circle at 50% 60%, rgba(0, 120, 160, 0.35), rgba(0, 20, 32, 0.9) 70%);
+}
+
+.bl4dex_picture {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* Not beaten yet: a dark shape only */
+.bl4dex_silhouette {
+    filter: brightness(0);
+    opacity: 0.85;
+}
+
+.bl4dex_root .bl4dex_picture_missing {
+    font-family: Industry-DemiBold;
+    font-size: 3rem;
+    color: rgba(63, 118, 157, 0.6);
+}
+
+.bl4dex_root .bl4dex_portrait .bl4dex_picture_missing {
+    font-size: 8rem;
+}
+
+/* An item's header: name block on the left, its picture (the inventory's 2:1 thumbnail) right */
+.bl4dex_item_head {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    margin-bottom: 0.6rem;
+}
+
+.bl4dex_item_names {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4dex_item_picture {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 26rem;
+    width: 26rem;
+    height: 13rem;
+    margin-left: 1.6rem;
+    background-color: rgba(0, 20, 32, 0.8);
+    border: 0.12rem solid rgba(63, 118, 157, 0.45);
+    background-image: radial-gradient(circle at 50% 55%, rgba(0, 120, 160, 0.3), rgba(0, 20, 32, 0.9) 70%);
+}
+
+.bl4dex_root .bl4dex_item_picture .bl4dex_picture_missing {
+    font-size: 5rem;
+}
+
+/* The card's red (flavor) text and the item's unique effect */
+.bl4dex_root .bl4dex_red_text {
+    font-family: Industry-Medium;
+    font-size: 1.9rem;
+    color: #ff5a3c;
+    margin: 0.2rem 0;
+}
+
+.bl4dex_effect {
+    display: flex;
+    flex-direction: column;
+    margin: 0.4rem 0;
+    font-family: Industry-Normal;
+    font-size: 1.8rem;
+    color: #c9d3d5;
+}
+
+/* The game's markup renderer wraps text in its own elements with a large default size */
+.bl4dex_effect p,
+.bl4dex_effect span {
+    font-family: Industry-Normal;
+    font-size: 1.8rem;
+}
+
+.bl4dex_no {
+    flex: 0 0 7.4rem;
+    width: 7.4rem;
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #00c6ff;
+}
+
+.bl4dex_entry_main {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+.bl4dex_entry_name {
+    font-family: Industry-DemiBold;
+    font-size: 2.3rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_entry_sub {
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #8fa0a4;
+}
+
+.bl4dex_entry_side {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_root .bl4dex_tag {
+    font-family: Industry-Normal;
+    font-size: 1.4rem;
+    color: #a0aeb1;
+    padding: 0.3rem 0.8rem;
+    margin-left: 0.8rem;
+    border: 0.12rem solid rgba(160, 174, 177, 0.4);
+}
+
+.bl4dex_root .bl4dex_tag_beaten {
+    color: #6fe08a;
+    border-color: rgba(111, 224, 138, 0.6);
+    font-family: Industry-DemiBold;
+}
+
+.bl4dex_locked .bl4dex_entry_name,
+.bl4dex_locked .bl4dex_cell_title {
+    color: #56656a;
+    letter-spacing: 0.3rem;
+}
+
+.bl4dex_locked .bl4dex_no {
+    color: #3d6f85;
+}
+
+.bl4dex_rarity_bar {
+    flex: 0 0 0.6rem;
+    width: 0.6rem;
+    height: 4rem;
+    margin-right: 1.6rem;
+}
+
+.bl4dex_rarity_legendary {
+    background-color: #ff9b2e;
+}
+
+.bl4dex_rarity_pearlescent {
+    background-color: #8ff5e6;
+}
+
+.bl4dex_item_entry {
+    padding-left: 1rem;
+}
+
+.bl4dex_name_legendary {
+    color: #ffb55c;
+}
+
+.bl4dex_name_pearlescent {
+    color: #a9fff2;
+}
+
+.bl4dex_root .bl4dex_empty {
+    font-family: Industry-Normal;
+    font-size: 2rem;
+    color: #a0aeb1;
+    margin: 2rem;
+}
+
+/* endregion */
+/* region Details */
+
+.bl4dex_details {
+    /* Wide enough for two columns: a boss or item beside its drops or its item card (54.6rem) */
+    flex: 0 0 112rem;
+    width: 112rem;
+    height: 100%;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 2.4rem 2.8rem;
+    background-color: rgba(3, 16, 25, 0.88);
+    border-top: 0.3rem solid rgba(0, 198, 255, 0.6);
+    overflow-y: scroll;
+}
+
+.bl4dex_detail_no {
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #00c6ff;
+    letter-spacing: 0.2rem;
+}
+
+.bl4dex_root .bl4dex_detail_title {
+    font-family: Industry-DemiBold;
+    font-size: 4rem;
+    color: #e4d9ce;
+    margin: 0.4rem 0;
+}
+
+.bl4dex_root .bl4dex_detail_meta {
+    font-family: Industry-Normal;
+    font-size: 2rem;
+    color: #c9d3d5;
+    margin-bottom: 1rem;
+}
+
+.bl4dex_root .bl4dex_detail_status {
+    font-family: Industry-DemiBold;
+    font-size: 1.9rem;
+    color: #ff7a61;
+    margin-bottom: 0.8rem;
+}
+
+.bl4dex_root .bl4dex_detail_status.bl4dex_good {
+    color: #6fe08a;
+}
+
+/* Waypoint / Travel under a boss's status on its own page */
+.bl4dex_cols_boss .bl4dex_col_left .bl4dex_dropper_buttons {
+    margin-top: 0;
+    margin-bottom: 0.8rem;
+}
+
+.bl4dex_root .bl4dex_detail_note {
+    font-family: Industry-Normal;
+    font-size: 1.8rem;
+    color: #a0aeb1;
+    margin: 0.4rem 0;
+}
+
+.bl4dex_root .bl4dex_section {
+    font-family: Industry-DemiBold;
+    font-size: 1.7rem;
+    color: #00c6ff;
+    letter-spacing: 0.3rem;
+    margin: 2.2rem 0 1rem 0;
+    padding-bottom: 0.6rem;
+    border-bottom: 0.15rem solid rgba(63, 118, 157, 0.5);
+}
+
+.bl4dex_table {
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4dex_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 5.4rem;
+    padding: 0.4rem 0.8rem;
+    border-bottom: 0.1rem solid rgba(63, 118, 157, 0.25);
+}
+
+.bl4dex_row_head {
+    min-height: 3rem;
+}
+
+.bl4dex_row_head p {
+    font-family: Industry-DemiBold;
+    font-size: 1.4rem;
+    color: #a0aeb1;
+    letter-spacing: 0.1rem;
+}
+
+.bl4dex_row_link:hover {
+    background-color: rgba(0, 120, 160, 0.3);
+}
+
+.bl4dex_cell_name {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.bl4dex_cell_title {
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_cell_sub {
+    font-family: Industry-Normal;
+    font-size: 1.45rem;
+    color: #8fa0a4;
+}
+
+.bl4dex_cell_num {
+    flex: 0 0 9.5rem;
+    width: 9.5rem;
+    font-family: Industry-Normal;
+    font-size: 1.8rem;
+    color: #e4d9ce;
+    text-align: right;
+}
+
+/* endregion */
+/* region Footer and toast */
+
+.bl4dex_footer {
+    flex: 0 0 6.6rem;
+    height: 6.6rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 1.4rem;
+}
+
+.bl4dex_close.list_btn {
+    width: 22rem;
+    flex: 0 0 22rem;
+    margin-right: 3rem;
+}
+
+.bl4dex_hint {
+    font-family: Industry-Normal;
+    font-size: 1.9rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_toast {
+    position: absolute;
+    right: 0;
+    bottom: 1rem;
+    max-width: 90rem;
+    padding: 1.2rem 2.4rem;
+    font-family: Industry-DemiBold;
+    font-size: 2.1rem;
+    color: #e4d9ce;
+    background-color: rgba(3, 16, 25, 0.95);
+    border-left: 0.5rem solid #6fe08a;
+}
+
+/* endregion */
+
+/* Card stats of rolled items (rollSection in dex.js): tiles like the card's stat row, with the
+   card's own icons; three per row */
+.bl4dex_stats_head {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 1.6rem 0 0.8rem 0;
+    border-bottom: 0.15rem solid rgba(63, 118, 157, 0.5);
+}
+
+/* Above the card, the right column's first row: level with the left column's top */
+.bl4dex_stats_head.bl4dex_stats_head_card {
+    margin-top: 0;
+}
+
+.bl4dex_root .bl4dex_section.bl4dex_stats_title {
+    margin: 0;
+    border-bottom: none;
+}
+
+.bl4dex_roll_buttons {
+    display: flex;
+    flex-direction: row;
+    margin-bottom: 0.4rem;
+}
+
+.bl4dex_roll_buttons .bl4dex_chip {
+    margin: 0 0 0 0.8rem;
+    padding: 0.3rem 1rem;
+}
+
+.bl4dex_root .bl4dex_roll_buttons .bl4dex_chip_text {
+    font-size: 1.5rem;
+}
+
+.bl4dex_stat_grid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.bl4dex_stat_tile {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 33%;
+    padding: 0.5rem 0.4rem;
+}
+
+.bl4dex_stat_icon {
+    flex: 0 0 3rem;
+    width: 3rem;
+    height: 3rem;
+    margin-right: 0.8rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_stat_text {
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4dex_root .bl4dex_stat_value {
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_root .bl4dex_stat_label {
+    font-family: Industry-Normal;
+    font-size: 1.4rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_root .bl4dex_detail_note.bl4dex_bad {
+    color: #ff7a5c;
+}
+
+/* "Plus one of N part effects" and its Show all chip; the listed variants are dimmed */
+.bl4dex_variant_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.bl4dex_variant_row .bl4dex_chip {
+    margin: 0 0 0 1rem;
+    padding: 0.3rem 1rem;
+}
+
+.bl4dex_effect.bl4dex_variant {
+    opacity: 0.75;
+}
+
+/* A class mod's skills: name, points (or how many it can get), description */
+.bl4dex_skill {
+    display: flex;
+    flex-direction: column;
+    margin: 0.6rem 0;
+}
+
+.bl4dex_skill_head {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.bl4dex_root .bl4dex_skill_name {
+    font-family: Industry-DemiBold;
+    font-size: 1.9rem;
+    color: #ffffff;
+}
+
+.bl4dex_root .bl4dex_skill_points {
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #ffc84a;
+}
+
+.bl4dex_effect.bl4dex_skill_desc {
+    margin: 0.2rem 0 0 0;
+}
+
+/* A roll shown as the game's own item card (its markup and styles, our model) */
+.bl4dex_game_card {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    margin: 1rem 0;
+}
+
+.bl4dex_game_card .item_card_tooltip {
+    position: relative;
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Each stat's range over several rolls */
+.bl4dex_range_row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    margin: 0.2rem 0;
+}
+
+.bl4dex_root .bl4dex_range_label {
+    font-family: Industry-Normal;
+    font-size: 1.8rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_root .bl4dex_range_value {
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #ffffff;
+}
+
+/* The game's card widget placed in the dex: not where the HUD would put it */
+.bl4dex_game_card widget-item-card {
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+}
+
+/* The card CSS moves the card for where the HUD and menus show it (translateX(-50%)
+   translateY(-100%) translateZ(0), scaled): in the dex it sits in the page's flow and scrolls with it */
+.bl4dex_root .bl4dex_game_card .item_card_wrapper,
+.bl4dex_root .bl4dex_game_card .item_card,
+.bl4dex_root .bl4dex_game_card .item_card_tooltip,
+.bl4dex_root .bl4dex_game_card widget-item-card {
+    transform: none !important;
+    left: 0 !important;
+    top: 0 !important;
+}
+
+/* Opacity too: the tooltip sets visibility: visible on itself (above), which beat the holder's
+   hidden (seen with the dev/ui_live probe), so the card showed before its data was bound */
+.bl4dex_root .bl4dex_game_card.bl4dex_card_pending {
+    visibility: hidden;
+    opacity: 0;
+}
+
+/* The details pane's two columns */
+.bl4dex_cols {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+}
+
+.bl4dex_col_left {
+    flex: 1 1 0;
+    min-width: 0;
+    margin-right: 2.4rem;
+}
+
+.bl4dex_col_right {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+.bl4dex_cols_item .bl4dex_col_right {
+    flex: 0 0 56rem;
+    width: 56rem;
+}
+
+.bl4dex_cols_boss .bl4dex_col_left {
+    flex: 0 0 40rem;
+    width: 40rem;
+}
+
+.bl4dex_cols_boss .bl4dex_col_right {
+    flex: 1 1 0;
+}
+
+.bl4dex_root .bl4dex_section.bl4dex_section_top {
+    margin-top: 0;
+}
+
+/* An item's picture above its name, the width of the column */
+.bl4dex_cols_item .bl4dex_col_left .bl4dex_item_picture {
+    flex: 0 0 auto;
+    width: 100%;
+    height: 22rem;
+    margin-bottom: 1.2rem;
+}
+
+.bl4dex_cols_item .bl4dex_game_card {
+    margin-top: 0;
+    justify-content: flex-start;
+}
+
+/* A boss's drop rows: the item's inventory picture (2:1) left of its name */
+.bl4dex_drop_thumb {
+    flex: 0 0 9rem;
+    width: 9rem;
+    height: 4.5rem;
+    margin-right: 1rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_drop_thumb.bl4dex_drop_thumb_head {
+    height: 0;
+}
+
+/* Columns keep their content at the top: nothing in them grows into the height the other
+   column gives the row (the name block used to, leaving a gap above "Dropped by") */
+.bl4dex_col_left,
+.bl4dex_col_right {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-self: flex-start;
+}
+
+.bl4dex_col_left > *,
+.bl4dex_col_right > * {
+    flex: 0 0 auto;
+}
+
+/* The hover card: the item card beside the row the mouse is over */
+.bl4dex_hover_card {
+    position: absolute;
+    z-index: 50;
+    pointer-events: none;
+    width: 56rem;
+}
+
+.bl4dex_hover_card.bl4dex_hidden {
+    display: none;
+}
+
+.bl4dex_hover_card .bl4dex_game_card {
+    margin: 0;
+}
+
+/* region Bosses beside items */
+
+/* An item list entry's name with the item's small picture after it; the bosses that drop it sit
+   at the entry's right end */
+.bl4dex_entry_name_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+}
+
+.bl4dex_mini_item {
+    flex: 0 0 6.8rem;
+    width: 6.8rem;
+    height: 3.4rem;
+    margin-left: 1rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_mini_bosses {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_mini_boss {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 3.4rem;
+    width: 3.4rem;
+    height: 3.4rem;
+    margin-left: 0.8rem;
+    background-color: rgba(0, 20, 32, 0.8);
+    border: 0.1rem solid rgba(63, 118, 157, 0.45);
+}
+
+.bl4dex_root .bl4dex_mini_boss .bl4dex_picture_missing {
+    font-size: 1.6rem;
+}
+
+.bl4dex_root .bl4dex_mini_more {
+    margin-left: 0.6rem;
+    font-family: Industry-Normal;
+    font-size: 1.4rem;
+    color: #8fa0a4;
+}
+
+/* An item's "Dropped by": one block per boss, its picture left of its name, chances and buttons */
+.bl4dex_dropper {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    padding: 0.8rem 0;
+    border-bottom: 0.1rem solid rgba(63, 118, 157, 0.25);
+}
+
+.bl4dex_dropper_picture {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 13rem;
+    width: 13rem;
+    height: 13rem;
+    margin-right: 1.4rem;
+    background-color: rgba(0, 20, 32, 0.8);
+    border: 0.12rem solid rgba(63, 118, 157, 0.45);
+    background-image: radial-gradient(circle at 50% 60%, rgba(0, 120, 160, 0.35), rgba(0, 20, 32, 0.9) 70%);
+}
+
+.bl4dex_dropper_picture:hover {
+    border-color: #00c6ff;
+}
+
+.bl4dex_root .bl4dex_dropper_picture .bl4dex_picture_missing {
+    font-size: 4rem;
+}
+
+.bl4dex_dropper_info {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.bl4dex_dropper_head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_dropper_name {
+    font-family: Industry-DemiBold;
+    font-size: 2.1rem;
+    color: #eb7300;
+}
+
+.bl4dex_dropper_head:hover .bl4dex_dropper_name {
+    color: #ffa040;
+}
+
+.bl4dex_locked .bl4dex_dropper_name {
+    color: #56656a;
+    letter-spacing: 0.3rem;
+}
+
+.bl4dex_dropper_head .bl4dex_tag {
+    margin-left: 1rem;
+}
+
+/* Per kill / Big Encore, label column fixed so the chances line up (like the item cards' rows) */
+.bl4dex_chance {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 0.4rem;
+}
+
+.bl4dex_chance_icon {
+    flex: 0 0 2.4rem;
+    width: 2.4rem;
+    height: 2.4rem;
+    margin-right: 0.8rem;
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+}
+
+.bl4dex_root .bl4dex_chance_label {
+    flex: 0 0 11rem;
+    width: 11rem;
+    font-family: Industry-Medium;
+    font-size: 1.7rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_root .bl4dex_chance_encore .bl4dex_chance_label {
+    color: #2d95ca;
+}
+
+.bl4dex_root .bl4dex_chance_rate {
+    flex: 0 0 7rem;
+    width: 7rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_root .bl4dex_chance_note {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_dropper_buttons {
+    display: flex;
+    flex-direction: row;
+    margin-top: 0.7rem;
+}
+
+.bl4dex_dropper_buttons .bl4dex_chip {
+    margin: 0 0.8rem 0 0;
+    padding: 0.3rem 1.1rem;
+}
+
+.bl4dex_root .bl4dex_dropper_buttons .bl4dex_chip_text {
+    font-size: 1.5rem;
+}
+
+.bl4dex_root .bl4dex_dropper_pinned {
+    margin-top: 0.4rem;
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #7dcd75;
+}
+
+/* endregion */

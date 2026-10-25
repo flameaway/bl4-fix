@@ -1,0 +1,527 @@
+<widget-item-card name="Widget"
+                  class="widget hud_master_perspective">
+    <br />
+    <gbx-tooltip id="item_card_tooltip"
+                 boundary-type="navbar_secondary"
+                 always-update-quadrant=""
+                 tooltip-active-class="tooltip_active"
+                 data-bind-class-toggle="abbr_scale_down:{{$data.abbreviated}}"
+                 class="item_card_tooltip tooltip_container tooltip_text_shadow">
+        <div name="Container"
+             data-bind-class="{{$data.itemtype}}"
+             class="item_card_wrapper">
+            <div name="Item card"
+                 data-bind-class="{{$data.itembasetype}}"
+                 gue-comment="original property:\ntransform translate x -27.3"
+                 class="item_card">
+                <div name="Item of the Day"
+                     class="ic_iotd_banner_container inactive">
+                    <div name="rarity backing"
+                         class="ic_iotd_backing rarity bright"></div>
+                    <div name="zane logo"
+                         class="ic_iotd_zane rarity bright"></div>
+                    <div name="Text"
+                         class="ic_iotd_text">
+                        <p name="Text">ITEM OF THE DAY</p>
+                    </div>
+                </div>
+                <div name="Banner container"
+                     data-bind-class="{{$data.bannertype}}"
+                     data-bind-if="{{$data.bannertype}} != ''"
+                     gue-comment="0 opacity by default"
+                     class="item_card_banner_cntr">
+                    <div name="backing"
+                         data-bind-class="{{$data.bannertype}}"
+                         class="item_car_banner_backing">
+                        <div name="Banner content"
+                             data-bind-class="{{$data.bannertype}}"
+                             class="item_card_banner">
+                            <div name="Icon"
+                                 data-bind-class="{{$data.bannertype}}"
+                                 class="item_card_banner_icon"></div>
+                            <div name="text"
+                                 data-bind-markup="{{$data.bannertext}}"
+                                 data-bind-class="{{$data.bannertype}}"
+                                 class="item_card_banner_text"></div>
+                        </div>
+                    </div>
+                </div>
+                <div name="Item Card Container"
+                     gue-color="#EE0"
+                     class="item_card_ctr">
+                    <div name="Background_container"
+                         class="item_card_bkg_cntr">
+                        <div name="background"
+                             class="item_card_bkg"></div>
+                        <div name="lines"
+                             gue-comment="These should have rarity color applied\nwhen the card is ANOINTED"
+                             class="item_card_bkg_lines"></div>
+                    </div>
+                    <div name="Top Half"
+                         data-bind-if="!{{$data.horizontalsplit}} || !{{$data.cardisflipped}}"
+                         class="item_card_top_half">
+                        <div name="Header container"
+                             data-bind-if="!{{$data.abbreviated}}"
+                             class="item_card_header_cntr">
+                            <div name="Content"
+                                 class="item_card_header">
+                                <div name="Rarity FUI"
+                                     class="item_card_rarity_bkg">
+                                    <div name="dark rarity bkg"
+                                         data-bind-class="'tint-'+{{$data.rarityident}}"
+                                         class="rarity item_card_rarity_bkg_dim">
+                                        <div name="top line"
+                                             class="item_card_header_top_fui"></div>
+                                        <div name="gradient"
+                                             class="item_card_rarity_gradient"></div>
+                                    </div>
+                                    <div name="FUI"
+                                         data-bind-class="'tint-'+{{$data.rarityident}}"
+                                         class="item_card_rarity_fui bright rarity"></div>
+                                    <div name="pearl texture"
+                                         data-bind-class="{{$data.rarityident}}"
+                                         class="ic_pearl_texture"></div>
+                                </div>
+                                <div name="manufacturer logomark"
+                                     data-bind-class="{{$data.manufacturer}}"
+                                     class="ic_header_manufacturer_bkg"></div>
+                                <div name="thumbnail and level container"
+                                     class="ic_thumb_lvl_cntr">
+                                    <div name="Level"
+                                         data-bind-if="{{$data.showlevel}}"
+                                         data-bind-class-toggle="lowlevel:{{$data.leveltoolow}}"
+                                         class="item_card_lvl_cntr">
+                                        <div name="low level backing"
+                                             class="ic_low_level_bkg"></div>
+                                        <p name="Level"
+                                           data-bind-value="{{$data.level}}"
+                                           data-bind-class-toggle="lowlevel:{{$data.leveltoolow}}"
+                                           class="item_card_lvl_value item_card_text_cream">999</p>
+                                    </div>
+                                    <div name="Thumbnail"
+                                         data-bind-style-background-image-url="{{$data.thumbnailicon}}"
+                                         data-bind-class-toggle="class_mod_thumb_size:{{$data.itemtype}} == 'classmod'"
+                                         data-bind-class="{{$data.bannertype}}"
+                                         class="item_card_thumbnail">
+                                        <div name="class_mod_icon"
+                                             data-bind-if="{{$data.itemtype}} == 'classmod'"
+                                             data-bind-class="{{$data.bannertype}}"
+                                             class="class_mod_icon"></div>
+                                    </div>
+                                </div>
+                                <div name="Top Left Container"
+                                     data-bind-class="{{$data.headline.comparison}}"
+                                     class="top_left_cntr">
+                                    <div name="Content"
+                                         class="top_left_cntr_content">
+                                        <div name="name and rarity container"
+                                             data-bind-class-toggle="inactive:{{$data.abbreviated}}"
+                                             class="item_card_name_rarity_container">
+                                            <p name="Name"
+                                               data-bind-value="{{$data.name}}"
+                                               class="item_card_name item_card_text_cream"></p>
+                                        </div>
+                                        <div name="rarity and type container"
+                                             class="ic_rarity_type_cntr">
+                                            <div name="rarity pip container"
+                                                 data-bind-if="{{$data.showrarity}}"
+                                                 class="item_card_rarity_pip_container">
+                                                <gbx-component name="rarity_pips"
+                                                               id="rarity_pips"
+                                                               data-bind-oak-rarity="{{$data.rarityident}}"
+                                                               gbx-component-id="rarity_pips"></gbx-component>
+                                            </div>
+                                            <p name="Item Type Label"
+                                               data-bind-class="{{$data.rarityident}}"
+                                               data-bind-value="{{$data.whiteheader}}"
+                                               class="item_card_rarity_type_text rarity bright"></p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div name="Class mod"
+                                     class="item_card_class_mod_cntr inactive"></div>
+                                <div data-bind-if="{{$data.headline.value}} != '' && {{$data.headline.loc_text}} != ''"
+                                     name="dps wrapper"
+                                     class="ic_dps_cntr">
+                                    <div name="DPS_container"
+                                         class="top_left_cntr_bkg">
+                                        <div name="Gradient"
+                                             data-bind-class="{{$data.headline.comparison}}"
+                                             class="top_left_cntr_gradient color_filter"></div>
+                                        <div name="Comparison"
+                                             data-bind-class="{{$data.headline.comparison}}"
+                                             class="item_card_top_left_comparison_icon color_filter"></div>
+                                        <p name="DPS / item name"
+                                           data-bind-class="{{$data.headline.comparison}}"
+                                           data-bind-value="{{$data.headline.value}}"
+                                           class="top_left_cntr_txt item_card_text_cream color_text"></p>
+                                        <p name="Gray Text"
+                                           data-bind-value="{{$data.headline.loc_text}}"
+                                           class="dps_sub_text item_card_text_blue_gray"></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div name="Abbreviated Headline"
+                             data-bind-if="{{$data.abbreviated}}"
+                             gue-color="#1D2"
+                             class="item_card_abbr_headline">
+                            <div name="Abbr Rarity Baking"
+                                 class="item_card_abbr_rarity_bkg">
+                                <div name="Abbr gradient"
+                                     data-bind-class="'tint-'+{{$data.rarityident}}"
+                                     class="item_card_abbr_rarity_gradient rarity"></div>
+                                <div name="Abbr top line"
+                                     data-bind-class="'tint-'+{{$data.rarityident}}"
+                                     class="item_card_header_top_fui rarity"></div>
+                                <div name="Abbr FUI"
+                                     data-bind-class="'tint-'+{{$data.rarityident}}"
+                                     class="item_card_abbr_rarity_fui rarity bright"></div>
+                            </div>
+                            <div name="Left Container"
+                                 gue-comment="toggle between &quot;item_card_compare_better&quot;, &quot;item_card_compare_much_better&quot;,&quot;item_card_compare_worse&quot; & &quot;item_card_compare_much_worse&quot; to tint the text an icons"
+                                 data-bind-class="{{$data.headline.comparison}}"
+                                 data-bind-if="{{$data.hasheadline}}"
+                                 class="item_card_abbr_left_cntr">
+                                <div name="DPS_container"
+                                     class="top_left_cntr_bkg top_left_cntr_bkg_abbv">
+                                    <div name="Gradient"
+                                         data-bind-class="{{$data.headline.comparison}}"
+                                         class="top_left_cntr_gradient color_filter"></div>
+                                    <div name="Comparison"
+                                         data-bind-class="{{$data.headline.comparison}}"
+                                         class="item_card_top_left_comparison_icon color_filter"></div>
+                                    <p name="DPS / item name"
+                                       data-bind-class="{{$data.headline.comparison}}"
+                                       data-bind-value="{{$data.headline.value}}"
+                                       class="top_left_cntr_txt item_card_text_cream color_text"></p>
+                                    <p name="Gray Text"
+                                       data-bind-value="{{$data.headline.loc_text}}"
+                                       class="dps_sub_text item_card_text_blue_gray"></p>
+                                </div>
+                            </div>
+                            <div name="Content"
+                                 class="top_left_cntr_content display_flex_center"></div>
+                            <div name="Abbr Right Container"
+                                 class="item_card_abbr_right_cntr">
+                                <p name="Item Type Label"
+                                   data-bind-class="{{$data.rarityident}}"
+                                   data-bind-value="{{$data.whiteheader}}"
+                                   class="item_card_rarity_type_text rarity bright ic_type_text_position"></p>
+                                <div name="Abbr Rarity Item type"
+                                     class="item_card_abbr_rarity_type">
+                                    <gbx-component name="rarity_pips"
+                                                   id="abbreviated_rarity_pips"
+                                                   data-bind-oak-rarity="{{$data.rarityident}}"
+                                                   gbx-component-id="rarity_pips"></gbx-component>
+                                </div>
+                            </div>
+                        </div>
+                        <div name="Details"
+                             data-bind-class-toggle="abbr_primary_margin:{{$data.abbreviated}}"
+                             data-bind-if="{{$data.itemtype}} != 'enhancement' && {{$data.itemtype}} != 'classmod'"
+                             class="item_card_primary_stats_section">
+                            <div name="Primary Stats"
+                                 data-bind-if="{{$data.primaryactive}}"
+                                 class="item_card_primary_stats">
+                                <div name="Primary Stat Wrapper"
+                                     gue-color="#F60"
+                                     data-bind-for="index, entry:{{$data.primary_stat_entries}}"
+                                     class="item_card_primary_stat compare">
+                                    <div name="Primary Stat container"
+                                         class="item_card_primary_stat_cntr">
+                                        <div name="Stat content"
+                                             data-bind-class="{{entry.comparison}}"
+                                             class="item_card_primary_stat_content">
+                                            <div name="stat_img_text"
+                                                 data-bind-class="{{entry.ident}}"></div>
+                                            <div data-bind-class="{{entry.comparison}}"
+                                                 name="comparison gradient"
+                                                 class="item_card_comparison_backing color_filter"></div>
+                                            <div name="Icon placeholder"
+                                                 class="item_card_primary_stat_icon_placholder">
+                                                <div name="Icon"
+                                                     data-bind-style-background-image-url="{{entry.image}}"
+                                                     class="item_card_primary_stat_icon full_background_setting"></div>
+                                            </div>
+                                            <p name="Text"
+                                               data-bind-value="{{entry.value}}"
+                                               data-bind-class="{{entry.comparison}}"
+                                               class="item_card_primary_stat_value item_card_text_cream color_text"></p>
+                                            <div name="compare icons"
+                                                 data-bind-class="{{entry.comparison}}"
+                                                 class="item_card_compare_icons color_filter"></div>
+                                        </div>
+                                    </div>
+                                    <div name="primary divider"
+                                         data-bind-if="({{index}}+1)!=={{$data.primary_stat_entries}}.length"
+                                         class="primary_stat_divider"></div>
+                                </div>
+                            </div>
+                            <div name="Tertiary stats"
+                                 data-bind-if="{{$data.tertiaryactive}}"
+                                 class="item_card_tertiary_stat_wrapper">
+                                <div data-bind-for="index, entry:{{$data.tertiary_stat_entries}}"
+                                     name="tertiary stat wrapper"
+                                     class="item_card_tertiary_stat_cntr">
+                                    <div name="tertiary container"
+                                         class="item_card_tertiary_stat_group">
+                                        <div data-bind-class="{{entry.comparison}}"
+                                             name="comparison gradient"
+                                             class="item_card_comparison_backing color_filter tertiary_stat_comparison_backing"></div>
+                                        <div name="icon"
+                                             data-bind-style-background-image-url="{{entry.image}}"
+                                             class="item_card_tertiary_stat_icon">
+                                            <div name="compare icons"
+                                                 data-bind-class="{{entry.comparison}}"
+                                                 class="item_card_compare_icons color_filter item_card_tertiary_stat_comparison_arrow_position"></div>
+                                        </div>
+                                        <p data-bind-value="{{entry.loc_text}}"
+   class="bl4d_stat_label"></p>
+<p name="Text"
+                                           data-bind-value="{{entry.value}}"
+                                           data-bind-class="{{entry.comparison}}"
+                                           class="color_text item_card_text_cream item_card_secondary_stat_value">9,999</p>
+                                    </div>
+                                    <div name="tertiary divider"
+                                         data-bind-if="({{index}}+1)!=={{$data.tertiary_stat_entries}}.length"
+                                         class="tertiary_stat_divider"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div name="Elemental damage"
+                             data-bind-class-toggle="inactive:!{{$data.showelement1}} && !{{$data.showelement2}}"
+                             class="item_card_elem_damage_cntr">
+                            <div name="backing"
+                                 class="ic_element_backing damagetype"></div>
+                            <div name="elemental icon 1"
+                                 data-bind-class-toggle="inactive:!{{$data.showelement1}} && !{{$data.showelement2}}"
+                                 class="item_card_elem_icon">
+                                <div id="ic_elemdamage_1"
+                                     name="elem damge indicator"
+                                     class="ic_elem_damage_indcator inactive"></div>
+                                <gbx-component gbx-component-id="element_damage_type"
+                                               class="item_card_element1"></gbx-component>
+                            </div>
+                            <div name="elemental icon 2"
+                                 data-bind-class-toggle="inactive:!{{$data.showelement2}}"
+                                 class="item_card_elem_icon">
+                                <div id="ic_elemdamage_2"
+                                     name="elem damge indicator"
+                                     class="ic_elem_damage_indcator inactive"></div>
+                                <gbx-component gbx-component-id="element_damage_type"
+                                               class="item_card_element2"></gbx-component>
+                            </div>
+                            <div name="elem chance text"
+                                 class="item_card_element_text damagetype"></div>
+                        </div>
+                        <div name="Class mod"
+                             data-bind-if="{{$data.itemtype}} == 'classmod'"
+                             gue-color="#11D"
+                             class="item_card_class_mod_cntr">
+                            <div name="Container"
+                                 class="item_card_class_mod_stat">
+                                <div name="mod"
+                                     class="item_card_class_mod_passive_bkg">
+                                    <div name="class mod wrapper"
+                                         data-bind-for="index,entry:{{$data.primary_stat_entries}}"
+                                         class="item_card_class_mod_wrapper">
+                                        <div name="Inner Wrapper"
+                                             data-bind-class="{{entry.comparison}}"
+                                             class="item_card_class_mod_inner_wrapper">
+                                            <div name="icon container"
+                                                 class="item_card_passive_icon_container">
+                                                <div class="item_card_class_mod_icon_backing"></div>
+                                                <div name="Icon"
+                                                     data-bind-style-background-image-url="{{entry.image}}"
+                                                     class="item_card_class_mod_icon_spec"></div>
+                                            </div>
+                                            <div name="stat amount"
+                                                 class="item_card_class_mod_stat_amount">
+                                                <div name="Text"
+                                                     data-bind-value="{{entry.value}}"
+                                                     class="ic_class_mod_point_text"></div>
+                                            </div>
+                                        </div>
+                                        <div name="primary divider"
+                                             data-bind-if="({{index}}+1)!=={{$data.primary_stat_entries}}.length"
+                                             class="primary_stat_divider class_mod_divider"></div>
+                                    </div>
+                                </div>
+                            </div>
+<div name="BL4D class mod skills"
+     class="bl4d_cm_skills"></div>
+
+                            <div data-bind-if="{{$data.legendarystatvisible}}"
+                                 name="Legendary Stat"
+                                 class="item_card_legendary_cntr">
+                                <p name="Text"
+                                   data-bind-markup="{{$data.legendarystat.value}}"
+                                   class="item_card_legendary_text"></p>
+                            </div>
+                        </div>
+                        <div name="Enhancements Primary"
+                             gue-color="#A4E"
+                             data-bind-if="{{$data.itemtype}} == 'enhancement'"
+                             class="item_card_enhancement">
+                            <div name="Primary stats container"
+                                 class="ic_enhancement_primary_stats_container">
+                                <div name="Primary stats"
+                                     data-bind-if="{{$data.primaryactive}}"
+                                     data-bind-for="entry:{{$data.primary_stat_entries}}"
+                                     class="item_card_corestats_n_overclock">
+                                    <div name="Content"
+                                         class="item_card_corestats_n_overclock_cntr">
+                                        <div name="Icon"
+                                             data-bind-style-background-image-url="{{entry.image}}"
+                                             class="item_card_corestats_n_overclock_icon"></div>
+                                        <p name="Core Stat description"
+                                           data-bind-markup="{{entry.value}}"
+                                           class="item_card_corestat_description"></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div name="Bottom Half"
+                         data-bind-if="!{{$data.horizontalsplit}} || {{$data.cardisflipped}}"
+                         class="item_card_bottom_half">
+                        <div name="Card divider"
+                             data-bind-if="{{$data.itemtype}} == 'classmod' && {{$data.secondaryactive}}"
+                             class="item_card_section_divider"></div>
+                        <div name="Augments"
+                             data-bind-if="{{$data.secondaryactive}} && !{{$data.abbreviated}} && {{$data.itemtype}} != 'enhancement' && {{$data.itemtype}} != 'classmod'"
+                             class="item_card_secondary_stats_augments">
+                            <div name="Augment Container"
+                                 data-bind-for="entry:{{$data.secondary_stat_entries}}"
+                                 class="item_card_secondary_stat_augment">
+                                <div name="icon"
+                                     class="item_card_secondary_icon">
+                                    <div name="Image"
+                                         gue-comment="added inactive tag as temp"
+                                         data-bind-style-background-image-url="{{entry.image}}"
+                                         class="item_card_secondary_stat_augment_icon"></div>
+                                </div>
+                                <p name="Value"
+                                   data-bind-class="{{entry.comparison}}"
+                                   data-bind-markup="{{entry.value}}"
+                                   class="temp_itemcard_augment_value item_card_text_blue_gray"></p>
+                            </div>
+                        </div>
+                        <div name="Enhancements Secondary"
+                             gue-color="#A4E"
+                             data-bind-if="{{$data.itemtype}} == 'enhancement' || {{$data.itemtype}} == 'classmod'"
+                             class="item_card_enhancement">
+                            <div name="Secondary Stats Enhancenments"
+                                 data-bind-if="{{$data.secondaryactive}}"
+                                 class="item_card_secondary_section">
+                                <div name="Stat"
+                                     data-bind-for="entry:{{$data.secondary_stat_entries}}"
+                                     class="item_card_secondary_stats_enhance">
+                                    <div name="bullet point"
+                                         class="item_card_secondary_stat_enhance_icon"></div>
+                                    <p name="secondary stat description"
+                                       data-bind-markup="{{entry.value}}"
+                                       class="item_card_secondary_stat_enhance_text"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div name="Card Divider"
+                             gue-color="#F60"
+                             data-bind-if="{{$data.textstatsactive}}.length > 0"
+                             class="item_card_section_divider"></div>
+                        <div name="Text Stats"
+                             data-bind-if="{{$data.textstatsactive}}"
+                             gue-comment="check html for commented out divider at the bottom\nof the text description"
+                             class="item_card_textstat_section">
+                            <div name="Text Stat Wrapper"
+                                 data-bind-for="entry:{{$data.text_stat_entries}}"
+                                 class="item_card_textstat_section">
+                                <p name="Text Stat Container"
+                                   data-bind-markup="{{entry.loc_text}}"
+                                   class="item_card_text_stat_ctr"></p>
+                            </div>
+                        </div>
+                        <!--<div name="Card Divider"
+            gue-color="#F60"
+            data-bind-if="{{$data.textstatsactive}}"
+            class="item_card_section_divider"></div>-->
+                        <div name="Card Divider"
+                             gue-color="#F60"
+                             data-bind-if="{{$data.firmwarevisible}}"
+                             class="item_card_section_divider"></div>
+                        <gbx-component name="firmware"
+                                       data-bind-if="{{$data.firmwarevisible}}"
+                                       gbx-component-datamodel="data_entry:$data"
+                                       gbx-component-id="firmware"
+                                       class="ic_firmware_margin"></gbx-component>
+                        <div name="Card Divider"
+                             gue-color="#F60"
+                             id="item_card_red_text_divider"
+                             data-bind-if="{{$data.redtext}}.length > 0"
+                             class="item_card_section_divider"></div>
+                        <p name="Red text"
+                           data-bind-markup="{{$data.redtext}}"
+                           data-bind-if="{{$data.redtext}}.length > 0"
+                           id="item_card_red_text"
+                           class="item_card_red_text_cntr"></p>
+                        <div name="Price"
+                             data-bind-if="{{$data.showprice}}"
+                             data-bind-class-toggle="inactive:{{$data.abbreviated}}"
+                             class="item_card_stat_price_cntr">
+                            <div name="Manufacturer"
+                                 data-bind-class="{{$data.manufacturer}}"
+                                 class="item_card_manufacturer_bkg"></div>
+                            <div name="Stat Label"
+                                 class="item_card_stat_text">
+                                <div name="currency icon"
+                                     class="item_card_currency_icon"></div>
+                                <p name="Stat Val"
+                                   data-bind-value="{{$data.price}}"
+                                   class="item_card_text_currency"></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div name="glyph_wrapper"
+                         data-bind-if="{{$data.showglyphs}}"
+                         class="item_card_glyph_wrapper">
+                        <div name="glyph container"
+                             data-bind-for="entry:{{$data.glyphs}}"
+                             class="tooltip_button_glyph_container">
+                            <div class="tooltip_button_glyph_container">
+                                <gbx-glyph action=""
+                                           submap=""
+                                           max_num_glyph="1"
+                                           data-bind-attribute-value="{'action':{{entry.action}}}"></gbx-glyph>
+                                <div name="Glyph Text"
+                                     data-bind-markup="{{entry.loctext}}"
+                                     class="tooltip_button_glyph_text"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div name="compare loot"
+                         data-bind-if="{{$data.mousepositioned}} && {{$data.compare}}"
+                         class="item_card_compare_footer">
+                        <div name="compare icon"
+                             class="ic_compare_other_ico"></div>
+                        <p name="Text"
+                           data-l10n-id="Comparefromtxt"
+                           class="compare_from_text"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </gbx-tooltip>
+</widget-item-card>
+<link href="coui://uiresources/bl4direct/item_cards.css"
+      type="text/css"
+      rel="stylesheet" />
+<script src="coui://uiresources/bl4direct/item_cards.js"></script>
+<link href="coui://uiresources/item_card/css/item_card.css"
+      type="text/css"
+      rel="stylesheet" />
+<script src="coui://uiresources/item_card/js/item_card.js"></script>
+<script src="coui://uiresources/item_card/data/item_card.data"></script>
+<link href="common://uiresources/dlc_rarity_pips/css/dlc_rarity_pips.css"
+      type="text/css"
+      rel="stylesheet">

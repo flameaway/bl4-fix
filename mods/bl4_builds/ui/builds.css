@@ -1,0 +1,493 @@
+/* BL4 Build Presets: the five squares under the inventory's Reward Center button. The squares
+   carry the button's own classes (mrc_cta_btn...), so its look and hover come from the game's
+   menu_equip.css; this only lays them out and adds what the button doesn't have. */
+
+/* region Row */
+
+.bl4b_row {
+    position: absolute;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.bl4b_hidden {
+    display: none;
+}
+
+.bl4b_squares {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    width: 100%;
+}
+
+/* endregion */
+/* region Squares */
+
+.bl4b_square.mrc_cta_btn {
+    position: relative;
+    height: 8.4rem;
+    flex: 0 0 18.5%;
+    pointer-events: auto;
+}
+
+.bl4b_body {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0.7rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.bl4b_number.mrc_cta_btn_text {
+    font-size: 3.6rem;
+    line-height: 3.8rem;
+    margin: 0;
+}
+
+.bl4b_caption {
+    font-family: Industry-Normal;
+    font-size: 1.45rem;
+    line-height: 1.7rem;
+    color: #8fb4c4;
+    margin: 0.1rem 0.5rem 0 0.5rem;
+    max-width: 8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4b_empty .bl4b_number.mrc_cta_btn_text {
+    color: #3d6f85;
+}
+
+.bl4b_empty .bl4b_caption {
+    color: #3d6f85;
+}
+
+.bl4b_empty:hover .bl4b_number.mrc_cta_btn_text,
+.bl4b_empty:hover .bl4b_caption {
+    color: #e4d9ce;
+}
+
+.bl4b_square:hover .bl4b_caption {
+    color: #e4d9ce;
+}
+
+/* The build you're wearing right now */
+.bl4b_current_mark {
+    position: absolute;
+    left: 1.6rem;
+    right: 1.6rem;
+    top: 0.45rem;
+    height: 0.3rem;
+    background-color: #f68400;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.bl4b_current .bl4b_current_mark {
+    opacity: 1;
+}
+
+.bl4b_current .mrc_cta_btn_border {
+    border-color: #f68400;
+}
+
+/* A saved item is no longer in the backpack */
+.bl4b_missing .bl4b_caption {
+    color: #e0a35c;
+}
+
+.bl4b_busy .bl4b_body {
+    opacity: 0.5;
+}
+
+.bl4b_blocked .bl4b_square {
+    opacity: 0.45;
+}
+
+/* Save over / name / clear for the last square hovered: one bar, placed under that square by
+   builds.js (touching it), so going down to a button never crosses another square */
+.bl4b_actions {
+    position: absolute;
+    top: 8.4rem;
+    left: 0;
+    height: 2.8rem;
+    padding-top: 0.4rem;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    pointer-events: auto;
+    z-index: 2;
+}
+
+.bl4b_actions_label {
+    font-family: Industry-DemiBold;
+    font-size: 1.3rem;
+    color: #8fb4c4;
+    margin: 0 0.8rem 0 0;
+    max-width: 14rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The square the bar works on, once the mouse has moved down to the bar */
+.bl4b_selected .mrc_cta_btn_border {
+    border-color: #e5dacf;
+}
+
+.bl4b_chip {
+    font-family: Industry-DemiBold;
+    font-size: 1.3rem;
+    line-height: 2.2rem;
+    height: 2.2rem;
+    padding: 0 1rem;
+    margin: 0 0.25rem;
+    color: #8fddff;
+    background-color: rgba(3, 16, 25, 0.9);
+    border: 0.1rem solid #396081;
+    pointer-events: auto;
+}
+
+.bl4b_chip:hover {
+    color: #e4d9ce;
+    border-color: #e5dacf;
+    background-color: rgba(246, 132, 0, 0.25);
+}
+
+.bl4b_chip.bl4b_asking {
+    color: #ffffff;
+    border-color: #f68400;
+    background-color: rgba(246, 132, 0, 0.45);
+}
+
+/* Points per tree, in the skill screen's tree colors (its skill_color_1 for each) */
+.bl4b_trees {
+    position: absolute;
+    left: 0.7rem;
+    right: 0.7rem;
+    bottom: 0.55rem;
+    height: 0.5rem;
+    display: flex;
+    flex-direction: row;
+    pointer-events: none;
+}
+
+.bl4b_tree_seg {
+    height: 100%;
+    margin: 0 0.08rem;
+}
+
+.bl4b_tree_red {
+    background-color: #db834e;
+}
+
+.bl4b_tree_green {
+    background-color: #7dcd75;
+}
+
+.bl4b_tree_blue {
+    background-color: #3cafae;
+}
+
+.bl4b_tree_none {
+    background-color: #8fb4c4;
+}
+
+.bl4b_tree_text_red {
+    color: #f0a072;
+}
+
+.bl4b_tree_text_green {
+    color: #8fe087;
+}
+
+.bl4b_tree_text_blue {
+    color: #5fd3d1;
+}
+
+.bl4b_sep {
+    color: #6f9db1;
+}
+
+/* Being named */
+.bl4b_naming .mrc_cta_btn_border {
+    border-color: #e5dacf;
+}
+
+.bl4b_naming .bl4b_caption {
+    color: #ffffff;
+}
+
+/* While we read the item names off the cards, keep the cards out of sight */
+.bl4b_scanning widget-item-card {
+    visibility: hidden;
+}
+
+/* endregion */
+/* region Hover panel: what's in the build */
+
+/* Above the Reward Center button: our row's height + the gap + the button + some air */
+.bl4b_panel {
+    position: absolute;
+    right: 0;
+    bottom: 19rem;
+    width: 52rem;
+    padding: 1.4rem 1.8rem 1.4rem 1.8rem;
+    background-image: linear-gradient(0deg, rgba(21, 110, 134, 0.18) 0%, rgba(21, 110, 134, 0) 100%), linear-gradient(rgba(3, 16, 25, 0.92), rgba(3, 16, 25, 0.92));
+    border: 0.1rem solid #396081;
+    pointer-events: none;
+}
+
+.bl4b_panel_head {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 1rem;
+    border-bottom: 0.1rem solid #26465f;
+    padding-bottom: 0.6rem;
+}
+
+.bl4b_panel_titles {
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4b_panel_title {
+    font-family: Industry-DemiBold;
+    font-size: 2.2rem;
+    color: #e4d9ce;
+    margin: 0;
+}
+
+.bl4b_panel_title.bl4b_typing {
+    color: #ffffff;
+    border-bottom: 0.15rem solid #f68400;
+    min-width: 20rem;
+}
+
+.bl4b_panel_sub {
+    font-family: Industry-Normal;
+    font-size: 1.35rem;
+    color: #8fb4c4;
+    margin: 0.2rem 0 0 0;
+}
+
+.bl4b_naming_note {
+    color: #f6b25e;
+    margin-bottom: 0.8rem;
+}
+
+.bl4b_panel_saved {
+    font-family: Industry-Normal;
+    font-size: 1.3rem;
+    color: #8fb4c4;
+    margin: 0;
+}
+
+.bl4b_gear {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0.8rem;
+}
+
+.bl4b_gear_row {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    height: 2.3rem;
+}
+
+.bl4b_gear_slot {
+    font-family: Industry-Normal;
+    font-size: 1.35rem;
+    color: #6f9db1;
+    width: 11rem;
+    flex: 0 0 11rem;
+    margin: 0;
+}
+
+.bl4b_gear_name {
+    font-family: Industry-DemiBold;
+    font-size: 1.55rem;
+    color: #d8e4e8;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+}
+
+.bl4b_gear_desc {
+    font-family: Industry-Normal;
+    font-size: 1.25rem;
+    color: #6f9db1;
+    margin: 0 0 0 0.8rem;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.bl4b_gear_flag {
+    font-family: Industry-Normal;
+    font-size: 1.25rem;
+    color: #e0a35c;
+    margin: 0 0 0 1rem;
+    flex: 0 0 auto;
+}
+
+.bl4b_gone .bl4b_gear_name {
+    color: #5f7680;
+    text-decoration: line-through;
+}
+
+.bl4b_rarity_common {
+    color: #e8e8e8;
+}
+
+.bl4b_rarity_uncommon {
+    color: #5fe05a;
+}
+
+.bl4b_rarity_rare {
+    color: #4fa4ff;
+}
+
+.bl4b_rarity_epic,
+.bl4b_rarity_veryrare,
+.bl4b_rarity_very_rare {
+    color: #c06cff;
+}
+
+.bl4b_rarity_legendary {
+    color: #ffb55c;
+}
+
+.bl4b_rarity_pearlescent {
+    color: #a9fff2;
+}
+
+.bl4b_panel_label {
+    font-family: Industry-DemiBold;
+    font-size: 1.25rem;
+    color: #6f9db1;
+    text-transform: uppercase;
+    margin: 0.6rem 0 0.2rem 0;
+}
+
+.bl4b_panel_text {
+    font-family: Industry-Normal;
+    font-size: 1.5rem;
+    color: #d8e4e8;
+    margin: 0;
+}
+
+.bl4b_panel_note {
+    font-family: Industry-Normal;
+    font-size: 1.5rem;
+    color: #d8e4e8;
+    margin: 0;
+}
+
+.bl4b_bad {
+    color: #ff8a7a;
+}
+
+.bl4b_panel_hint {
+    font-family: Industry-Normal;
+    font-size: 1.25rem;
+    color: #8fb4c4;
+    margin: 1rem 0 0 0;
+    padding-top: 0.6rem;
+    border-top: 0.1rem solid #26465f;
+}
+
+/* endregion */
+/* region Notice after a save or load */
+
+.bl4b_toast {
+    position: absolute;
+    right: 0;
+    top: 12.2rem;
+    width: 52rem;
+    padding: 1rem 1.6rem;
+    background-color: rgba(3, 16, 25, 0.92);
+    border-left: 0.4rem solid #8fddff;
+    pointer-events: none;
+}
+
+.bl4b_prompt_open .bl4b_panel,
+.bl4b_prompt_open .bl4b_toast,
+.bl4b_panel_open .bl4b_toast {
+    display: none;
+}
+
+.bl4b_toast_error {
+    border-left-color: #ff6b57;
+}
+
+.bl4b_toast_title {
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #e4d9ce;
+    margin: 0;
+}
+
+.bl4b_toast_line {
+    font-family: Industry-Normal;
+    font-size: 1.35rem;
+    color: #e0a35c;
+    margin: 0.3rem 0 0 0;
+}
+
+/* endregion */
+
+/* region Right-click prompt: "Save over Build N?" */
+
+.bl4b_prompt {
+    position: absolute;
+    right: 0;
+    bottom: 19rem;
+    width: 52rem;
+    padding: 1.6rem 2rem;
+    background-image: linear-gradient(0deg, rgba(246, 132, 0, 0.12) 0%, rgba(246, 132, 0, 0) 100%), linear-gradient(rgba(3, 16, 25, 0.95), rgba(3, 16, 25, 0.95));
+    border: 0.15rem solid #f68400;
+    pointer-events: auto;
+    z-index: 3;
+}
+
+.bl4b_prompt_title {
+    font-family: Industry-DemiBold;
+    font-size: 2.2rem;
+    color: #e4d9ce;
+    margin: 0 0 0.6rem 0;
+}
+
+.bl4b_prompt_text {
+    font-family: Industry-Normal;
+    font-size: 1.5rem;
+    color: #d8e4e8;
+    margin: 0 0 1.4rem 0;
+}
+
+.bl4b_prompt_buttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+}
+
+.bl4b_prompt_yes {
+    color: #ffffff;
+    border-color: #f68400;
+    background-color: rgba(246, 132, 0, 0.35);
+}
+
+/* endregion */

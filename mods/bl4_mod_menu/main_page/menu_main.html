@@ -1,0 +1,187 @@
+<widget-menu-main class="widget list_menu_widget menu_main shared_animation FadeIn">
+    <div class="menu_screen_boundaries">
+        <div name="ECHO OS Ver."
+             class="menu_changelist mm_cl_position">
+            <div name="Backing"
+                 class="menu_echo_os_bg"></div>
+            <p name="Text"
+               data-bind-markup="{{$data.gameversion}}"
+               class="menu_echo_os_ver">plchldr</p>
+        </div>
+        <div name="Menu Main Cntr"
+             class="menu_main_cntr hud_text_stroke">
+            <div name="Menu Main Bg Gradient"
+                 class="menu_main_bg_gradient"></div>
+            <div name="Order backing"
+                 class="mm_panel_bkg2"></div>
+            <div name="triangle bg"
+                 class="mm_panel_bkg">
+                <div name="left pattern"
+                     class="mm_bg_pattern_left"></div>
+                <div name="right pattern"
+                     class="mm_bg_pattern_left mm_bg_pattern_right_flip"></div>
+            </div>
+            <div name="Place Holder Art"
+                 class="mm_panel_logo"></div>
+            <div name="Entry Cntr"
+                 class="mm_entries_cntr">
+                <div data-input-default="true"
+                     data-input-elem="true"
+                     data-input-beh="list"
+                     data-input-id="menu_main_list"
+                     name="EntryList"
+                     class="mm_entry_list">
+                    <!-- Continue -->
+                    <div name="Continue Button"
+                         data-bind-if="{{$data.bcanshowcontinue}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'launch_game', '');this.parentWidget.PlaySound('ContinueCampaign')"
+                         class="mm_entry_item mm_main_btn_fontsize med_text_1">
+                        <gbx-component name="main_menu_button"
+                                       tooltip-data-key="tooltip_continue_game"
+                                       data-l10n-id="ContinueEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data, data_entry:$data.continuebutton"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- New Game -->
+                    <div name="New Game Button"
+                         data-bind-if="{{$data.bcanshownewgame}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'start_new_game', '')"
+                         class="mm_entry_item mm_main_btn_fontsize big_text_2">
+                        <gbx-component name="main_menu_button"
+                                       data-l10n-id="NewGameEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data, data_entry:$data.newgamebutton"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- Load Character -->
+                    <div name="Load Character Button"
+                         data-bind-if="{{$data.bshowloadcharacter}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'open_load_character', '')"
+                         class="mm_entry_item big_text_1 mm_main_btn_fontsize">
+                        <gbx-component name="main_menu_button"
+                                       data-l10n-id="LoadCharEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data, data_entry:$data.loadcharacterbutton"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div> <!-- New Character Button (Clients Only) -->
+                    <div name="New Character Button (Clients Only)"
+                         data-bind-if="{{$data.bcanshowcreatecharacter}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_add', 'MENU_NEW_GAME')"
+                         class="mm_entry_item big_text_1 mm_main_btn_fontsize">
+                        <gbx-component name="main_menu_button"
+                                       tooltip-data-key="tooltip_create_character"
+                                       data-l10n-id="CreateCharacterText"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div>
+                    <div name="Section Divider"
+                         class="mm_section_divider"></div><!-- Matchmaking -->
+                    <div name="Matchmaking Button"
+                         data-bind-if="{{$data.currentnetworkmode}} != 'lan' "
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'open_matchmaking_menu', '')"
+                         class="mm_sub_btn_fontsize mm_entry_item_sub med_text_2">
+                        <gbx-component name="main_menu_button"
+                                       data-l10n-id="MatchmakingText"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data, data_entry:$data.matchmakingbutton"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- LAN -->
+                    <div name="LAN Button"
+                         data-bind-if="{{$data.currentnetworkmode}} == 'lan' "
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'open_lan_menu', '')"
+                         class="mm_sub_btn_fontsize mm_entry_item_sub med_text_2">
+                        <gbx-component name="main_menu_button"
+                                       tooltip-data-key="tooltip_lan"
+                                       data-l10n-id="LANText"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data, data_entry.text:$data.lanbuttontext"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- Game Settings -->
+                    <div name="Game Settings Button"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_add', 'MENU_GAME_SETTINGS')"
+                         class="game_settings_enable med_text_1 mm_sub_btn_fontsize mm_entry_item_sub">
+                        <gbx-component name="main_menu_button"
+                                       tooltip-data-key="tooltip_game_settings"
+                                       data-l10n-id="GameSettingsText"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- Options -->
+                    <div name="Options Button"
+                         data-bind-if="{{$data.bshowoptions}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_add', 'MENU_OPTIONS_FRONTEND')"
+                         class="med_text_1 mm_sub_btn_fontsize mm_entry_item_sub">
+                        <gbx-component name="main_menu_button"
+                                       tooltip-data-key="tooltip_options"
+                                       data-l10n-id="OptionsEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- Shift -->
+                    <div name="Shift Button"
+                         data-bind-if="{{$data.bshowshift}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'open_shift_menu', '')"
+                         class="mm_sub_btn_fontsize mm_entry_item_sub">
+                        <gbx-component name="main_menu_button"
+                                       tooltip-data-key="tooltip_shift"
+                                       data-l10n-id="ShiftEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- Leave Party -->
+                    <div name="Leave Party Button"
+                         data-bind-if="{{$data.bshowleaveparty}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'leave_party', '')"
+                         class="med_text_1 mm_sub_btn_fontsize mm_entry_item_sub">
+                        <gbx-component name="main_menu_button"
+                                       tooltip-data-key="tooltip_leave_party"
+                                       data-l10n-id="LeavePartyEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- Quit -->
+                    <div name="Quit Button"
+                         data-bind-if="{{$data.bshowexit}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'quit', '')"
+                         class="med_text_1 mm_sub_btn_fontsize mm_entry_item_sub">
+                        <gbx-component name="main_menu_button"
+                                       tooltip-data-key="tooltip_quit_game"
+                                       data-l10n-id="QuitGameEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div><!-- Debug -->
+                    <div name="Debug Button"
+                         data-bind-if="{{$data.bshowdebug}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_add', 'MENU_DEBUG_MAPS_FRONTEND')"
+                         class="med_text_1 mm_sub_btn_fontsize mm_entry_item_sub">
+                        <gbx-component name="main_menu_button"
+                                       data-l10n-id="DebugMenuEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       gbx-component-datamodel="data_parent:$data"
+                                       gbx-component-id="main_menu_button"></gbx-component>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <gbx-tooltip name="CampaignProgressCntr"
+                 tooltip-id="character_tooltip"
+                 use-external-visibility-update=""
+                 class="mm_campaign_progress_cntr tooltip_container">
+        <gbx-component gbx-component-id="campaign_progress"
+                       gbx-component-datamodel="data_entry:$data.currentcharacterinfo, data_parent:$data"></gbx-component>
+    </gbx-tooltip>
+    <gbx-component id="Tooltip"
+                   data-bind-class-toggle="inactive:{{$data.bhideprimarytooltip}}"
+                   gbx-component-id="oak_tooltip_main_menu"
+                   gbx-component-datamodel="data_entry:$data.tooltipdata, data_parent:$data"
+                   class="mm_tooltip_cntr"></gbx-component>
+</widget-menu-main>
+<script src="coui://uiresources/_shared/data/shared_animations.data"></script>
+<link href="coui://uiresources/menu_main/css/menu_main.css"
+      type="text/css"
+      rel="stylesheet" />
+<script src="coui://uiresources/menu_main/js/menu_main.js"></script>
+<script src="coui://uiresources/bl4modmenu/main_loader.js"></script>
+<script src="coui://uiresources/menu_main/data/menu_main.data"></script>

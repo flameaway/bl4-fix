@@ -1,0 +1,452 @@
+/*
+ * BL4 Direct detailed item cards. Loaded only by the mod's item_card.html, as a loose file the
+ * card's script reloads when it changes (no game restart needed).
+ * Fonts, text colours and skill tree tints match the game's own item card styles.
+ */
+
+/* Name in front of each compact secondary stat ("Splash Radius 35cm") */
+.bl4d_stat_label {
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+    color: #a0aeb1;
+    margin: 0rem 0.6rem 0rem 0rem;
+}
+
+/* Class mod skills, drawn by item_cards.js: one row each, then description, then numbers */
+
+/* Our list replaces the game's compact icon row, but only once the script has drawn it */
+.bl4d_active .item_card_class_mod_stat {
+    display: none;
+}
+
+.bl4d_cm_skills {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    margin: 0rem 0rem 0.5rem 0rem;
+}
+
+.bl4d_cm_skill {
+    display: flex;
+    flex-direction: column;
+    margin: 0.2rem 0rem;
+    padding: 0.4rem 0.8rem 0.5rem 0.8rem;
+    border-left: 0.3rem solid #a0aeb1;
+    background-color: rgba(0, 0, 0, 0.25);
+}
+
+.bl4d_cm_skill_head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4d_cm_skill_icon {
+    width: 2.6rem;
+    height: 2.6rem;
+    margin: 0rem 0.6rem 0rem 0rem;
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+}
+
+.bl4d_cm_skill_name {
+    flex: 1 1;
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #e4d9ce;
+}
+
+.bl4d_cm_skill_points {
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #a0aeb1;
+}
+
+.bl4d_cm_skill_desc {
+    /* The game's markup renders each paragraph as its own <p>; stack them inside the card */
+    flex-direction: column;
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+    margin: 0.2rem 0rem 0rem 0rem;
+}
+
+/* Filled in by item_cards.js: your points out of the max, and the skill's numbers */
+.bl4d_cm_skill_rank {
+    font-family: Industry-DemiBold;
+    font-size: 1.6rem;
+    color: #a0aeb1;
+    margin: 0rem 0.8rem 0rem 0rem;
+}
+
+.bl4d_cm_skill_stats {
+    display: flex;
+    flex-direction: column;
+    margin: 0.4rem 0rem 0rem 0rem;
+    padding: 0.3rem 0rem 0rem 0rem;
+    border-top: 0.1rem solid rgba(160, 174, 177, 0.3);
+}
+
+.bl4d_cm_stat_line {
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+    color: #e4d9ce;
+}
+
+/* The game's markup renderer wraps text in its own elements with a large default size */
+.bl4d_cm_skill_stats p,
+.bl4d_cm_skill_stats span {
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+}
+
+.bl4d_cm_skill_desc p,
+.bl4d_cm_skill_desc span {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+}
+
+/* Skill tree colours (the entry's comparison field is red, blue or green) */
+.bl4d_cm_skill.red {
+    border-left-color: #db834e;
+}
+
+.bl4d_cm_skill.red .bl4d_cm_skill_points {
+    color: #db834e;
+}
+
+.bl4d_cm_skill.red .bl4d_cm_skill_icon {
+    filter: coh-color-matrix(0.8588235294117647, 0, 0, 0, 0, 0, 0.5137254901960784, 0, 0, 0, 0, 0, 0.3058823529411765, 0, 0, 0, 0, 0, 1, 0);
+}
+
+.bl4d_cm_skill.blue {
+    border-left-color: #3cafae;
+}
+
+.bl4d_cm_skill.blue .bl4d_cm_skill_points {
+    color: #3cafae;
+}
+
+.bl4d_cm_skill.blue .bl4d_cm_skill_icon {
+    filter: coh-color-matrix(0.23529411764705882, 0, 0, 0, 0, 0, 0.6862745098039216, 0, 0, 0, 0, 0, 0.6823529411764706, 0, 0, 0, 0, 0, 1, 0);
+}
+
+.bl4d_cm_skill.green {
+    border-left-color: #7dcd75;
+}
+
+.bl4d_cm_skill.green .bl4d_cm_skill_points {
+    color: #7dcd75;
+}
+
+.bl4d_cm_skill.green .bl4d_cm_skill_icon {
+    filter: coh-color-matrix(0.49019607843137253, 0, 0, 0, 0, 0, 0.803921568627451, 0, 0, 0, 0, 0, 0.4588235294117647, 0, 0, 0, 0, 0, 1, 0);
+}
+
+/* Legendary cards: where the item drops (item_cards.js, data from drops.json) */
+.bl4d_drops {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin: 0.6rem 0rem 0.4rem 0rem;
+    padding: 0.4rem 0rem 0rem 0rem;
+    border-top: 0.1rem solid rgba(160, 174, 177, 0.3);
+}
+
+.bl4d_drops_title {
+    font-family: Industry-DemiBold;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+}
+
+.bl4d_drops_line {
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+    color: #e4d9ce;
+}
+
+.bl4d_drop_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 0.2rem 0rem 0rem 0rem;
+}
+
+/* A boss: its name on one line, then its chances in aligned columns under it */
+.bl4d_drop_head {
+    margin: 0.5rem 0rem 0rem 0rem;
+}
+
+.bl4d_drop_chance {
+    margin: 0.1rem 0rem 0rem 0rem;
+}
+
+/* Lines up with the skull above; holds the Big Encore icon on that row */
+.bl4d_drop_slot {
+    width: 2.8rem;
+    height: 2.2rem;
+    flex: 0 0 auto;
+}
+
+.bl4d_drop_slot .bl4d_drop_icon {
+    width: 1.9rem;
+    height: 1.9rem;
+}
+
+.bl4d_drop_label {
+    width: 10rem;
+    flex: 0 0 auto;
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+    color: #a0aeb1;
+}
+
+.bl4d_drop_encore .bl4d_drop_label {
+    color: #2d95ca;
+}
+
+.bl4d_drop_note {
+    margin: 0rem 0rem 0rem 1rem;
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+}
+
+.bl4d_drop_icon {
+    width: 2.2rem;
+    height: 2.2rem;
+    margin: 0rem 0.6rem 0rem 0rem;
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+}
+
+/* The game's own art: the boss skull, and the icon the map uses for Big Encore machines */
+.bl4d_drop_icon_boss {
+    background-image: url("coui://uiresources/mission_log/assets/ui_art_asset/ui_skull.png");
+}
+
+.bl4d_drop_icon_encore {
+    background-image: url("coui://uiresources/_shared/assets/ico_ui_art_discovery/ico_boss_replay.png");
+}
+
+/* The boss's own picture (the Weapondex's), in the skull's place: a small framed square */
+.bl4d_drop_boss_picture {
+    width: 2.8rem;
+    height: 2.8rem;
+    margin: 0rem 0.6rem 0rem -0.3rem;
+    background-color: rgba(0, 20, 32, 0.8);
+    border: 0.1rem solid rgba(63, 118, 157, 0.45);
+}
+
+/* Per kill: the game's skull-with-a-target (its training dummies icon), same set as Big Encore's */
+.bl4d_drop_icon_kill {
+    background-image: url("coui://uiresources/_shared/assets/ico_ui_art_discovery/ico_menu_target_dummies.png");
+}
+
+.bl4d_drop_boss {
+    flex: 1 1;
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #eb7300;
+}
+
+.bl4d_drop_rate {
+    width: 6rem;
+    flex: 0 0 auto;
+    font-family: Industry-DemiBold;
+    font-size: 1.7rem;
+    color: #e4d9ce;
+}
+
+/* "Waypoint set on this machine" under the Big Encore line */
+.bl4d_drop_waypoint {
+    margin: 0rem 0rem 0.3rem 2.8rem;
+}
+
+.bl4d_drop_waypoint_text {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #7dcd75;
+}
+
+/* Firmware tiers under the game's firmware row (item_cards.js, numbers from skills_live.json) */
+.bl4d_fw {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin: 0.5rem 0rem 0.2rem 0rem;
+}
+
+.bl4d_fw_summary {
+    font-family: Industry-DemiBold;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+    margin: 0rem 0rem 0.2rem 0rem;
+}
+
+.bl4d_fw_summary.bl4d_fw_gain {
+    color: #7dcd75;
+}
+
+.bl4d_fw_summary.bl4d_fw_lose {
+    color: #e0574f;
+}
+
+.bl4d_fw_tier {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 0.2rem 0rem;
+    padding: 0.3rem 0.8rem 0.3rem 0.6rem;
+    border-left: 0.3rem solid rgba(160, 174, 177, 0.35);
+    background-color: rgba(0, 0, 0, 0.25);
+}
+
+/* How many equipped pieces the tier needs */
+.bl4d_fw_pieces {
+    width: 2.4rem;
+    height: 2.4rem;
+    margin: 0rem 0.8rem 0rem 0rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.6rem;
+    text-align: center;
+    line-height: 2.4rem;
+    color: #a0aeb1;
+    border: 0.15rem solid rgba(160, 174, 177, 0.5);
+}
+
+.bl4d_fw_lines {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4d_fw_line {
+    flex-direction: column;
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #e4d9ce;
+}
+
+/* The game's markup renderer wraps text in its own elements with a large default size */
+.bl4d_fw_line p,
+.bl4d_fw_line span {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+}
+
+.bl4d_fw_state {
+    margin: 0rem 0rem 0rem 0.8rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+}
+
+/* You have it now (and keep it) */
+.bl4d_fw_active {
+    border-left-color: #2d95ca;
+}
+
+.bl4d_fw_active .bl4d_fw_pieces {
+    color: #4fb8ec;
+    border-color: #2d95ca;
+}
+
+.bl4d_fw_active .bl4d_fw_state {
+    color: #4fb8ec;
+}
+
+/* Equipping this item unlocks it */
+.bl4d_fw_gain {
+    border-left-color: #7dcd75;
+    background-color: rgba(125, 205, 117, 0.12);
+}
+
+.bl4d_fw_gain .bl4d_fw_pieces {
+    color: #7dcd75;
+    border-color: #7dcd75;
+}
+
+.bl4d_fw_gain .bl4d_fw_state {
+    color: #7dcd75;
+}
+
+/* Equipping this item loses it */
+.bl4d_fw_lose {
+    border-left-color: #e0574f;
+    background-color: rgba(224, 87, 79, 0.12);
+}
+
+.bl4d_fw_lose .bl4d_fw_pieces {
+    color: #e0574f;
+    border-color: #e0574f;
+}
+
+.bl4d_fw_lose .bl4d_fw_state {
+    color: #e0574f;
+}
+
+/* Out of reach for now */
+.bl4d_fw_locked .bl4d_fw_line,
+.bl4d_fw_locked .bl4d_fw_line p,
+.bl4d_fw_locked .bl4d_fw_line span {
+    color: #7d8a8d;
+}
+
+/* "[J] Encore Waypoint" in the card's prompt row; the key image is the game's own glyph art */
+.bl4d_glyph_key {
+    width: 3rem;
+    height: 3rem;
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+}
+
+/* "Waypoint set" popup after the Big Encore waypoint key (like the game's own notices) */
+.bl4d_popup {
+    position: absolute;
+    top: 30rem;
+    right: 4rem;
+    width: 38rem;
+    padding: 1.2rem 1.6rem;
+    background-color: rgba(8, 14, 20, 0.92);
+    border: 0.2rem solid #2d95ca;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 50;
+}
+
+.bl4d_popup_hidden {
+    opacity: 0;
+}
+
+.bl4d_popup_head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 0rem 0rem 0.6rem 0rem;
+}
+
+.bl4d_popup_title {
+    font-family: Industry-DemiBold;
+    font-size: 2.2rem;
+    color: #4fb8ec;
+    text-transform: uppercase;
+}
+
+.bl4d_popup_text {
+    font-family: Industry-Medium;
+    font-size: 2rem;
+    color: #d6e0e2;
+}
+
+.bl4d_popup_note {
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+    color: #a0aeb1;
+    margin: 0.4rem 0rem 0rem 0rem;
+}

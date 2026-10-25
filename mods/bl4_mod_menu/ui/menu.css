@@ -1,0 +1,446 @@
+/* BL4 Mod Menu. Entries, components and the details pane use the game's own classes (Options
+   menu, toggle, slider, stepper, rebind entry, list button); this only lays them out and fills
+   the gaps. Sizes are in rem like the game's stylesheets. Reloaded live by loader.js. */
+
+.bl4mm_hidden {
+    display: none !important;
+}
+
+/* The page's top-level layers while menu.js hides it (waking up, closing a menu F7 opened).
+   Opacity rather than display, so nothing's layout changes underneath. */
+.bl4mm_covered {
+    opacity: 0 !important;
+}
+
+.bl4mm_root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    /* Above every layer of the game's menus (the status menus' tab bar sits high) */
+    z-index: 1000000;
+}
+
+.bl4mm_bg,
+.bl4mm_shade {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.bl4mm_shade {
+    background-color: rgba(2, 10, 16, 0.82);
+}
+
+.bl4mm_frame {
+    position: absolute;
+    left: 7rem;
+    right: 7rem;
+    top: 6rem;
+    bottom: 5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4mm_below_tabs .bl4mm_frame {
+    top: 13rem;
+}
+
+.bl4mm_below_tabs .bl4mm_header {
+    flex: 0 0 6rem;
+    height: 6rem;
+}
+
+.bl4mm_below_tabs .bl4mm_title {
+    font-size: 4.4rem;
+}
+
+/* region Header */
+
+.bl4mm_header {
+    display: flex;
+    align-items: baseline;
+    height: 8rem;
+    border-bottom: 0.2rem solid rgba(63, 118, 157, 0.45);
+    margin-bottom: 2.4rem;
+}
+
+.bl4mm_title {
+    font-family: Industry-DemiBold;
+    font-size: 6rem;
+    color: #e4d9ce;
+    letter-spacing: 0.3rem;
+    margin: 0 3rem 0 0;
+}
+
+.bl4mm_crumb {
+    font-family: Industry-Normal;
+    font-size: 2.6rem;
+    color: #00c6ff;
+    margin: 0;
+}
+
+/* endregion */
+/* region Columns */
+
+.bl4mm_body {
+    flex: 1 1;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    min-height: 0;
+}
+
+.bl4mm_mods {
+    justify-content: flex-start;
+    width: 38rem;
+    flex: 0 0 38rem;
+    margin-right: 3rem;
+    max-height: 100%;
+    overflow-y: scroll;
+}
+
+.bl4mm_options {
+    flex: 1 1;
+    height: 100%;
+    max-height: 100%;
+    margin-right: 3rem;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    /* The game's list spreads its rows out (space-between); stack ours from the top */
+    justify-content: flex-start;
+    align-content: flex-start;
+    overflow-y: scroll;
+}
+
+.bl4mm_details.menu_options_details_container {
+    width: 52rem;
+    flex: 0 0 52rem;
+    height: 100%;
+    margin: 0;
+    justify-content: flex-start;
+}
+
+.bl4mm_details .menu_options_details_container_inner {
+    height: 100%;
+}
+
+.bl4mm_details_meta {
+    font-family: Industry-Normal;
+    font-size: 1.9rem;
+    color: #00c6ff;
+    margin: 0 0 1.4rem 0;
+}
+
+/* endregion */
+/* region Mod list and buttons */
+
+/* Gameface lays everything out as flex items, and the game's list button and entry classes are
+   set to grow: pin every row to its height or they stretch to fill the column */
+.bl4mm_btn.list_btn {
+    position: relative;
+    flex: 0 0 5.2rem;
+    height: 5.2rem;
+    min-height: 5.2rem;
+    max-height: 5.2rem;
+    margin-bottom: 0.8rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4mm_mods > *,
+.bl4mm_options > * {
+    flex: 0 0 auto;
+}
+
+.bl4mm_btn .button_inner {
+    position: relative;
+    z-index: 2;
+    padding: 0 2rem;
+    flex: 1 1;
+}
+
+.bl4mm_btn .button_txt {
+    font-family: Industry-DemiBold;
+    font-size: 2.3rem;
+    margin: 0;
+}
+
+.bl4mm_btn .list_btn_backing_cntr {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.bl4mm_mod_btn.bl4mm_selected .list_btn_backing_cntr {
+    background-color: rgba(0, 198, 255, 0.22);
+    border-left: 0.5rem solid #00c6ff;
+}
+
+.bl4mm_mod_btn.bl4mm_selected .button_txt {
+    color: #e4d9ce;
+}
+
+.bl4mm_status {
+    position: relative;
+    z-index: 2;
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    padding-right: 1.6rem;
+}
+
+.bl4mm_status_on {
+    color: #6fe08a;
+}
+
+.bl4mm_status_off {
+    color: #ff7a61;
+}
+
+.bl4mm_status_warn {
+    color: #ffbb00;
+}
+
+.bl4mm_run.list_btn {
+    width: 100%;
+    flex: 0 0 4.3rem;
+    height: 4.3rem;
+    min-height: 4.3rem;
+    max-height: 4.3rem;
+    margin: 0;
+}
+
+.bl4mm_run.list_btn {
+    flex: 1 1 100%;
+    align-self: center;
+}
+
+.bl4mm_run .button_inner {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    padding: 0;
+}
+
+.bl4mm_run .button_txt {
+    text-align: center;
+}
+
+.bl4mm_disabled {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+/* endregion */
+/* region Option entries */
+
+.bl4mm_title_entry .category_divider {
+    width: 100%;
+    margin: 1.6rem 0 1rem 0;
+}
+
+.bl4mm_entry_wrap .menu_options_entry {
+    position: relative;
+    flex: 0 0 6rem;
+    height: 6rem;
+    margin-bottom: 0.8rem;
+}
+
+.bl4mm_entry_wrap .list_entry_interacts_comp {
+    width: 46rem;
+    flex: 0 0 46rem;
+}
+
+.bl4mm_entry_wrap .menu_options_entry_component {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    flex: 1 1 100%;
+}
+
+.bl4mm_entry_wrap .toggle,
+.bl4mm_entry_wrap .slider,
+.bl4mm_entry_wrap .stepper {
+    width: 100%;
+    height: 100%;
+}
+
+.bl4mm_value {
+    font-family: Industry-Normal;
+    color: #a0aeb1;
+    margin: 0;
+}
+
+.bl4mm_reset {
+    position: absolute;
+    right: 47.5rem;
+    top: 50%;
+    width: 3.4rem;
+    height: 3.4rem;
+    transform: translateY(-50%);
+    z-index: 3;
+    opacity: 0.7;
+}
+
+.bl4mm_reset.hover_effect {
+    opacity: 1;
+}
+
+.bl4mm_reset .rebind_entry_btn_icon {
+    width: 100%;
+    height: 100%;
+}
+
+.bl4mm_key {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 8rem;
+}
+
+.bl4mm_key_img {
+    height: 3.4rem;
+}
+
+.bl4mm_key_text {
+    font-family: Industry-DemiBold;
+    color: #e4d9ce;
+    margin: 0 1rem;
+}
+
+.bl4mm_empty {
+    font-family: Industry-Normal;
+    color: #a0aeb1;
+    margin: 2rem;
+}
+
+/* endregion */
+/* region Footer and toast */
+
+.bl4mm_footer {
+    flex: 0 0 7rem;
+    height: 7rem;
+    flex-direction: row;
+    display: flex;
+    align-items: center;
+    margin-top: 1.6rem;
+}
+
+.bl4mm_back.list_btn {
+    flex: 0 0 24rem;
+    width: 24rem;
+    max-width: 24rem;
+    margin: 0 3rem 0 0;
+}
+
+.bl4mm_hint {
+    font-family: Industry-Normal;
+    font-size: 2rem;
+    color: #a0aeb1;
+    margin: 0;
+}
+
+.bl4mm_toast {
+    position: absolute;
+    right: 0;
+    bottom: 1.4rem;
+    max-width: 90rem;
+    padding: 1.2rem 2.4rem;
+    font-family: Industry-DemiBold;
+    font-size: 2.1rem;
+    color: #e4d9ce;
+    background-color: rgba(3, 16, 25, 0.92);
+    border-left: 0.5rem solid #00c6ff;
+    margin: 0;
+}
+
+.bl4mm_toast_error {
+    border-left-color: #ff5a3d;
+}
+
+/* endregion */
+
+/* region Updates */
+
+/* The "!" on MODS (pause menu, title screen) and on the Updates entry while updates are waiting.
+   The mark is a bar and a dot placed by hand (0.4rem to 2.0rem: centred in the 2.4rem circle). */
+.bl4mm_badge {
+    display: inline-block;
+    position: relative;
+    width: 2.4rem;
+    height: 2.4rem;
+    margin-left: 1rem;
+    padding: 0;
+    border-radius: 1.2rem;
+    background-color: #ffbb00;
+    vertical-align: middle;
+}
+
+.bl4mm_badge_bar,
+.bl4mm_badge_dot {
+    position: absolute;
+    left: 50%;
+    width: 0.36rem;
+    margin-left: -0.18rem;
+    background-color: #10161a;
+}
+
+.bl4mm_badge_bar {
+    top: 0.4rem;
+    height: 1.0rem;
+    border-radius: 0.18rem;
+}
+
+.bl4mm_badge_dot {
+    top: 1.64rem;
+    height: 0.36rem;
+    border-radius: 0.18rem;
+}
+
+.bl4mm_update_msg {
+    font-family: Industry-Normal;
+    font-size: 2rem;
+    color: #e4d9ce;
+    margin: 1rem 2rem;
+}
+
+.bl4mm_update_ver {
+    font-family: Industry-Normal;
+    font-size: 2rem;
+    color: #e4d9ce;
+    white-space: nowrap;
+    margin-right: 1.5rem;
+}
+
+.bl4mm_update_actions {
+    display: flex;
+    flex-direction: row;
+    margin: 1rem 2rem 2rem 2rem;
+}
+
+.bl4mm_update_btn.list_btn {
+    flex: 0 0 auto;
+    width: 26rem;
+    height: 4.3rem;
+    min-height: 4.3rem;
+    margin-right: 1.5rem;
+}
+
+.bl4mm_update_btn.bl4mm_selected .button_txt {
+    color: #ffbb00;
+}
+
+.bl4mm_main_entry {
+    cursor: pointer;
+}
+
+/* endregion */

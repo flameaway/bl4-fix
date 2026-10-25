@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Reroll"
+version = "0.1.0"
+description = "Reroll the modifiers on class mods and enhancements for Eridium: 5 to reroll them all, 10 to replace one. Each item gets a page in the mod menu (F7); or type reroll in the console."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

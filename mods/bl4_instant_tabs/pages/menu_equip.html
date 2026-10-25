@@ -1,0 +1,1073 @@
+<widget-menu-equip hide-flags-enabled="true"
+                   class="status_menu_fade">
+    <oak-parallax-effect id="equipment_container"
+                         name="equipment_container"
+                         class="equipment__container parallax_container">
+        <div name="equipment"
+             class="equipment menu_screen_boundaries">
+            <div name="Weapon Wheel"
+                 data-bind-class-toggle="invisible:!{{$data.bshowequipment}}"
+                 data-bind-input-disabled="!{{$data.bshowequipment}}"
+                 class="weapon-wheel">
+                <div name="Weapon Wheel Container"
+                     class="equip_weap_wheel_container">
+                    <div name="FUI blue corner container"
+                         class="fui_blue_corner">
+                        <div name="top left"
+                             class="fui_blue_corner_1 parallax_effect fuilayer_3 parallax_transition_2"></div>
+                        <div name="top right"
+                             class="fui_blue_corner_2 parallax_effect fuilayer_3 parallax_transition_2"></div>
+                        <div name="bot right"
+                             class="fui_blue_corner_3 parallax_effect fuilayer_3 parallax_transition_2"></div>
+                        <div name="bot left"
+                             class="fui_blue_corner_4 parallax_effect fuilayer_3 parallax_transition_2"></div>
+                    </div>
+                    <div name="FUI lines container"
+                         class="me_fui_corner_lines">
+                        <div name="top left"
+                             class="equip_fui_lines_1 parallax_effect parallax_transition_1 fuilayer_1"></div>
+                        <div name="top right"
+                             class="parallax_effect parallax_transition_1 fuilayer_1 equip_fui_lines_2"></div>
+                        <div name="bot right"
+                             class="parallax_effect parallax_transition_1 fuilayer_1 equip_fui_lines_3"></div>
+                        <div name="bot left"
+                             class="parallax_effect parallax_transition_1 fuilayer_1 equip_fui_lines_4"></div>
+                    </div>
+                    <oak-equip-slot name="Weapon1 Slot"
+                                    slot-ident="weapon0"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('weapon', 0)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('weapon', 0)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    gue-comment="&quot;compare&quot; class should be toggle in the weapon# Slot for the Slot compare state"
+                                    class="weapon_slot weapon_slot_left">
+                        <div name="number container"
+                             class="weap_wheel_number_container"></div>
+                        <p name="Text"
+                           data-l10n-id="WeaponWheelSlotNumber1"
+                           class="weap_wheel_slot_number"></p>
+                        <div name="Slot Background"
+                             class="equip_weap_wheel_slot_bkg">
+                            <div name="hit area"
+                                 class="weapon_slot_hit_area_container">
+                                <div name="hit area 7"
+                                     class="weapon_slot_hit_area_7"></div>
+                                <div name="hit area 6"
+                                     class="weapon_slot_hit_area_6"></div>
+                                <div name="hit area 5"
+                                     class="weapon_slot_hit_area_5"></div>
+                                <div name="hit area 4"
+                                     class="weapon_slot_hit_area_4"></div>
+                                <div name="hit area 3"
+                                     class="weapon_slot_hit_area_3"></div>
+                                <div name="hit area 2"
+                                     class="weapon_slot_hit_area_2"></div>
+                                <div name="hit area 1"
+                                     class="weapon_slot_hit_area_7 weapon_slot_hit_area_1"></div>
+                            </div>
+                            <div name="backing"
+                                 class="weap_wheel_slot_background"></div>
+                            <div name="color"
+                                 gue-comment="here is where rarity colors are applied"
+                                 class="oak_equip_slot_color rarity empty_color">
+                                <div name="slot outline"
+                                     class="weap_wheel_slot_outline"></div>
+                                <div name="empty icon"
+                                     data-bind-class-toggle="hidden:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.isempty"
+                                     class="weap_wheel_slot_empty_icon"></div>
+                                <div name="backing gradient"
+                                     class="weap_wheel_slot_gradient_backing"></div>
+                                <div name="hover gradient"
+                                     data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.isempty"
+                                     class="weap_wheel_slot_gradient"></div>
+                                <div name="locked pattern cntr"
+                                     class="weapon_slot_locked_pattern_cntr">
+                                    <div name="locked pattern"
+                                         class="weapon_slot_locked_pattern">
+                                        <div name="locked backing"
+                                             class="locked_backing_diagonal_lines_pattern"></div>
+                                    </div>
+                                    <div name="locked pattern smaller"
+                                         class="weapon_slot_locked_pattern_small">
+                                        <div name="locked backing"
+                                             class="locked_backing_diagonal_lines_pattern"></div>
+                                    </div>
+                                </div>
+                                <div name="icon enders"
+                                     data-bind-class-toggle="icon_ender_full:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.isempty"
+                                     class="weapon_slot_icon_ender_container">
+                                    <div name="icon ender top"
+                                         data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.isempty"
+                                         class="weapon_slot_icon_ender_1"></div>
+                                    <div name="icon ender bottom"
+                                         data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.isempty"
+                                         class="weapon_slot_icon_ender_1 weapon_slot_icon_ender_flip"></div>
+                                </div>
+                            </div>
+                            <div name="pearl texture"
+                                 class="me_weap_pearl_texture"></div>
+                            <div name="element_container"
+                                 data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.isempty"
+                                 class="weap_element_icons_container">
+                                <div name="elem1"
+                                     class="weap_element_icon">
+                                    <gbx-component gbx-component-id="element_damage_type"
+                                                   class="elemental_damage_icon_size element1"></gbx-component>
+                                </div>
+                                <div name="elem2"
+                                     class="weap_element_icon">
+                                    <gbx-component gbx-component-id="element_damage_type"
+                                                   class="elemental_damage_icon_size element2"></gbx-component>
+                                </div>
+                            </div>
+                            <div name="Orange FUI hover"
+                                 class="orange_fui_container_hover">
+                                <div name="Orange fui hover container 1"
+                                     class="orange_fui_1">
+                                    <div name="left"
+                                         class="orange_fui_right"></div>
+                                    <div name="left"
+                                         class="orange_fui_left"></div>
+                                    <div name="middle"
+                                         class="orange_fui_middle"></div>
+                                </div>
+                                <div name="Orange fui hover container 2"
+                                     class="orange_fui_2">
+                                    <div name="left"
+                                         class="orange_fui_right"></div>
+                                    <div name="left"
+                                         class="orange_fui_left"></div>
+                                    <div name="middle"
+                                         class="orange_fui_middle"></div>
+                                </div>
+                            </div>
+                            <gbx-component name="rarity_pips"
+                                           gbx-component-id="rarity_pips"
+                                           data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.rarityident"
+                                           class="menu_equip_rarity"></gbx-component>
+                            <div name="item type"
+                                 class="item_cell_type_icon rarity bright me_size me_weap_slot_position_left"></div>
+                            <div name="manufacturer logo"
+                                 class="me_weapon_slot_manufacturer weap_slot_left"></div>
+                            <div name="slot outline compare"
+                                 class="weap_wheel_slot_outline_compare"></div>
+                            <div name="slot outline hover"
+                                 class="weap_wheel_slot_outline_hover"></div>
+                            <div name="lock icon container"
+                                 class="me_equip_slot_locked_icon_cntr position_absolute_flex_center">
+                                <div name="Locked Detail"
+                                     class="equip_slot_locked_detail"></div>
+                            </div>
+                            <div name="weapon property icons"
+                                 class="wheel-slot__weapon-slot">
+                                <div name="weapon-image"
+                                     data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.thumbnailicon != 'none'"
+                                     data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.thumbnailicon"
+                                     data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.bplaceholderthumbnail"
+                                     gue-color="#F60"
+                                     class="weapon_image"></div>
+                            </div>
+                            <div name="compare icon cntr"
+                                 class="weapon_slot_compare_icon_cntr">
+                                <div name="compare icon shadow"
+                                     class="weapon_slot_compare_icon_shadow"></div>
+                                <div name="compare icon"
+                                     class="weapon_slot_compare_icon"></div>
+                            </div>
+                            <div name="Weapon Wheel State"
+                                 data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 0, {{$data}})?.taggroup"
+                                 class="slot_state_icon"></div>
+                            <div name="NEW icon"
+                                 class="new_icon_weapon_slot_position"></div>
+                        </div>
+                    </oak-equip-slot>
+                    <oak-equip-slot name="Weapon2 Slot"
+                                    slot-ident="weapon1"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('weapon', 1)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('weapon', 1)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    class="weapon_slot weapon_slot_top">
+                        <div name="number container"
+                             class="weap_wheel_number_container"></div>
+                        <p name="Text"
+                           data-l10n-id="WeaponWheelSlotNumber2"
+                           class="weap_wheel_slot_number"></p>
+                        <div name="Slot Background"
+                             class="equip_weap_wheel_slot_bkg">
+                            <div name="hit area"
+                                 class="weapon_slot_hit_area_container">
+                                <div name="hit area 7"
+                                     class="weapon_slot_hit_area_7"></div>
+                                <div name="hit area 6"
+                                     class="weapon_slot_hit_area_6"></div>
+                                <div name="hit area 5"
+                                     class="weapon_slot_hit_area_5"></div>
+                                <div name="hit area 4"
+                                     class="weapon_slot_hit_area_4"></div>
+                                <div name="hit area 3"
+                                     class="weapon_slot_hit_area_3"></div>
+                                <div name="hit area 2"
+                                     class="weapon_slot_hit_area_2"></div>
+                                <div name="hit area 1"
+                                     class="weapon_slot_hit_area_7 weapon_slot_hit_area_1"></div>
+                            </div>
+                            <div name="backing"
+                                 class="weap_wheel_slot_background"></div>
+                            <div name="color"
+                                 gue-comment="here is where rarity colors are applied"
+                                 class="oak_equip_slot_color rarity empty_color">
+                                <div name="slot outline"
+                                     class="weap_wheel_slot_outline"></div>
+                                <div name="empty icon"
+                                     data-bind-class-toggle="hidden:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.isempty"
+                                     class="weap_wheel_slot_empty_icon"></div>
+                                <div name="backing gradient"
+                                     class="weap_wheel_slot_gradient_backing"></div>
+                                <div name="hover gradient"
+                                     data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.isempty"
+                                     class="weap_wheel_slot_gradient"></div>
+                                <div name="locked pattern cntr"
+                                     class="weapon_slot_locked_pattern_cntr">
+                                    <div name="locked pattern"
+                                         class="weapon_slot_locked_pattern">
+                                        <div name="locked backing"
+                                             class="locked_backing_diagonal_lines_pattern"></div>
+                                    </div>
+                                    <div name="locked pattern smaller"
+                                         class="weapon_slot_locked_pattern_small">
+                                        <div name="locked backing"
+                                             class="locked_backing_diagonal_lines_pattern"></div>
+                                    </div>
+                                </div>
+                                <div name="icon enders"
+                                     data-bind-class-toggle="icon_ender_full:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.isempty"
+                                     class="weapon_slot_icon_ender_container">
+                                    <div name="icon ender top"
+                                         data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.isempty"
+                                         class="weapon_slot_icon_ender_1"></div>
+                                    <div name="icon ender bottom"
+                                         data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.isempty"
+                                         class="weapon_slot_icon_ender_1 weapon_slot_icon_ender_flip"></div>
+                                </div>
+                            </div>
+                            <div name="pearl texture"
+                                 class="me_weap_pearl_texture"></div>
+                            <div name="element_container"
+                                 data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.isempty"
+                                 class="weap_element_icons_container">
+                                <div name="elem1"
+                                     class="weap_element_icon">
+                                    <gbx-component gbx-component-id="element_damage_type"
+                                                   class="elemental_damage_icon_size element1"></gbx-component>
+                                </div>
+                                <div name="elem2"
+                                     class="weap_element_icon">
+                                    <gbx-component gbx-component-id="element_damage_type"
+                                                   class="elemental_damage_icon_size element2"></gbx-component>
+                                </div>
+                            </div>
+                            <div name="Orange FUI hover"
+                                 class="orange_fui_container_hover">
+                                <div name="Orange fui hover container 1"
+                                     class="orange_fui_1">
+                                    <div name="left"
+                                         class="orange_fui_right"></div>
+                                    <div name="left"
+                                         class="orange_fui_left"></div>
+                                    <div name="middle"
+                                         class="orange_fui_middle"></div>
+                                </div>
+                                <div name="Orange fui hover container 2"
+                                     class="orange_fui_2">
+                                    <div name="left"
+                                         class="orange_fui_right"></div>
+                                    <div name="left"
+                                         class="orange_fui_left"></div>
+                                    <div name="middle"
+                                         class="orange_fui_middle"></div>
+                                </div>
+                            </div>
+                            <gbx-component name="rarity_pips"
+                                           gbx-component-id="rarity_pips"
+                                           data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.rarityident"
+                                           class="menu_equip_rarity"></gbx-component>
+                            <div name="item type"
+                                 class="item_cell_type_icon me_size me_weap_slot_position_top rarity bright"></div>
+                            <div name="manufacturer logo"
+                                 class="me_weapon_slot_manufacturer weap_slot_top"></div>
+                            <div name="slot outline compare"
+                                 class="weap_wheel_slot_outline_compare"></div>
+                            <div name="slot outline hover"
+                                 class="weap_wheel_slot_outline_hover"></div>
+                            <div name="lock icon container"
+                                 class="me_equip_slot_locked_icon_cntr position_absolute_flex_center">
+                                <div name="Locked Detail"
+                                     class="equip_slot_locked_detail"></div>
+                            </div>
+                            <div name="weapon property icons"
+                                 class="wheel-slot__weapon-slot">
+                                <div name="weapon-image"
+                                     data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.thumbnailicon != 'none'"
+                                     data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.thumbnailicon"
+                                     data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.bplaceholderthumbnail"
+                                     gue-color="#F60"
+                                     class="weapon_image"></div>
+                            </div>
+                            <div name="compare icon cntr"
+                                 class="weapon_slot_compare_icon_cntr">
+                                <div name="compare icon shadow"
+                                     class="weapon_slot_compare_icon_shadow"></div>
+                                <div name="compare icon"
+                                     class="weapon_slot_compare_icon"></div>
+                            </div>
+                            <div name="Weapon Wheel State"
+                                 data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 1, {{$data}})?.taggroup"
+                                 class="slot_state_icon"></div>
+                            <div name="NEW icon"
+                                 class="new_icon_weapon_slot_position"></div>
+                        </div>
+                    </oak-equip-slot>
+                    <oak-equip-slot name="Weapon3 Slot"
+                                    slot-ident="weapon2"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('weapon', 2)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('weapon', 2)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    gue-comment="Master 'component' for the wedges"
+                                    class="weapon_slot weapon_slot_right">
+                        <div name="number container"
+                             class="weap_wheel_number_container"></div>
+                        <p name="Text"
+                           data-l10n-id="WeaponWheelSlotNumber3"
+                           class="weap_wheel_slot_number"></p>
+                        <div name="Slot Background"
+                             class="equip_weap_wheel_slot_bkg">
+                            <div name="hit area"
+                                 class="weapon_slot_hit_area_container">
+                                <div name="hit area 7"
+                                     class="weapon_slot_hit_area_7"></div>
+                                <div name="hit area 6"
+                                     class="weapon_slot_hit_area_6"></div>
+                                <div name="hit area 5"
+                                     class="weapon_slot_hit_area_5"></div>
+                                <div name="hit area 4"
+                                     class="weapon_slot_hit_area_4"></div>
+                                <div name="hit area 3"
+                                     class="weapon_slot_hit_area_3"></div>
+                                <div name="hit area 2"
+                                     class="weapon_slot_hit_area_2"></div>
+                                <div name="hit area 1"
+                                     class="weapon_slot_hit_area_7 weapon_slot_hit_area_1"></div>
+                            </div>
+                            <div name="backing"
+                                 class="weap_wheel_slot_background"></div>
+                            <div name="color"
+                                 gue-comment="here is where rarity colors are applied"
+                                 class="oak_equip_slot_color empty_color rarity">
+                                <div name="slot outline"
+                                     class="weap_wheel_slot_outline"></div>
+                                <div name="empty icon"
+                                     data-bind-class-toggle="hidden:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.isempty"
+                                     class="weap_wheel_slot_empty_icon"></div>
+                                <div name="backing gradient"
+                                     class="weap_wheel_slot_gradient_backing"></div>
+                                <div name="hover gradient"
+                                     data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.isempty"
+                                     class="weap_wheel_slot_gradient"></div>
+                                <div name="locked pattern cntr"
+                                     class="weapon_slot_locked_pattern_cntr">
+                                    <div name="locked pattern"
+                                         class="weapon_slot_locked_pattern">
+                                        <div name="locked backing"
+                                             class="locked_backing_diagonal_lines_pattern"></div>
+                                    </div>
+                                    <div name="locked pattern smaller"
+                                         class="weapon_slot_locked_pattern_small">
+                                        <div name="locked backing"
+                                             class="locked_backing_diagonal_lines_pattern"></div>
+                                    </div>
+                                </div>
+                                <div name="icon enders"
+                                     data-bind-class-toggle="icon_ender_full:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.isempty"
+                                     class="weapon_slot_icon_ender_container">
+                                    <div name="icon ender top"
+                                         data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.isempty"
+                                         class="weapon_slot_icon_ender_1"></div>
+                                    <div name="icon ender bottom"
+                                         data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.isempty"
+                                         class="weapon_slot_icon_ender_1 weapon_slot_icon_ender_flip"></div>
+                                </div>
+                            </div>
+                            <div name="pearl texture"
+                                 class="me_weap_pearl_texture"></div>
+                            <div name="element_container"
+                                 data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.isempty"
+                                 class="weap_element_icons_container">
+                                <div name="elem1"
+                                     class="weap_element_icon">
+                                    <gbx-component gbx-component-id="element_damage_type"
+                                                   class="elemental_damage_icon_size element1"></gbx-component>
+                                </div>
+                                <div name="elem2"
+                                     class="weap_element_icon">
+                                    <gbx-component gbx-component-id="element_damage_type"
+                                                   class="elemental_damage_icon_size element2"></gbx-component>
+                                </div>
+                            </div>
+                            <div name="Orange FUI hover"
+                                 class="orange_fui_container_hover">
+                                <div name="Orange fui hover container 1"
+                                     class="orange_fui_1">
+                                    <div name="left"
+                                         class="orange_fui_right"></div>
+                                    <div name="left"
+                                         class="orange_fui_left"></div>
+                                    <div name="middle"
+                                         class="orange_fui_middle"></div>
+                                </div>
+                                <div name="Orange fui hover container 2"
+                                     class="orange_fui_2">
+                                    <div name="left"
+                                         class="orange_fui_right"></div>
+                                    <div name="left"
+                                         class="orange_fui_left"></div>
+                                    <div name="middle"
+                                         class="orange_fui_middle"></div>
+                                </div>
+                            </div>
+                            <gbx-component name="rarity_pips"
+                                           gbx-component-id="rarity_pips"
+                                           data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.rarityident"
+                                           class="menu_equip_rarity"></gbx-component>
+                            <div name="item type"
+                                 class="item_cell_type_icon rarity bright me_size me_weap_slot_position_right"></div>
+                            <div name="manufacturer logo"
+                                 class="me_weapon_slot_manufacturer weap_slot_right"></div>
+                            <div name="slot outline compare"
+                                 class="weap_wheel_slot_outline_compare"></div>
+                            <div name="slot outline hover"
+                                 class="weap_wheel_slot_outline_hover"></div>
+                            <div name="lock icon container"
+                                 class="me_equip_slot_locked_icon_cntr position_absolute_flex_center">
+                                <div name="Locked Detail"
+                                     class="equip_slot_locked_detail"></div>
+                            </div>
+                            <div name="weapon property icons"
+                                 class="wheel-slot__weapon-slot">
+                                <div name="weapon-image"
+                                     data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.thumbnailicon != 'none'"
+                                     data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.thumbnailicon"
+                                     data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.bplaceholderthumbnail"
+                                     gue-color="#F60"
+                                     class="weapon_image"></div>
+                            </div>
+                            <div name="compare icon cntr"
+                                 class="weapon_slot_compare_icon_cntr">
+                                <div name="compare icon shadow"
+                                     class="weapon_slot_compare_icon_shadow"></div>
+                                <div name="compare icon"
+                                     class="weapon_slot_compare_icon"></div>
+                            </div>
+                            <div name="Weapon Wheel State"
+                                 data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 2, {{$data}})?.taggroup"
+                                 class="slot_state_icon"></div>
+                            <div name="NEW icon"
+                                 class="new_icon_weapon_slot_position"></div>
+                        </div>
+                    </oak-equip-slot>
+                    <oak-equip-slot name="Weapon4 Slot"
+                                    slot-ident="weapon3"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('weapon', 3)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('weapon', 3)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    class="weapon_slot weapon_slot_bottom">
+                        <div name="number container"
+                             class="weap_wheel_number_container"></div>
+                        <p name="Text"
+                           data-l10n-id="WeaponWheelSlotNumber4"
+                           class="weap_wheel_slot_number"></p>
+                        <div name="Slot Background"
+                             class="equip_weap_wheel_slot_bkg">
+                            <div name="hit area"
+                                 class="weapon_slot_hit_area_container">
+                                <div name="hit area 7"
+                                     class="weapon_slot_hit_area_7"></div>
+                                <div name="hit area 6"
+                                     class="weapon_slot_hit_area_6"></div>
+                                <div name="hit area 5"
+                                     class="weapon_slot_hit_area_5"></div>
+                                <div name="hit area 4"
+                                     class="weapon_slot_hit_area_4"></div>
+                                <div name="hit area 3"
+                                     class="weapon_slot_hit_area_3"></div>
+                                <div name="hit area 2"
+                                     class="weapon_slot_hit_area_2"></div>
+                                <div name="hit area 1"
+                                     class="weapon_slot_hit_area_7 weapon_slot_hit_area_1"></div>
+                            </div>
+                            <div name="backing"
+                                 class="weap_wheel_slot_background"></div>
+                            <div name="color"
+                                 gue-comment="here is where rarity colors are applied"
+                                 class="oak_equip_slot_color rarity empty_color">
+                                <div name="slot outline"
+                                     class="weap_wheel_slot_outline"></div>
+                                <div name="empty icon"
+                                     data-bind-class-toggle="hidden:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.isempty"
+                                     class="weap_wheel_slot_empty_icon"></div>
+                                <div name="backing gradient"
+                                     class="weap_wheel_slot_gradient_backing"></div>
+                                <div name="hover gradient"
+                                     data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.isempty"
+                                     class="weap_wheel_slot_gradient"></div>
+                                <div name="locked pattern cntr"
+                                     class="weapon_slot_locked_pattern_cntr">
+                                    <div name="locked pattern"
+                                         class="weapon_slot_locked_pattern">
+                                        <div name="locked backing"
+                                             class="locked_backing_diagonal_lines_pattern"></div>
+                                    </div>
+                                    <div name="locked pattern smaller"
+                                         class="weapon_slot_locked_pattern_small">
+                                        <div name="locked backing"
+                                             class="locked_backing_diagonal_lines_pattern"></div>
+                                    </div>
+                                </div>
+                                <div name="icon enders"
+                                     data-bind-class-toggle="icon_ender_full:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.isempty"
+                                     class="weapon_slot_icon_ender_container">
+                                    <div name="icon ender top"
+                                         data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.isempty"
+                                         class="weapon_slot_icon_ender_1"></div>
+                                    <div name="icon ender bottom"
+                                         data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.isempty"
+                                         class="weapon_slot_icon_ender_1 weapon_slot_icon_ender_flip"></div>
+                                </div>
+                            </div>
+                            <div name="pearl texture"
+                                 class="me_weap_pearl_texture"></div>
+                            <div name="element_container"
+                                 data-bind-class-toggle="hidden:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.isempty"
+                                 class="weap_element_icons_container">
+                                <div name="elem1"
+                                     class="weap_element_icon">
+                                    <gbx-component gbx-component-id="element_damage_type"
+                                                   class="elemental_damage_icon_size element1"></gbx-component>
+                                </div>
+                                <div name="elem2"
+                                     class="weap_element_icon">
+                                    <gbx-component gbx-component-id="element_damage_type"
+                                                   class="elemental_damage_icon_size element2"></gbx-component>
+                                </div>
+                            </div>
+                            <div name="Orange FUI hover"
+                                 class="orange_fui_container_hover">
+                                <div name="Orange fui hover container 1"
+                                     class="orange_fui_1">
+                                    <div name="right"
+                                         class="orange_fui_right"></div>
+                                    <div name="left"
+                                         class="orange_fui_left"></div>
+                                    <div name="middle"
+                                         class="orange_fui_middle"></div>
+                                </div>
+                                <div name="Orange fui hover container 2"
+                                     class="orange_fui_2">
+                                    <div name="right"
+                                         class="orange_fui_right"></div>
+                                    <div name="left"
+                                         class="orange_fui_left"></div>
+                                    <div name="middle"
+                                         class="orange_fui_middle"></div>
+                                </div>
+                            </div>
+                            <gbx-component name="rarity_pips"
+                                           gbx-component-id="rarity_pips"
+                                           data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.rarityident"
+                                           class="menu_equip_rarity"></gbx-component>
+                            <div name="item type"
+                                 class="item_cell_type_icon rarity bright me_size me_weap_slot_position_bot"></div>
+                            <div name="manufacturer logo"
+                                 class="me_weapon_slot_manufacturer weap_slot_bot"></div>
+                            <div name="slot outline compare"
+                                 class="weap_wheel_slot_outline_compare"></div>
+                            <div name="slot outline hover"
+                                 class="weap_wheel_slot_outline_hover"></div>
+                            <div name="lock icon container"
+                                 class="me_equip_slot_locked_icon_cntr position_absolute_flex_center">
+                                <div name="Locked Detail"
+                                     class="equip_slot_locked_detail"></div>
+                            </div>
+                            <div name="weapon property icons"
+                                 class="wheel-slot__weapon-slot">
+                                <div name="weapon-image"
+                                     data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.thumbnailicon != 'none'"
+                                     data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.thumbnailicon"
+                                     data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.bplaceholderthumbnail"
+                                     gue-color="#F60"
+                                     class="weapon_image"></div>
+                            </div>
+                            <div name="compare icon cntr"
+                                 class="weapon_slot_compare_icon_cntr">
+                                <div name="compare icon shadow"
+                                     class="weapon_slot_compare_icon_shadow"></div>
+                                <div name="compare icon"
+                                     class="weapon_slot_compare_icon"></div>
+                            </div>
+                            <div name="Weapon Wheel State"
+                                 data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('weapon', 3, {{$data}})?.taggroup"
+                                 class="slot_state_icon"></div>
+                            <div name="NEW icon"
+                                 class="new_icon_weapon_slot_position"></div>
+                        </div>
+                    </oak-equip-slot>
+                </div>
+                <div name="weapon-wheel__slot__info"
+                     class="weapon-wheel__slot__info"></div>
+                <div name="Weapon Wheel State"
+                     class="slot_state_icon"></div>
+            </div>
+            <div name="Equipment Gear Container"
+                 class="equipment_gears_container">
+                <div name="Equipment Gear"
+                     data-bind-class-toggle="invisible:!{{$data.bshowequipment}}"
+                     data-bind-input-disabled="!{{$data.bshowequipment}}"
+                     class="equipment_gears">
+                    <div name="FUI center"
+                         class="fui_center_line parallax_effect fuilayer_1 parallax_transition_1"></div>
+                    <div name="FUI blue corner"
+                         class="fui_blue_corner_bottom">
+                        <div name="left"
+                             class="fui_blue_corner_bottom_1 fuilayer_3 parallax_transition_2 parallax_effect"></div>
+                        <div name="right"
+                             class="fui_blue_corner_bottom_2 fuilayer_3 parallax_transition_2 parallax_effect"></div>
+                    </div>
+                    <oak-equip-slot slot-ident="repair_kit0"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('repair_kit', 0)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('repair_kit', 0)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('repair_kit', 0, {{$data}})?.taggroup"
+                                    name="rep_kit"
+                                    class="active_gear_slot_container slot_container rep_kit_container_position gear_slots">
+                        <div name="Repkit_wrapper"
+                             class="rep_kit_position">
+                            <div name="Repkit container"
+                                 class="active_gear_slots">
+                                <div name="backing"
+                                     class="active_gear_backing"></div>
+                                <div name="rarity color"
+                                     class="oak_equip_slot_color rarity empty_color">
+                                    <div name="gradient backing"
+                                         class="active_gear_gradient_backing"></div>
+                                    <div name="gradient"
+                                         class="active_gear_gradient"></div>
+                                    <div name="gear type icon"
+                                         class="me_repkit_icon me_geartype_icon"></div>
+                                    <div name="outline"
+                                         class="active_gear_outline"></div>
+                                </div>
+                                <div name="pearl texture"
+                                     class="me_gear_pearl_texture"></div>
+                                <div name="manufacturer logo"
+                                     class="ic_header_manufacturer_bkg me_gear_manu_logo_placement"></div>
+                                <div data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('repair_kit', 0, {{$data}})?.thumbnailicon != 'none'"
+                                     data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('repair_kit', 0, {{$data}})?.thumbnailicon"
+                                     data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('repair_kit', 0, {{$data}})?.bplaceholderthumbnail"
+                                     name="item render container"
+                                     gue-color="#F60"
+                                     class="gear_slot_thumbnail"></div>
+                                <div name="icon set wrapper"
+                                     class="icon_set_wrapper rep_kit_icon_position">
+                                    <div name="elemental 1 icon"
+                                         class="icon_container"></div>
+                                    <div name="elemental 2 icon"
+                                         class="icon_container"></div>
+                                    <div name="firmware icon"
+                                         data-bind-class-toggle="collapsed:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('repair_kit', 0, {{$data}})?.isfirmware"
+                                         class="icon_container">
+                                        <div name="firmware placeholder icon"
+                                             data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('repair_kit', 0, {{$data}})?.firmwareident"
+                                             class="firmware_icon_placeholder icon_bkg_sm"></div>
+                                    </div>
+                                </div>
+                                <div name="outline_hover"
+                                     class="active_gear_outline_hover gear_outline_hover"></div>
+                                <gbx-component name="rarity_pips"
+                                               gbx-component-id="rarity_pips"
+                                               data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('repair_kit', 0, {{$data}})?.rarityident"
+                                               class="rarity_pip_position_active_gear rep_kit_rarity_pip"></gbx-component>
+                                <div name="item type"
+                                     class="item_cell_type_icon rarity bright me_repkit_itemtype_position me_size"></div>
+                                <div name="compare icon"
+                                     class="gear_slot_compare_icon"></div>
+                                <div class="gear_slot_new_icon"></div>
+                                <div name="mark icons"
+                                     class="gear_slot_icons_container">
+                                    <div class="gear_slot_icon"></div>
+                                </div>
+                                <div name="lock icon container"
+                                     class="me_equip_slot_locked_icon_cntr position_absolute_flex_center">
+                                    <div name="Locked Detail"
+                                         class="gear_slot_locked_detail"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </oak-equip-slot>
+                    <oak-equip-slot slot-ident="gadget0"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('gadget', 0)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('gadget', 0)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('gadget', 0, {{$data}})?.taggroup"
+                                    name="gadget"
+                                    class="active_gear_slot_container slot_container gadget_container_position gear_slots">
+                        <div name="Gadget wrapper"
+                             class="gadget_position">
+                            <div name="Gadget container"
+                                 class="active_gear_slots">
+                                <div name="backing"
+                                     class="active_gear_backing"></div>
+                                <div name="rarity color"
+                                     class="oak_equip_slot_color rarity empty_color">
+                                    <div name="gradient backing"
+                                         class="active_gear_gradient_backing"></div>
+                                    <div name="gradient"
+                                         class="active_gear_gradient"></div>
+                                    <div name="gear type icon"
+                                         class="me_geartype_icon me_ordnance_icon"></div>
+                                    <div name="outline"
+                                         class="active_gear_outline"></div>
+                                </div>
+                                <div name="pearl texture"
+                                     class="me_gear_pearl_texture"></div>
+                                <div name="manufacturer logo"
+                                     class="ic_header_manufacturer_bkg me_ordnance_manufacturer me_gear_manu_logo_placement"></div>
+                                <div data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('gadget', 0, {{$data}})?.thumbnailicon != 'none'"
+                                     data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('gadget', 0, {{$data}})?.thumbnailicon"
+                                     data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('gadget', 0, {{$data}})?.bplaceholderthumbnail"
+                                     gue-color="#F60"
+                                     name="Item render container"
+                                     class="gear_slot_thumbnail me_gadget_flip"></div>
+                                <div name="icon set wrapper"
+                                     class="icon_set_wrapper gadget_icon_set_position">
+                                    <div name="elemental 1 icon"
+                                         class="icon_container">
+                                        <gbx-component name="element_damage_type"
+                                                       gbx-component-id="element_damage_type"
+                                                       class="element_damage_type_size element1"></gbx-component>
+                                    </div>
+                                    <div name="elemental 2 icon"
+                                         class="icon_container">
+                                        <gbx-component name="element_damage_type"
+                                                       gbx-component-id="element_damage_type"
+                                                       class="element_damage_type_size element2"></gbx-component>
+                                    </div>
+                                    <div name="firmware icon"
+                                         data-bind-class-toggle="collapsed:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('gadget', 0, {{$data}})?.isfirmware"
+                                         class="icon_container">
+                                        <div name="firmware placeholder icon"
+                                             data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('gadget', 0, {{$data}})?.firmwareident"
+                                             class="firmware_icon_placeholder icon_bkg_sm"></div>
+                                    </div>
+                                </div>
+                                <div name="outline_hover"
+                                     class="gear_outline_hover active_gear_outline_hover"></div>
+                                <gbx-component name="rarity_pips"
+                                               gbx-component-id="rarity_pips"
+                                               data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('gadget', 0, {{$data}})?.rarityident"
+                                               data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('gadget', 0, {{$data}})?.taggroup"
+                                               class="rarity_pip_position_active_gear gadget_rarity_pip"></gbx-component>
+                                <div name="item type"
+                                     class="item_cell_type_icon rarity bright me_ordnance_itemtype_position me_size"></div>
+                                <div class="gear_slot_compare_icon"></div>
+                                <div name="new icon"
+                                     class="gear_slot_new_icon"></div>
+                                <div name="mark icons"
+                                     class="gear_slot_icons_container">
+                                    <div class="gear_slot_icon"></div>
+                                </div>
+                                <div name="lock icon container"
+                                     class="me_equip_slot_locked_icon_cntr position_absolute_flex_center gadget_lock_position">
+                                    <div name="Locked Detail"
+                                         class="gear_slot_locked_detail"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </oak-equip-slot>
+                    <oak-equip-slot slot-ident="classmod0"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('classmod', 0)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('classmod', 0)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('classmod', 0, {{$data}})?.taggroup"
+                                    name="class_mod"
+                                    class="class_mod_container_position slot_container gear_slots">
+                        <div name="class mod"
+                             class="passive_gear_slots class_mod_position">
+                            <div name="rarity_color"
+                                 class="oak_equip_slot_color rarity empty_color">
+                                <div name="line"
+                                     class="passive_gear_outline"></div>
+                                <div name="gear type icon"
+                                     class="me_geartype_icon me_classmods_icon"></div>
+                                <div name="gradient"
+                                     class="passive_gear_gradient"></div>
+                            </div>
+                            <div name="pearl texture"
+                                 class="me_gear2_pearl_texture"></div>
+                            <div name="manufacturer logo"
+                                 class="ic_header_manufacturer_bkg me_gear_manu_logo_placement"></div>
+                            <div data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('classmod', 0, {{$data}})?.thumbnailicon != 'none'"
+                                 data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('classmod', 0, {{$data}})?.thumbnailicon"
+                                 data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('classmod', 0, {{$data}})?.bplaceholderthumbnail"
+                                 gue-color="#F60"
+                                 name="Item render container"
+                                 class="gear_slot_thumbnail passive_gear_slots_item_position"></div>
+                            <div name="icon set wrapper"
+                                 class="icon_set_wrapper">
+                                <div name="elemental 1 icon"
+                                     class="icon_container"></div>
+                                <div name="elemental 2 icon"
+                                     class="icon_container"></div>
+                                <div name="firmware icon"
+                                     data-bind-class-toggle="collapsed:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('classmod', 0, {{$data}})?.isfirmware"
+                                     class="icon_container">
+                                    <div name="firmware placeholder icon"
+                                         data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('classmod', 0, {{$data}})?.firmwareident"
+                                         class="firmware_icon_placeholder icon_bkg_sm"></div>
+                                </div>
+                            </div>
+                            <div name="outline hover"
+                                 class="passive_gear_outline_hover gear_outline_hover"></div>
+                            <gbx-component name="rarity_pips"
+                                           gbx-component-id="rarity_pips"
+                                           data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('classmod', 0, {{$data}})?.rarityident"
+                                           class="rarity_pip_position_passive_gear gadget_rarity_pip"></gbx-component>
+                            <div name="item type"
+                                 class="item_cell_type_icon rarity bright me_passivegear_itemtype_position me_size"></div>
+                            <div class="gear_slot_compare_icon"></div>
+                            <div class="gear_slot_new_icon"></div>
+                            <div class="gear_slot_icons_container">
+                                <div class="gear_slot_icon"></div>
+                            </div>
+                            <div name="lock icon container"
+                                 class="me_equip_slot_locked_icon_cntr position_absolute_flex_center gadget_lock_position">
+                                <div name="Locked Detail"
+                                     class="gear_slot_locked_detail"></div>
+                            </div>
+                        </div>
+                    </oak-equip-slot>
+                    <oak-equip-slot slot-ident="shield0"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('shield', 0)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('shield', 0)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('shield', 0, {{$data}})?.taggroup"
+                                    name="shield"
+                                    class="shield_container_position slot_container gear_slots">
+                        <div name="shield"
+                             class="passive_gear_slots shield_mod_position">
+                            <div name="rarity_color"
+                                 class="oak_equip_slot_color rarity empty_color">
+                                <div name="line"
+                                     class="passive_gear_outline"></div>
+                                <div name="gear type icon"
+                                     class="me_geartype_icon me_shield_icon"></div>
+                                <div name="gradient"
+                                     class="passive_gear_gradient"></div>
+                            </div>
+                            <div name="pearl texture"
+                                 class="me_gear2_pearl_texture"></div>
+                            <div name="manufacturer logo"
+                                 class="ic_header_manufacturer_bkg me_gear_manu_logo_placement"></div>
+                            <div data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('shield', 0, {{$data}})?.thumbnailicon != 'none'"
+                                 data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('shield', 0, {{$data}})?.thumbnailicon"
+                                 data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('shield', 0, {{$data}})?.bplaceholderthumbnail"
+                                 gue-color="#F60"
+                                 name="item render container"
+                                 class="gear_slot_thumbnail passive_gear_slots_item_position"></div>
+                            <div name="icon set wrapper"
+                                 class="icon_set_wrapper">
+                                <div name="elemental 1 icon"
+                                     class="icon_container">
+                                    <gbx-component name="element_damage_type"
+                                                   gbx-component-id="element_damage_type"
+                                                   class="element_damage_type_size element1"></gbx-component>
+                                </div>
+                                <div name="elemental 2 icon"
+                                     class="icon_container"></div>
+                                <div name="firmware icon"
+                                     data-bind-class-toggle="collapsed:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('shield', 0, {{$data}})?.isfirmware"
+                                     class="icon_container">
+                                    <div name="firmware placeholder icon"
+                                         data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('shield', 0, {{$data}})?.firmwareident"
+                                         class="firmware_icon_placeholder icon_bkg_sm"></div>
+                                </div>
+                            </div>
+                            <div name="outline hover"
+                                 class="passive_gear_outline_hover gear_outline_hover"></div>
+                            <gbx-component name="rarity_pips"
+                                           gbx-component-id="rarity_pips"
+                                           data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('shield', 0, {{$data}})?.rarityident"
+                                           class="rarity_pip_position_passive_gear gadget_rarity_pip"></gbx-component>
+                            <div name="item type"
+                                 class="item_cell_type_icon rarity bright me_passivegear_itemtype_position me_size"></div>
+                            <div class="gear_slot_compare_icon"></div>
+                            <div name="new icon"
+                                 class="gear_slot_new_icon"></div>
+                            <div name="mark icons"
+                                 class="gear_slot_icons_container">
+                                <div class="gear_slot_icon"></div>
+                            </div>
+                            <div name="lock icon container"
+                                 class="me_equip_slot_locked_icon_cntr position_absolute_flex_center gadget_lock_position">
+                                <div name="Locked Detail"
+                                     class="gear_slot_locked_detail"></div>
+                            </div>
+                        </div>
+                    </oak-equip-slot>
+                    <oak-equip-slot slot-ident="enhancement0"
+                                    data-bind-click="$widget.OnEquipmentSlotClicked('enhancement', 0)"
+                                    data-bind-mouseenter="$widget.OnEquipmentSlotFocused('enhancement', 0)"
+                                    data-bind-mouseleave="$widget.OnEquipmentSlotUnfocused()"
+                                    data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('enhancement', 0, {{$data}})?.taggroup"
+                                    name="enhancement"
+                                    class="enhancement_container_position slot_container gear_slots">
+                        <div name="enhancement"
+                             class="passive_gear_slots enhancement_position">
+                            <div name="rarity_color"
+                                 class="oak_equip_slot_color rarity empty_color">
+                                <div name="line"
+                                     class="passive_gear_outline"></div>
+                                <div name="gear type icon"
+                                     class="me_geartype_icon me_enhancement_icon"></div>
+                                <div name="gradient"
+                                     class="passive_gear_gradient"></div>
+                            </div>
+                            <div name="pearl texture"
+                                 class="me_gear2_pearl_texture"></div>
+                            <div name="manufacturer logo"
+                                 class="ic_header_manufacturer_bkg me_gear_manu_logo_placement"></div>
+                            <div name="icon set wrapper"
+                                 class="icon_set_wrapper">
+                                <div name="elemental 1 icon"
+                                     class="icon_container"></div>
+                                <div name="elemental 2 icon"
+                                     class="icon_container"></div>
+                                <div name="firmware icon"
+                                     data-bind-class-toggle="collapsed:!$widget.GetEquipementSlotDataFromTypeAndSubIndex('enhancement', 0, {{$data}})?.isfirmware"
+                                     class="icon_container">
+                                    <div name="firmware placeholder icon"
+                                         data-bind-class="$widget.GetEquipementSlotDataFromTypeAndSubIndex('enhancement', 0, {{$data}})?.firmwareident"
+                                         class="firmware_icon_placeholder icon_bkg_sm"></div>
+                                </div>
+                            </div>
+                            <div name="outline hover"
+                                 class="passive_gear_outline_hover gear_outline_hover"></div>
+                            <div data-bind-if="$widget.GetEquipementSlotDataFromTypeAndSubIndex('enhancement', 0, {{$data}})?.thumbnailicon != 'none'"
+                                 data-bind-style-background-image-url="$widget.GetEquipementSlotDataFromTypeAndSubIndex('enhancement', 0, {{$data}})?.thumbnailicon"
+                                 data-bind-class-toggle="no_thumbnail:$widget.GetEquipementSlotDataFromTypeAndSubIndex('enhancement', 0, {{$data}})?.bplaceholderthumbnail"
+                                 gue-color="#F60"
+                                 name="item render container"
+                                 class="gear_slot_thumbnail passive_gear_slots_item_position"></div>
+                            <gbx-component name="rarity_pips"
+                                           gbx-component-id="rarity_pips"
+                                           data-bind-oak-rarity="$widget.GetEquipementSlotDataFromTypeAndSubIndex('enhancement', 0, {{$data}})?.rarityident"
+                                           class="rarity_pip_position_passive_gear gadget_rarity_pip"></gbx-component>
+                            <div name="item type"
+                                 class="item_cell_type_icon rarity bright me_passivegear_itemtype_position me_size"></div>
+                            <div class="gear_slot_compare_icon"></div>
+                            <div class="gear_slot_new_icon"></div>
+                            <div name="mark icons"
+                                 class="gear_slot_icons_container">
+                                <div class="gear_slot_icon"></div>
+                            </div>
+                            <div name="lock icon container"
+                                 class="me_equip_slot_locked_icon_cntr position_absolute_flex_center gadget_lock_position">
+                                <div name="Locked Detail"
+                                     class="gear_slot_locked_detail"></div>
+                            </div>
+                        </div>
+                    </oak-equip-slot>
+                </div>
+            </div>
+            <oak-cursor-handler name="Reward Center CTA button"
+                                data-bind-class-toggle="invisible:!{{$data.bshowrewardprompt}}"
+                                data-bind-mouseenter="$widget.OnRewardCenterFocused(event)"
+                                data-bind-mouseleave="$widget.OnRewardCenterUnfocused(event)"
+                                data-bind-click="$widget.Input_OpenRewardCenter()"
+                                class="mrc_cta_btn_wrapper">
+                <div name="Content"
+                     class="mrc_cta_btn">
+                    <div name="Border"
+                         class="mrc_cta_btn_border"></div>
+                    <div name="Hover"
+                         class="mrc_cta_btn_hover_content">
+                        <div name="Pip L"
+                             class="mrc_cta_btn_orange_fui left"></div>
+                        <div name="Pip R"
+                             class="mrc_cta_btn_orange_fui right"></div>
+                    </div>
+                    <div name="Pips"
+                         class="mrc_cta_btn_pips"></div>
+                    <div name="Cap"
+                         class="mrc_cta_btn_cap">
+                        <div name="Squares hover"
+                             class="mrc_cta_btn_cap_hover"></div>
+                        <div name="Squares hover"
+                             class="mrc_cta_btn_cap_hover right"></div>
+                    </div>
+                    <div name="Icon"
+                         class="mrc_icon_closed"></div>
+                    <div name="Title"
+                         class="mrc_cta_btn_title">
+                        <div name="BG"
+                             class="mrc_cta_btn_title_bg"></div>
+                        <gbx-glyph action="action_ui_open_reward_center"
+                                   submap=""
+                                   class="mrc_glyph_btn_icon"></gbx-glyph>
+                        <div name="Number"
+                             data-bind-value="{{$data.numunclaimedrewards}}"
+                             class="mrc_cta_btn_text med_text_2 mrc_cta_btn_value">NUM_UNCLAIMED_REWARDS</div>
+                    </div>
+                </div>
+                <div name="pip_container"
+                     class="me_pip_container">
+                    <div name="pip"
+                         data-bind-class-toggle="inactive:!{{$data.pipdata.activepips}}.includes('any_rewards')"
+                         class="pip menu_equip_pip_position"></div>
+                </div>
+            </oak-cursor-handler>
+        </div>
+        <div name="item_dropdown_bounding_box"
+             class="item_dropdown_bounding_box"></div>
+    </oak-parallax-effect>
+    <gbx-component item-dropdown=""
+                   name="item-dropdown"
+                   items-consume-input=""
+                   native-code-expand=""
+                   gbx-component-id="backpack_item_dropdown"
+                   gbx-component-datamodel="data_entry:$data.itemdropdownlist, data_parent:$data"
+                   class="item-dropdown menu_equip_dropdown"></gbx-component>
+</widget-menu-equip>
+<script src="coui://uiresources/_shared/js/oak_equip_slot.js"></script>
+<script src="coui://uiresources/_shared/data/shared_animations.data"></script>
+<link href="coui://uiresources/menu_equip/css/menu_equip.css"
+      type="text/css"
+      rel="stylesheet" />
+<link href="coui://uiresources/weapon_wheel/css/weapon_wheel_shared.css"
+      type="text/css"
+      rel="stylesheet" />
+<script src="coui://uiresources/menu_equip/js/menu_equip.js"></script>
+<script src="coui://uiresources/bl4instanttabs/loader.js"></script>
+<script src="coui://uiresources/menu_equip/data/menu_equip.data"></script>
+<link href="coui://uiresources/components/gbx_button/css/gbx_button.css"
+      type="text/css"
+      rel="stylesheet">
+<link href="common://uiresources/dlc_rarity_pips/css/dlc_rarity_pips.css"
+      type="text/css"
+      rel="stylesheet" />
+<link href="raid1://uiresources/firmware_icons/css/raid1_firmware.css"
+      type="text/css"
+      rel="stylesheet" />
+<link href="raid2://uiresources/firmware_icons/css/raid2_firmware.css"
+      type="text/css"
+      rel="stylesheet" />
+<link href="tuba://uiresources/firmware_icons/css/tuba_firmware.css"
+      type="text/css"
+      rel="stylesheet" />

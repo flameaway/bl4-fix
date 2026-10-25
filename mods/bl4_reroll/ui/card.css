@@ -1,0 +1,231 @@
+/* BL4 Reroll on the item card (card.js): key prompts, the picked modifier, the slot machine. */
+
+.bl4rr_layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 50;
+}
+
+.bl4rr_prompt.bl4rr_dim {
+    opacity: 0.45;
+}
+
+.bl4rr_glyph_key {
+    width: 1.6em;
+    height: 1.6em;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* The picked modifier: a class on the game's own row, so it moves with the card */
+.item_card_secondary_stats_enhance.bl4rr_row_pick {
+    background-color: rgba(150, 40, 230, 0.22);
+    box-shadow: 0 0 0 0.12em rgba(196, 92, 255, 0.95), 0 0 0.6em rgba(196, 92, 255, 0.8);
+}
+
+/* "Reroll all?": every modifier that would change */
+.item_card_secondary_stats_enhance.bl4rr_row_ask {
+    background-color: rgba(255, 190, 60, 0.14);
+    box-shadow: 0 0 0 0.12em rgba(255, 205, 80, 0.9);
+}
+
+/* A reel: a window onto a strip of names that slides up through it */
+.bl4rr_reel {
+    position: absolute;
+    overflow: hidden;
+    background-color: rgba(18, 8, 28, 0.55);
+    border-left: 0.15em solid rgba(196, 92, 255, 0.9);
+    border-right: 0.15em solid rgba(196, 92, 255, 0.9);
+}
+
+.bl4rr_strip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+}
+
+.bl4rr_reel_name {
+    margin: 0;
+    padding: 0 0.4em;
+    white-space: nowrap;
+    overflow: hidden;
+    color: rgb(232, 200, 255);
+    text-shadow: 0 0 0.35em rgba(196, 92, 255, 0.9);
+}
+
+.bl4rr_won {
+    border-color: rgb(255, 205, 80);
+    box-shadow: 0 0 0.8em rgba(255, 190, 60, 0.9);
+}
+
+.bl4rr_won .bl4rr_reel_name {
+    color: rgb(255, 224, 140);
+    text-shadow: 0 0 0.4em rgba(255, 190, 60, 1);
+}
+
+.bl4rr_same {
+    border-color: rgba(200, 200, 200, 0.6);
+}
+
+.bl4rr_same .bl4rr_reel_name {
+    color: rgb(200, 200, 200);
+    text-shadow: none;
+}
+
+/* The marquee above the modifiers, with chasing bulbs */
+.bl4rr_banner {
+    position: absolute;
+    transform: translateY(-110%);
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    padding: 0.15em 0.5em;
+    background-color: rgba(24, 8, 36, 0.92);
+    border: 0.12em solid rgb(196, 92, 255);
+    box-shadow: 0 0 0.8em rgba(196, 92, 255, 0.7);
+}
+
+.bl4rr_banner p {
+    margin: 0;
+    font-size: 1.05em;
+    white-space: nowrap;
+}
+
+.bl4rr_banner_title {
+    color: rgb(255, 214, 102);
+    letter-spacing: 0.15em;
+    padding: 0 0.7em;
+    text-shadow: 0 0 0.4em rgba(255, 180, 40, 0.9);
+}
+
+.bl4rr_bulbs {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4rr_bulb {
+    width: 0.45em;
+    height: 0.45em;
+    margin: 0 0.18em;
+    border-radius: 50%;
+    background-color: rgb(120, 40, 170);
+}
+
+.bl4rr_lit .bl4rr_bulb {
+    background-color: rgb(255, 214, 102);
+    box-shadow: 0 0 0.4em rgba(255, 200, 80, 1);
+}
+
+.bl4rr_done {
+    border-color: rgb(255, 205, 80);
+    box-shadow: 0 0 1em rgba(255, 190, 60, 0.9);
+}
+
+.bl4rr_banner_error {
+    border-color: rgb(255, 80, 70);
+    box-shadow: 0 0 0.8em rgba(255, 60, 50, 0.7);
+}
+
+.bl4rr_banner_error .bl4rr_banner_title {
+    color: rgb(255, 150, 140);
+    letter-spacing: normal;
+    white-space: normal;
+    text-shadow: none;
+}
+
+.bl4rr_banner_sub {
+    position: absolute;
+    margin: 0;
+    padding-top: 0.2em;
+    text-align: center;
+    font-size: 0.85em;
+    color: rgb(214, 160, 255);
+    white-space: nowrap;
+}
+
+/* The notice after a reroll is made (the swap usually closes the card) */
+.bl4rr_toast {
+    position: absolute;
+    right: 3vh;
+    top: 14vh;
+    max-width: 52vh;
+    padding: 1.2vh 1.8vh;
+    background-color: rgba(24, 8, 36, 0.94);
+    border: 0.25vh solid rgb(196, 92, 255);
+    box-shadow: 0 0 1.5vh rgba(196, 92, 255, 0.6);
+    z-index: 1000;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    opacity: 1;
+}
+
+.bl4rr_toast_hidden {
+    opacity: 0;
+}
+
+.bl4rr_toast p {
+    margin: 0;
+}
+
+.bl4rr_toast_title {
+    font-size: 2.2vh;
+    color: rgb(255, 214, 102);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.bl4rr_toast_text {
+    font-size: 1.9vh;
+    color: rgb(240, 230, 250);
+    padding-top: 0.5vh;
+}
+
+.bl4rr_toast_note {
+    font-size: 1.7vh;
+    color: rgb(214, 160, 255);
+    padding-top: 0.4vh;
+}
+
+.bl4rr_toast_error {
+    border-color: rgb(255, 80, 70);
+}
+
+.bl4rr_toast_error .bl4rr_toast_title {
+    color: rgb(255, 150, 140);
+}
+
+/* "Reroll all modifiers?": under the modifiers until the second press (or it times out) */
+.bl4rr_ask {
+    margin-top: 0.4em;
+    padding: 0.3em 0.6em;
+    background-color: rgba(24, 8, 36, 0.94);
+    border: 0.12em solid rgb(255, 205, 80);
+    box-shadow: 0 0 0.8em rgba(255, 190, 60, 0.8);
+    text-align: center;
+}
+
+.bl4rr_ask p {
+    margin: 0;
+}
+
+.bl4rr_ask_title {
+    font-size: 1.1em;
+    color: rgb(255, 214, 102);
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 0.4em rgba(255, 180, 40, 0.9);
+}
+
+.bl4rr_ask_text {
+    font-size: 0.8em;
+    color: rgb(232, 200, 255);
+    padding-top: 0.2em;
+}

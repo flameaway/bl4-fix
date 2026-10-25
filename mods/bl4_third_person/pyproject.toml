@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Third Person"
+version = "0.1.0"
+description = "A hotkey for an over-the-shoulder third-person camera, with proper aiming."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

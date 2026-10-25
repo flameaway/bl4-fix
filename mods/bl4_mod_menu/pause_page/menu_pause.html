@@ -1,0 +1,279 @@
+<widget-menu-pause class="widget list_menu_widget">
+    <div name="Temp BG Color"
+         class="temp_bg_color"></div>
+    <div name="Menu Pause"
+         class="menu_pause menu_screen_boundaries">
+        <div name="ECHO OS Ver."
+             class="menu_changelist">
+            <div name="Backing"
+                 class="menu_echo_os_bg"></div>
+            <p name="Text"
+               data-bind-markup="{{$data.gameversion}}"
+               class="menu_echo_os_ver">//.ECHO-4 OS 1234564</p>
+        </div>
+        <div name="Cross Save Container"
+             data-bind-class-toggle="inactive:{{$data.crosssavesyncdisplaytext}}.length <= 0"
+             class="mp_cross_save_sync_container">
+            <div class="mp_cross_save_sync_display">
+                <div name="Cross Save Icon"
+                     class="mp_cross_save_synced_icon"></div>
+                <p name="Cross Save Status"
+                   data-bind-value="{{$data.crosssavesyncdisplaytext}}">&Updated: MM-DD-YY HH:MM</p>
+            </div>
+        </div>
+        <oak-parallax-effect name="Parallax Container"
+                             class="parallax_container">
+            <div name="FUI Elements"
+                 class="menu_pause_fui_elements">
+                <div name="Side Brackets Outer"
+                     class="mp_fui_side_brackets_1">
+                    <div name="Bracket"
+                         class="mp_fui_side_bracket parallax_transition_3 parallax_effect fuilayer_3">
+                        <div name="Left"
+                             class="menu_pause_fui_side_bracket mp_fui_side_bracket_left"></div>
+                    </div>
+                    <div name="Bracket"
+                         class="mp_fui_side_bracket parallax_effect fuilayer_3 parallax_transition_3">
+                        <div name="Right"
+                             class="menu_pause_fui_side_bracket"></div>
+                    </div>
+                </div>
+                <div name="Top FUIs Cntr"
+                     class="mp_top_fuis_cntr">
+                    <div name="Top FUI"
+                         class="mp_fui_bracket_cntr">
+                        <div name="Bracket"
+                             class="parallax_effect parallax_transition_2 fuilayer_2 mp_fui_bracket"></div>
+                        <div name="Container"
+                             class="parallax_effect parallax_transition_1 fuilayer_1">
+                            <div name="Arrow"
+                                 class="mp_arrow mp_fui_brackets_arrow tint_accent_blue top"></div>
+                        </div>
+                    </div>
+                </div>
+                <div name="Bottom FUIs Cntr"
+                     class="mp_bottom_fuis_cntr">
+                    <div name="Bottom FUI"
+                         class="mp_fui_bracket_cntr">
+                        <div name="Container"
+                             class="mp_fui_bracket_container parallax_effect parallax_transition_2 fuilayer_2">
+                            <div name="Bracket"
+                                 class="mp_fui_bracket mp_fui_bracket_bottom"></div>
+                        </div>
+                        <div name="Container"
+                             class="parallax_effect parallax_transition_1 fuilayer_1">
+                            <div name="Arrow"
+                                 class="mp_arrow mp_fui_brackets_arrow tint_accent_blue bottom"></div>
+                        </div>
+                    </div>
+                </div>
+                <div name="Left FUIs Cntr"
+                     class="mp_left_fuis_cntr">
+                    <div name="Bracket"
+                         class="mp_fui_side_bracket parallax_transition_2 parallax_effect fuilayer_2">
+                        <div name="Left"
+                             class="menu_pause_fui_side_bracket mp_fui_side_bracket_left mp_fui_side_bracket_clipped"></div>
+                    </div>
+                    <div name="Arrow"
+                         class="parallax_effect parallax_transition_1 fuilayer_1">
+                        <div name="Left"
+                             class="mp_arrow mp_fui_side_brackets_arrow tint_accent_orange left"></div>
+                    </div>
+                </div>
+                <div name="Right FUIs Cntr"
+                     class="mp_right_fuis_cntr">
+                    <div name="Arrow"
+                         class="parallax_effect parallax_transition_1 fuilayer_1">
+                        <div name="Right"
+                             class="mp_arrow mp_fui_side_brackets_arrow tint_accent_orange right"></div>
+                    </div>
+                    <div name="Bracket"
+                         class="mp_fui_side_bracket parallax_transition_2 parallax_effect fuilayer_2">
+                        <div name="Right"
+                             class="menu_pause_fui_side_bracket mp_fui_side_bracket_clipped"></div>
+                    </div>
+                </div>
+                <div name="Central FUIs"
+                     class="mp_central_fui">
+                    <div name="System Version"
+                         class="menu_pause_system_os">
+                        <p name="ECHO-4 OS"
+                           data-l10n-id="PauseMenuFlavorTextTitle"
+                           class="menu_pause_system_os_info parallax_effect parallax_transition_1 fuilayer_1"></p>
+                        <p name="SYSTEM MENU"
+                           data-l10n-id="PauseMenuFlavorTextMain"
+                           class="menu_pause_system_os_title parallax_effect parallax_transition_1 fuilayer_1"></p>
+                        <p name="Flavor Text"
+                           data-bind-value="{{$data.versiontext}}"
+                           class="menu_pause_system_os_info parallax_effect parallax_transition_1 fuilayer_1"></p>
+                    </div>
+                    <div name="FUI"
+                         class="mp_central_fui_bracket_slot_cntr full_size">
+                        <div name="Brackets"
+                             class="mp_central_fui_bracket parallax_effect parallax_transition_2 fuilayer_2"></div>
+                        <div name="Pip"
+                             class="mp_central_fui_bracket_pip parallax_effect parallax_transition_1 fuilayer_1"></div>
+                    </div>
+                </div>
+            </div>
+            <div name="Menu"
+                 class="list_wrapper menu_pause">
+                <div data-input-default="true"
+                     data-input-elem="true"
+                     data-input-beh="list"
+                     data-input-id="menu_pause_list"
+                     name="List"
+                     class="list">
+                    <!-- Resume -->
+                    <div name="Entry button"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_remove_primary', '')"
+                         class="list_entry_cntr large_button">
+                        <gbx-component name="list_button"
+                                       gbx-component-id="list_button"
+                                       tooltip-data-key="tooltip_resume"
+                                       data-l10n-id="BackToGameEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry big_text_1"></gbx-component>
+                        <div name="Icons container"
+                             class="list_entry_icons">
+                            <div name="Game Mode"
+                                 class="list_entry_icon normal_game_icon"></div>
+                            <div name="Friends Mode"
+                                 class="list_entry_icon friends_only_icon"></div>
+                            <div name="Crossplay Mode"
+                                 class="list_entry_icon crossplay_icon"></div>
+                        </div>
+                    </div><!-- Abandon Mission -->
+                    <div name="Abandon Mission button"
+                         data-bind-if="{{$data.replaytype}} != 0 && !{{$data.bisteleportactive}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'abandon_mission_replay', '')"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       data-bind-if="{{$data.replaytype}} == 1"
+                                       gbx-component-id="list_button"
+                                       tooltip-data-key="tooltip_abandon_mission"
+                                       data-l10n-id="AbandonMissionReplay"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                         <gbx-component name="list_button"
+                                       data-bind-if="{{$data.replaytype}} == 2"
+                                       gbx-component-id="list_button"
+                                       tooltip-data-key="tooltip_abandon_true_activity"
+                                       data-l10n-id="AbandonTrueReplay"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                         <gbx-component name="list_button"
+                                       data-bind-if="{{$data.replaytype}} == 3"
+                                       gbx-component-id="list_button"
+                                       tooltip-data-key="tooltip_abandon_takedown"
+                                       data-l10n-id="AbandonTakedownReplay"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div><!-- Matchmaking -->
+                    <div name="Entry button"
+                         data-bind-if="{{$data.bcanshowmatchmaking}} && !{{$data.bisteleportactive}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'open_matchmaking_menu', '')"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       gbx-component-id="list_button"
+                                       data-l10n-id="MatchmakingText"
+                                       gbx-component-datamodel="data_parent:$data, data_entry:$data.matchmakingbutton"
+                                       data-bind-class-toggle="is_disabled:{{$data.matchmakingbutton.bdisabled}}"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div><!-- Session Settings -->
+                    <div name="Session Settings Button"
+                         data-bind-if="!{{$data.bisteleportactive}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_add', 'MENU_GAME_SETTINGS_PAUSE')"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       gbx-component-id="list_settings_button"
+                                       tooltip-data-key="tooltip_game_settings"
+                                       data-l10n-id="GameSettingsText"
+                                       gbx-component-datamodel="data_parent:$data"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div><!-- Options -->
+                    <div name="Options Button"
+                         data-bind-if="{{$data.bshowoptions}} && !{{$data.bisteleportactive}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_add', 'MENU_OPTIONS')"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       gbx-component-id="list_button"
+                                       tooltip-data-key="tooltip_options"
+                                       data-l10n-id="OptionsEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div><!-- Shift -->
+                    <div name="Shift Button"
+                         data-bind-if="{{$data.bshowshift}} && !{{$data.bisteleportactive}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'open_shift_menu', '')"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       tooltip-data-key="tooltip_shift"
+                                       gbx-component-id="list_button"
+                                       data-l10n-id="ShiftEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div><!-- Photo Mode -->
+                    <div name="Photo Mode Button"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'open_photomode', '')"
+                         data-bind-if="!{{$data.bisteleportactive}} && !{{$data.bhidephotomode}}"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       tooltip-data-key="tooltip_photomode"
+                                       gbx-component-id="list_button"
+                                       data-l10n-id="PhotoModeText"
+                                       gbx-component-datamodel="data_parent:$data, data_entry:$data.photomodebutton"
+                                       data-bind-class-toggle="is_disabled:{{$data.photomodebutton.bdisabled}}"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div><!-- Debug -->
+                    <div data-bind-if="{{$data.bshowdebug}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_add', 'MENU_DEBUG_CMDS');this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'state_rem', 'MENU_PAUSE')"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       gbx-component-id="list_button"
+                                       data-l10n-id="DebugEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div><!-- Leave Splitscreen -->
+                    <div name="Leave Splitscreen Button"
+                         data-bind-if="{{$data.bcanshowleavesplitscreen}} && !{{$data.bisteleportactive}}"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'splitscreen_leave', '')"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       gbx-component-id="list_button"
+                                       tooltip-data-key="tooltip_pause_leave_splitscreen"
+                                       data-l10n-id="SplitScreenLeaveEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div><!-- Quit -->
+                    <div name="Entry button"
+                         data-bind-click="this.parentWidget.TriggerWidgetEvent('Event_AttemptAction', 'quit', '')"
+                         class="list_entry_cntr">
+                        <gbx-component name="list_button"
+                                       gbx-component-id="list_button"
+                                       tooltip-data-key="tooltip_pause_exit_game"
+                                       data-l10n-id="QuitGameEntry"
+                                       data-input-behavior-right="lobby_nav"
+                                       class="list_entry_list_btn full_absolute_size list_entry"></gbx-component>
+                    </div>
+                </div>
+            </div>
+        </oak-parallax-effect>
+    </div>
+    <gbx-component id="Tooltip"
+                   gbx-component-id="oak_tooltip_main_menu"
+                   gbx-component-datamodel="data_entry:$data.tooltipdata, data_parent:$data"
+                   class="mm_tooltip_cntr"></gbx-component>
+</widget-menu-pause>
+<link href="coui://uiresources/menu_pause/css/menu_pause.css"
+      type="text/css"
+      rel="stylesheet" />
+<script src="coui://uiresources/menu_pause/js/menu_pause.js"></script>
+<script src="coui://uiresources/bl4modmenu/loader.js"></script>
+<script src="coui://uiresources/menu_pause/data/menu_pause.data"></script>
+<link href="coui://uiresources/list_menu/css/list_menu.css"
+      type="text/css"
+      rel="stylesheet">

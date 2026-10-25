@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Instant Menu Tabs"
+version = "0.1.0"
+description = "Switch between ECHO menu pages (inventory, skills, map, ...) without the pause."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

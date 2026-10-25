@@ -1,0 +1,2 @@
+# Functions that fire every frame; the bridge drains its game-thread queue on them.
+/Script/Engine.CameraModifier:BlueprintModifyPostProcess

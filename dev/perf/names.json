@@ -1,0 +1,12 @@
+{
+  "_comment": "Hand-identified functions in Borderlands4.exe build 26007962 (rva hex -> name). Evidence: referenced strings and position in the main loop stacks.",
+  "15ff985": "WinMain (LaunchWindowsStartup) ['unattended','crashreports']",
+  "16ad2e5": "GuardedMain ['Starting']",
+  "37e1050": "FEngineLoop::Tick ['BeginFrame']",
+  "108e1f3": "FFrameEndSync::Sync ['r.VSync'; GT waits for RT/RHI here]",
+  "8e177a": "FTaskGraph wait ['Waiting Task (FrameSync)']",
+  "e427a": "FWindowsPlatformApplicationMisc::PumpMessages",
+  "317e634": "FD3D12Viewport::PresentInternal",
+  "1033e36": "FRunnableThreadWin::GuardedRun",
+  "2bb14d4": "FDeferredShadingSceneRenderer::Render? ['UpdateLightFunctionAtlas']"
+}

@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Vehicles Anywhere"
+version = "0.1.0"
+description = "Summon and drive your vehicle in places that normally say vehicles aren't allowed."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

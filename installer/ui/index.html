@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BL4 Direct</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="bg" aria-hidden="true">
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <div class="hatch"></div><div class="grain"></div>
+</div>
+
+<!-- Boot -->
+<div id="boot">
+  <div class="boot-core">
+    <img id="boot-icon" alt="">
+    <svg class="boot-wave" viewBox="0 0 300 60" preserveAspectRatio="none"><path d="M0 30 L40 30 L52 12 L64 48 L76 6 L88 54 L100 22 L112 38 L124 30 L176 30 L188 16 L200 44 L212 10 L224 50 L236 26 L248 34 L260 30 L300 30"/></svg>
+    <div class="boot-text"><span>ESTABLISHING ECHO LINK</span><i></i></div>
+  </div>
+</div>
+
+<div id="shell">
+  <!-- Title bar -->
+  <header id="titlebar">
+    <div class="hazard"></div>
+    <div class="tb-row">
+      <div class="tb-drag" id="tb-drag">
+        <img id="tb-icon" alt="">
+        <div class="wordmark"><b>BL4</b><span>DIRECT</span></div>
+        <div class="tb-sep"></div>
+        <div class="tb-sub">MOD LOADOUT <em id="tb-version"></em></div>
+        <svg class="tb-wave" viewBox="0 0 240 30" preserveAspectRatio="none"><path d="M0 15 L30 15 L38 6 L46 24 L54 3 L62 27 L70 11 L78 19 L86 15 L130 15 L138 8 L146 22 L154 5 L162 25 L170 13 L178 17 L186 15 L240 15"/></svg>
+      </div>
+      <button class="win-btn" id="btn-min" title="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6.5h8"/></svg></button>
+      <button class="win-btn close" id="btn-close" title="Close"><svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg></button>
+    </div>
+  </header>
+
+  <div id="body">
+    <!-- Rail -->
+    <nav id="rail">
+      <button class="nav on" data-page="loadout">
+        <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+        <span><b>Loadout</b><small>Pick your mods</small></span>
+      </button>
+      <button class="nav" data-page="coop">
+        <svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.5 19c.6-3.6 2.8-5.5 5.5-5.5s4.9 1.9 5.5 5.5M13.5 14.3c.9-.5 1.9-.8 3-.8 2.3 0 4.2 1.6 4.8 5.5"/></svg>
+        <span><b>Co-op</b><small>Friends &amp; hosting</small></span>
+      </button>
+      <button class="nav" data-page="system">
+        <svg viewBox="0 0 24 24"><path d="M12 3l7.5 4.3v9.4L12 21l-7.5-4.3V7.3z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span><b>System</b><small>Install &amp; diagnostics</small></span>
+      </button>
+
+      <div class="rail-fill"></div>
+
+      <button class="rail-ip" id="rail-ipcard" title="Copy your public IP">
+        <span class="rc-label">YOUR IP</span>
+        <span class="ri-row"><b id="rail-ip">...</b><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1"/><path d="M16 8V4H4v12h4"/></svg></span>
+        <small>Click to copy, send it to a friend</small>
+      </button>
+
+      <div class="rail-card" id="rail-game">
+        <div class="rc-label">GAME FOLDER</div>
+        <div class="rc-path" id="rail-path">Searching...</div>
+        <button class="link" id="rail-browse">Change</button>
+      </div>
+      <div class="rail-foot">
+        <span>F6</span> co-op panel &nbsp; <span>F7</span> mod settings
+      </div>
+    </nav>
+
+    <!-- Pages -->
+    <main id="pages">
+      <!-- LOADOUT -->
+      <section class="page on" id="page-loadout">
+        <div class="hero">
+          <div class="hero-title">
+            <div class="eyebrow">STEP 1 // CHOOSE YOUR GEAR</div>
+            <h1 data-text="LOADOUT">LOADOUT</h1>
+            <p>Pick the mods you want, then hit <b>Install</b>. Run this app again any time to change it. Every mod's settings and keys live in game on <kbd>F7</kbd>.</p>
+          </div>
+          <div class="hero-count">
+            <div class="count-num"><b id="count-on">0</b><span>/</span><i id="count-all">0</i></div>
+            <div class="count-label">EQUIPPED</div>
+            <div class="count-bar"><div id="count-fill"></div></div>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="chips" id="filters">
+            <button class="chip on" data-filter="all">All</button>
+            <button class="chip" data-filter="on">Equipped</button>
+            <button class="chip" data-filter="mods">Originals</button>
+            <button class="chip" data-filter="ported">Yeti ports</button>
+          </div>
+          <label class="search">
+            <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>
+            <input id="search" placeholder="Search mods" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="presets">
+            <button class="btn ghost sm" data-preset="defaults">Defaults</button>
+            <button class="btn ghost sm" data-preset="all">All</button>
+            <button class="btn ghost sm" data-preset="none">None</button>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span class="r-legendary">Legendary</span> core, always on
+          <span class="r-epic">Epic</span> recommended
+          <span class="r-rare">Rare</span> BL4 Direct originals
+          <span class="r-uncommon">Uncommon</span> ports of Yeti's mods (GPL-3.0)
+        </div>
+
+        <div class="grid" id="mods"></div>
+        <div class="empty" id="mods-empty" hidden>No mods match that.</div>
+      </section>
+
+      <!-- CO-OP -->
+      <section class="page" id="page-coop">
+        <div class="hero slim">
+          <div class="hero-title">
+            <div class="eyebrow">DIRECT IP // NO LOBBIES</div>
+            <h1 data-text="CO-OP">CO-OP</h1>
+            <p>Send your IP to a friend, add theirs, and jump into each other's games. In game, <kbd>F6</kbd> opens the BL4 Direct panel to host and join.</p>
+          </div>
+        </div>
+
+        <div class="coop-cols">
+          <div class="col">
+            <div class="ink panel signal">
+              <div class="panel-head"><span class="ph-tag teal">YOU</span><h2>Your signal</h2></div>
+              <div class="ip-wrap">
+                <div class="ip" id="ip">---.---.---.---</div>
+                <button class="btn teal" id="ip-copy"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1"/><path d="M16 8V4H4v12h4"/></svg>Copy</button>
+              </div>
+              <div class="ip-note">Your public IP. Send this to friends who'll join you.</div>
+              <div class="sig-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label>Port when you host</label>
+                  <div class="stepper">
+                    <button data-step="-1">-</button>
+                    <input id="host-port" inputmode="numeric" maxlength="5">
+                    <button data-step="1">+</button>
+                  </div>
+                </div>
+                <label class="toggle-field">
+                  <span class="switch"><input type="checkbox" id="allow-lan"><i></i></span>
+                  <span><b>Allow local network / Tailscale</b><small>Anyone on your LAN or VPN can join too</small></span>
+                </label>
+              </div>
+              <div class="hint" id="forward-hint"></div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="ink panel squad">
+              <div class="panel-head"><span class="ph-tag yellow">SQUAD</span><h2>Friends</h2><span class="ph-count" id="friend-count">0</span></div>
+              <div class="friends" id="friends"></div>
+              <div class="friends-empty" id="friends-empty">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-4 3.6-6 7-6s6.2 2 7 6"/></svg>
+                <span>No friends yet. Add one below.</span>
+              </div>
+              <form class="add-friend" id="add-friend" autocomplete="off">
+                <input id="f-name" placeholder="Name" maxlength="32" spellcheck="false">
+                <input id="f-ip" placeholder="IP address" maxlength="40" spellcheck="false">
+                <input id="f-port" placeholder="Port" maxlength="5" inputmode="numeric">
+                <button class="btn yellow" type="submit"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="coop-foot">
+          <div class="fw-state" id="fw-state"><i></i><span>Firewall</span></div>
+          <button class="btn yellow big" id="save-friends"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/><path d="M8.8 12.2l2.2 2.2 4.4-4.6"/></svg>Save &amp; lock firewall</button>
+        </div>
+      </section>
+
+      <!-- SYSTEM -->
+      <section class="page" id="page-system">
+        <div class="hero slim">
+          <div class="hero-title">
+            <div class="eyebrow">DIAGNOSTICS // SYSTEMS CHECK</div>
+            <h1 data-text="SYSTEM">SYSTEM</h1>
+            <p>Everything the mods need to run, checked live. Install fixes anything marked red.</p>
+          </div>
+        </div>
+
+        <div class="sys-cols">
+          <div class="col">
+            <div class="ink panel">
+              <div class="panel-head"><span class="ph-tag teal">TARGET</span><h2>Borderlands 4 folder</h2></div>
+              <div class="path-box" id="sys-path">-</div>
+              <div class="btn-row">
+                <button class="btn ghost sm" id="sys-browse">Browse...</button>
+                <button class="btn ghost sm" id="sys-open">Open folder</button>
+                <button class="btn ghost sm" id="sys-refresh">Refresh</button>
+              </div>
+            </div>
+
+            <div class="ink panel">
+              <div class="panel-head"><span class="ph-tag yellow">CHECK</span><h2>Systems</h2></div>
+              <div class="checks" id="checks"></div>
+              <div class="conflicts" id="conflicts"></div>
+              <div class="compat">
+                <span>Compatibility code</span>
+                <code id="compat">-</code>
+                <button class="link" id="compat-copy">Copy</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="ink panel log-panel">
+              <div class="panel-head"><span class="ph-tag teal">LOG</span><h2>Activity</h2><button class="link" id="log-clear">Clear</button></div>
+              <div class="log" id="log-full"></div>
+            </div>
+            <div class="ink panel danger">
+              <div class="panel-head"><span class="ph-tag red">DANGER</span><h2>Uninstall</h2></div>
+              <p>Removes BL4 Direct, every mod this app installed and the firewall rule. Your friends list and mod settings are kept.</p>
+              <button class="btn red" id="uninstall">Uninstall...</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Dock -->
+  <footer id="dock">
+    <div class="dock-leds" id="dock-leds"></div>
+    <div class="dock-mid">
+      <div class="dock-msg" id="dock-msg">Reading install...</div>
+      <div class="dock-sub" id="dock-sub"></div>
+      <div class="progress" id="progress"><div class="pbar"><i id="pfill"></i></div><span id="pline"></span></div>
+    </div>
+    <button class="btn install" id="install">
+      <span class="ib-stripes"></span>
+      <span class="ib-label" id="install-label">Install</span>
+      <svg viewBox="0 0 24 24"><path d="M5 12h12M12 6l6 6-6 6"/></svg>
+    </button>
+  </footer>
+
+  <div id="running-banner" hidden>
+    <i></i><b>Borderlands 4 is running.</b> Close the game to install or change mods.
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="modal" hidden>
+  <div class="modal-box ink">
+    <div class="hazard thin"></div>
+    <h3 id="modal-title"></h3>
+    <div id="modal-body"></div>
+    <div class="modal-btns" id="modal-btns"></div>
+  </div>
+</div>
+
+<!-- Result stamp -->
+<div id="stamp" hidden>
+  <div class="rays"></div>
+  <div class="stamp-core">
+    <div class="stamp-word" id="stamp-word">INSTALLED!</div>
+    <div class="stamp-sub" id="stamp-sub"></div>
+  </div>
+  <div class="shards" id="shards"></div>
+</div>
+
+<div id="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

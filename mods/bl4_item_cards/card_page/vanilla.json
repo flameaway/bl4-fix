@@ -1,0 +1,50 @@
+{
+    "path": "OakGame/Content/uiresources/item_card/item_card.html",
+    "sha1": "584501ea0a119359dd097d758123399db2165c39",
+    "source_pak": "pakchunk0-Windows_20_P.pak",
+    "game_build": "26007962",
+    "skill_data": {
+        "Engine/Content/_NCS/Nexus-Data-progress_graph0.ncs": "a1aec6c9b59b9693396e6178d735452f4a1f4a52",
+        "Engine/Content/_NCS/Nexus-Data-progress_graph4.ncs": "101155f0b8449be58591aaf3b4d3836a83706046",
+        "Engine/Content/_NCS/Nexus-Data-progress_graph6.ncs": "54077c8d24a3c5e8d4ce59de4f2224807a614fa8",
+        "Engine/Content/_NCS/Nexus-Data-uitooltipdata0.ncs": "af38fe68f87c0ce85d359c102bcaae118ffadd74",
+        "Engine/Content/_NCS/Nexus-Data-uitooltipdata4.ncs": "5e7a65852d6147a6593b28de36a20a01a6de4bcd",
+        "Engine/Content/_NCS/Nexus-Data-uitooltipdata6.ncs": "819bda09c3dda8c9c12f6144c4f822c7eeab9192"
+    },
+    "drop_data": {
+        "Engine/Content/_NCS/Nexus-Data-display_data0.ncs": "7f0739d0b25afc459910b82dfa2beecdf2ab9e97",
+        "Engine/Content/_NCS/Nexus-Data-display_data4.ncs": "ad3d07d6004d87d5f76ac894bfc8bf57afc65e0d",
+        "Engine/Content/_NCS/Nexus-Data-display_data6.ncs": "1e407bb8780d7e68be2147978b9c1ff77c8d306b",
+        "Engine/Content/_NCS/Nexus-Data-GbxActor0.ncs": "b607563fc66a7e10d4f3871ad4a31478b9e1a60d",
+        "Engine/Content/_NCS/Nexus-Data-GbxActor1.ncs": "a262050b5fd0cc9c922dcbfda3a26fb2494a5fde",
+        "Engine/Content/_NCS/Nexus-Data-GbxActor4.ncs": "84e81284ce0f5be30724bc98e1c2b850d91c14c1",
+        "Engine/Content/_NCS/Nexus-Data-GbxActor6.ncs": "46bb83a0048f6608e74e5277c272b77a7559feb8",
+        "Engine/Content/_NCS/Nexus-Data-gbx_ue_data_table0.ncs": "a0e8baa8929297ef4c02783b5b8ce67a8323e28a",
+        "Engine/Content/_NCS/Nexus-Data-gbx_ue_data_table4.ncs": "c16f8285677f3140a2330936410fea7a29bcf930",
+        "Engine/Content/_NCS/Nexus-Data-gbx_ue_data_table6.ncs": "c6b8a861539219578ce797b260f20a0d8631bba5",
+        "Engine/Content/_NCS/Nexus-Data-attribute0.ncs": "a73d904488d122a5b67a64d26b833c33c9b905c8",
+        "Engine/Content/_NCS/Nexus-Data-attribute4.ncs": "928c69cbd9e84e9bd6cb44bb7991c9b7b4ea5e83",
+        "Engine/Content/_NCS/Nexus-Data-attribute6.ncs": "c449b9312522fa047a11dd147d335c8783187ae7",
+        "Engine/Content/_NCS/Nexus-Data-ItemPoolList0.ncs": "b6b30061ba4823a7fbdc541e44b38dff13de223c",
+        "Engine/Content/_NCS/Nexus-Data-ItemPoolList4.ncs": "3c55f361c7bb74e5a6b97df90259665b7cf3139e",
+        "Engine/Content/_NCS/Nexus-Data-ItemPoolList6.ncs": "611e97ec1e140f7b949e6711b206676158c4039e",
+        "Engine/Content/_NCS/Nexus-Data-inv_name_part0.ncs": "4cec8684a7250e19020808aa0e08f97568593e2e",
+        "Engine/Content/_NCS/Nexus-Data-inv_name_part4.ncs": "9a689001d3ee213667afa45645c380fa807d43dc",
+        "Engine/Content/_NCS/Nexus-Data-inv_name_part6.ncs": "b467e04378a375f072679b37203963f6efc8ce3c",
+        "Engine/Content/_NCS/Nexus-Data-inv0.ncs": "da2d97092f181e248a609c4800f79848619b948a",
+        "Engine/Content/_NCS/Nexus-Data-inv4.ncs": "17fc4cf412bb48e7bb936833be5321e6b4e7f42d",
+        "Engine/Content/_NCS/Nexus-Data-inv6.ncs": "dd2778df8c7c8f2d49a8774c9f290c3e80e0369b",
+        "Engine/Content/_NCS/Nexus-Data-gbx_discovery_location_meta_data4.ncs": "9c637fe908b5e2cf9f3162dec12b6012ac0c0e94",
+        "Engine/Content/_NCS/Nexus-Data-gbx_discovery_location_meta_data6.ncs": "65a2713a18c514e23e681fe5cb92eaeaba1e789c",
+        "Engine/Content/_NCS/Nexus-Data-itempool0.ncs": "83d19feed6597757b310ea8b018ecfcf8d758628",
+        "Engine/Content/_NCS/Nexus-Data-itempool4.ncs": "658507f027f344a5b4cb91ebfb68e09efa1b75a9",
+        "Engine/Content/_NCS/Nexus-Data-itempool6.ncs": "6a53334997a64c392f880189dd2326d170acb102"
+    },
+    "firmware_data": {
+        "Engine/Content/_NCS/Nexus-Data-firmware4.ncs": "513fe69f27b92ee6c7bb410bcbc5985a3df69e48",
+        "Engine/Content/_NCS/Nexus-Data-firmware6.ncs": "093e08234431fc597a99034e401d36bda26e2bc7",
+        "Engine/Content/_NCS/Nexus-Data-ui_stat0.ncs": "6b0ab5b4cdf12b80b7dcc968d1f401cacad7038a",
+        "Engine/Content/_NCS/Nexus-Data-ui_stat4.ncs": "cba50f2199a42a546707b7b27f4fde4170417bc0",
+        "Engine/Content/_NCS/Nexus-Data-ui_stat6.ncs": "047445ece53a502cd9094c3847e5ac90f8853d8d"
+    }
+}

@@ -1,0 +1,1343 @@
+{
+ "fw_action_fist": {
+  "name": "Action Fist",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Melee Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_ActionFist1_MeleeDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Action Skill Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_ActionFist2_ActionSkillDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "On [secondary]Melee[/secondary] kill, [secondary]Action Skill Damage[/secondary] is increased by [secondary]{mod}[/secondary] for [secondary]{duration}s[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_ActionFist3_ActionSkillDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "signstyle": "Positive"
+       },
+       "duration": {
+        "attribute": "Fw_ActionFist3_Duration",
+        "preview": false
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_airstrike": {
+  "name": "Airstrike",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Splash Radius[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Airstrike1_Splash_Radius",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Splash Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Airstrike2_Splash_Damage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "On kill, drop a Missile Strike on nearby enemies",
+      "args": {}
+     }
+    ]
+   }
+  ]
+ },
+ "fw_atlas_ex": {
+  "name": "Atlas E.X.",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Gun Mode Switch Speed[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_AtlasEx1_UnderbarrelEquipSpeed",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Gun Damage[/secondary] is increased by [secondary]{mod}[/secondary] while an [primary]Atlas[/primary] [secondary]Target Lock[/secondary] is active",
+      "args": {
+       "mod": {
+        "attribute": "Fw_AtlasEx2_WeaponDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "When killing an [primary]Atlas[/primary] [secondary]Target Locked[/secondary] enemy, [secondary]automatically Target Lock[/secondary] another nearby enemy",
+      "args": {}
+     }
+    ]
+   }
+  ]
+ },
+ "fw_atlas_infinum": {
+  "name": "Atlas Infinum",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Gun Fire Rate[/secondary] is increased by [secondary]{mod}[/secondary] while an [primary]Atlas[/primary] [secondary]Target Lock[/secondary] is active",
+      "args": {
+       "mod": {
+        "attribute": "Fw_AtlastInfinum1_FireRate",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Guns[/secondary] with [primary]Atlas[/primary]-licensed parts gain [secondary]{mod} Damage[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_AtlastInfinum1_WeaponDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[primary]Atlas[/primary] [secondary]Target Locks[/secondary] are infinite, unless you swap [secondary]Guns[/secondary]",
+      "args": {}
+     }
+    ]
+   }
+  ]
+ },
+ "fw_baker": {
+  "name": "Baker",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Shield Capacity[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Baker1_Shield_Capacity",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Repkit Cooldown Duration[/secondary] is reduced by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Baker2_RepKit_Cooldown",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Maximum Health[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Baker3_MaxHealth",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_bullets_to_spare": {
+  "name": "Bullets To Spare",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Gun Fire Rate[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_BulletsToSpare1_FireRate",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Gun Magazine Size[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_BulletsToSpare2_MagSize",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Gun Fire Rate[/secondary] is increased by [secondary]{mod}[/secondary] of [secondary]Gun Magazine Size[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_BulletsToSpare3_WeaponDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_daeddy_o": {
+  "name": "Daed-dy O'",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Gun Mode Switch Speed[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_DaeddyO1_ModeSwitchSpeed",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Gun Magazine Size[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_DaeddyO2_MagSize",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "On [secondary]Mode Switch[/secondary], grants [secondary]{mod} Damage[/secondary] and [secondary]{mod} Fire Rate[/secondary] for [secondary]{duration}s[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_DaeddyO3_Damage",
+        "preview": false,
+        "bdisplayaspercentage": "true"
+       },
+       "duration": {
+        "attribute": "Fw_DaeddyO3_Duration",
+        "preview": false
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_deadeye": {
+  "name": "Deadeye",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Gun Accuracy[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Deadeye1_accuracy",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Gun Critical Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Deadeye2_CriticalDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "Every [secondary]Critical Hit[/secondary] grants [secondary]{mod} Critical Damage[/secondary] per Stack (for a Maximum [secondary]5[/secondary] Stacks) for [secondary]{duration}s[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Deadeye3_CriticalDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true"
+       },
+       "stacks": {
+        "attribute": "Fw_Deadeye3_MaxStacks",
+        "preview": false
+       },
+       "duration": {
+        "attribute": "Fw_Deadeye3_Duration",
+        "preview": false
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_gadget_ahoy": {
+  "name": "Gadget Ahoy",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Ordnance Cooldown Duration[/secondary] is reduced by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GadgetAhoy1_Gadget_Cooldown",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Ordnance Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GadgetAhoy3_Damage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Ordnance[/secondary] kills grant [secondary]{mod} Damage[/secondary] for [secondary]{duration}s[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GadgetAhoy3_Damage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true"
+       },
+       "duration": {
+        "attribute": "Fw_GadgetAhoy3_Duration",
+        "preview": false
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_get_throwin": {
+  "name": "Get Throwin'",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Grenade Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GetThrowin1_OrdnanceDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Splash Radius[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GetThrowin2_SplashRadius",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Grenades[/secondary] and [primary]Tediore[/primary] [secondary]Thrown Guns[/secondary] have a [secondary]{mod}[/secondary] Chance to spawn homing Missiles that home in on nearby enemies",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GetThrowin3_ProcChance",
+        "preview": false,
+        "bdisplayaspercentage": "true"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_god_killer": {
+  "name": "God Killer",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Damage Dealt[/secondary] to [secondary]Badass Enemies[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GodKiller1_Damage_Modifier",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Damage Taken[/secondary] from [secondary]Badass Enemies[/secondary] is reduced by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GodKiller2_DamageReduction_Modifier",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "On killing a [secondary]Badass Enemy[/secondary], [secondary]Damage Dealt[/secondary] is increased by [secondary]{mod}[/secondary] for [secondary]{duration}s[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GodKiller3_Damage_Modifier",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "signstyle": "Positive"
+       },
+       "duration": {
+        "attribute": "Fw_GodKiller3_Duration",
+        "preview": false
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_goojfc": {
+  "name": "Goojfc",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Action Skill Cooldown Rate[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GOOJFC1_ActionSkillCooldown",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Action Skill Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GOOJFC2_ActionSkillDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Action Skill Cooldown Rate[/secondary] is increased by an additional [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_GOOJFC3_ActionSkillCooldown",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_heating_up": {
+  "name": "Heating Up",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Gun Reload Speed[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_HeatingUp1_ReloadSpeed",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "Amount of [secondary]Overheated[/secondary] shots before breaking is increased by [secondary]{mod}[/secondary] with [primary]CoV[/primary]-Licensed [secondary]Gun[/secondary] Parts",
+      "args": {
+       "mod": {
+        "attribute": "Fw_HeatingUp2_ShotsBeforeBreak",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "bdisplayasoneminus": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Gun Damage[/secondary] is increased by [secondary]{mod}[/secondary] while [secondary]Overheating[/secondary] with [primary]CoV[/primary]-Licensed [secondary]Gun[/secondary] Parts",
+      "args": {
+       "mod": {
+        "attribute": "Fw_HeatingUp3_Overheat_Damage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_high_caliber": {
+  "name": "High Caliber",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Projectile Speed[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_HighCaliber1_Projectile_Speed",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Gun Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_HighCaliber2_Damage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "Bullets [secondary]Pierce[/secondary] enemies",
+      "args": {}
+     }
+    ]
+   }
+  ]
+ },
+ "fw_jacked": {
+  "name": "Jacked",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Zoom In Speed[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Jacked1_ADS_Speed",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[primary]Hyperion[/primary] [secondary]Gun Shield Capacity[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Jacked2_ShieldCapacity",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[primary]Hyperion[/primary] [secondary]Gun Shields[/secondary] have a [secondary]{mod}[/secondary] Chance to [secondary]Ricochet Projectiles[/secondary] back to the enemy",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Jacked3_RicochetChance",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_lifeblood": {
+  "name": "Lifeblood",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Repkit Healing[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_LIfeblood1_Repkit_Power",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Lifesteal[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Lifeblood2_Lifesteal_Pct",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "On kill, regenerates [secondary]{mod}[/secondary] of [secondary]Maximum Health[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Lifeblood3_Health_Pct",
+        "preview": false,
+        "bdisplayaspercentage": "true"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_oscar_mike": {
+  "name": "Oscar Mike",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Gun Reload Speed[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_OscarMike1_ReloadSpeed",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Gun Damage[/secondary] is increased by up to [secondary]{mod}[/secondary] based on the emptiness of your [secondary]Gun's Magazine[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_OscarMike2_Damage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "After [secondary]Reloading[/secondary], [secondary]Gun Fire Rate[/secondary] is increased by [secondary]{mod}[/secondary] for [secondary]{duration}s[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_OscarMike3_FireRate",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       },
+       "duration": {
+        "attribute": "Fw_OscarMike3_Duration",
+        "preview": false
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_raid1_skillcraft": {
+  "name": "Skillcraft",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Skill Damage[/secondary] increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_skillcraft1_skilldamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Skill Critical Chance[/secondary] increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_skillcraft2_companiondamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "Dealing [secondary]Skill Damage[/secondary] increases [secondary]Skill Damage[/secondary] by [secondary]{mod}[/secondary] for [secondary]{mod2} seconds[/secondary].  Stacks up to [secondary]{mod3}[/secondary] times.",
+      "args": {
+       "mod": {
+        "attribute": "Fw_skillcraft3_skilldamagescale",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       },
+       "mod2": {
+        "attribute": "Fw_skillcraft3_buffduration",
+        "preview": false
+       },
+       "mod3": {
+        "attribute": "Fw_skillcraft3_maxstacks",
+        "preview": false
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_raid2_activefire": {
+  "name": "Active Fire",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Weapon Damage[/secondary] increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_activefire1_weapondamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Weapon Charge Rate[/secondary] increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_activefire2_chargetime",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "Firing a [secondary]Charged Weapon[/secondary] within [secondary]{mod2} seconds[/secondary] of reaching [secondary]Full Charge[/secondary], increases the [secondary]Damage Dealt[/secondary] by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_activefire3_fullchargedamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       },
+       "mod2": {
+        "attribute": "Fw_activefire3_timer",
+        "preview": false,
+        "floatprecision": "1"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_reel_big_fist": {
+  "name": "Reel Big Fist",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Melee Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_ReelBigFist1_MeleeDamage_Modifier",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Melee Damage[/secondary] is increased by an additional [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_ReelBigFist2_MeleeDamage_Modifier",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Melee[/secondary] kills trigger a Nova explosion for [secondary]{mod} Melee Damage[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_ReelBigFist3_Damage_Scale",
+        "preview": false,
+        "bdisplayaspercentage": "true"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_risky_boots": {
+  "name": "Risky Boots",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "When [secondary]Health[/secondary] is less than [secondary]35%[/secondary], [secondary]Damage Taken[/secondary] is reduced by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_RiskyBoots1_DamageReduction",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "When [secondary]Health[/secondary] is less than [secondary]35%[/secondary], [secondary]Movement Speed[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_RiskyBoots2_MoveSpeed",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "When [secondary]Health[/secondary] is less than [secondary]35%[/secondary], [secondary]Damage Dealt[/secondary] is increased by [secondary]{mod}[/secondary] and [secondary]Lifesteal[/secondary] is increased by [secondary]{mod2}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_RiskyBoots3_Damage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       },
+       "mod2": {
+        "attribute": "Fw_RiskyBoots3_Lifesteal",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_rubberband_man": {
+  "name": "Rubberband Man",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Damage Reduction[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Rubberband1_damage_reduction",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Lifesteal[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Rubberband2_LifeSteal",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Bonuses[/secondary] granted by this Firmware are [secondary]doubled[/secondary]",
+      "args": {}
+     }
+    ]
+   }
+  ]
+ },
+ "fw_trickshot": {
+  "name": "Trickshot",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Gun Reload Speed[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Trickshot1_Reload_Speed",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Gun Critical Damage[/secondary] is increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Trickshot2_CriticalDamage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "[secondary]Critical Hits[/secondary] have a [secondary]{mod}[/secondary] Chance to refill [secondary]1[/secondary] Ammo to the currently-equipped [secondary]Gun's Magazine[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_Trickshot3_ProcChance",
+        "preview": false,
+        "bdisplayaspercentage": "true"
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "fw_tuba_bruiser": {
+  "name": "Bruiser",
+  "tiers": [
+   {
+    "count": 1,
+    "lines": [
+     {
+      "text": "[secondary]Damage Taken[/secondary] reduced by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_bruiser1_damagetakenreduction",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 2,
+    "lines": [
+     {
+      "text": "[secondary]Lifesteal[/secondary] increased by [secondary]{mod}[/secondary]",
+      "args": {
+       "mod": {
+        "attribute": "Fw_bruiser2_lifesteal",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true",
+        "floatprecision": "1",
+        "signstyle": "Positive"
+       }
+      }
+     }
+    ]
+   },
+   {
+    "count": 3,
+    "lines": [
+     {
+      "text": "Killing an enemy grants [secondary]{mod} Damage Dealt[/secondary] for [secondary]{mod2} seconds[/secondary].  Multiple stacks can overlap.  Max [secondary]{mod3}[/secondary] stacks.",
+      "args": {
+       "mod": {
+        "attribute": "Fw_bruiser3_damage",
+        "preview": false,
+        "bdisplayaspercentage": "true",
+        "bdisplayplussign": "true"
+       },
+       "mod2": {
+        "attribute": "Fw_bruiser3_duration",
+        "preview": false,
+        "floatprecision": "1"
+       },
+       "mod3": {
+        "attribute": "Fw_bruiser3_maxstacks",
+        "preview": false
+       }
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

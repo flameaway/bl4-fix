@@ -1,0 +1,792 @@
+[
+ {
+  "boss": "Minister Screw",
+  "map": "Banjo_P",
+  "place": "Ministry of Culture",
+  "location": "dlmd_banjo_p_io_bossreplay_uaid_b04f130574aa427902_1943371898",
+  "x": 9556.600803,
+  "y": 2792.368551,
+  "z": 28453.319025,
+  "station": "Banjo_P.FT_BanjoEnd"
+ },
+ {
+  "boss": "Stone Demon",
+  "map": "Cello_P",
+  "place": "The Demon's Domain",
+  "location": "dlmd_cello_p_io_bossreplay_uaid_b04f130574aafc8c02_2117905695",
+  "x": 100025.249748,
+  "y": -89481.401509,
+  "z": 20850.944635,
+  "station": "Cello_P.FT_Cello_ThirdDrop"
+ },
+ {
+  "boss": "Chiselbella",
+  "map": "Cello_P",
+  "place": "The Demon's Domain",
+  "location": "dlmd_cello_p_io_bossreplay_uaid_d843ae5fac6a409f02_1438957675",
+  "x": 92755.109929,
+  "y": -57795.540266,
+  "z": 49154.369706,
+  "station": "Cello_P.FT_Cello_ThirdDrop"
+ },
+ {
+  "boss": "Bore-tex",
+  "map": "Cello_P",
+  "place": "The Demon's Domain",
+  "location": "dlmd_cello_p_io_bossreplay_uaid_d843ae5fac6a429f02_1291584059",
+  "x": 149394.949118,
+  "y": -81003.994929,
+  "z": 34346.434172,
+  "station": "Cello_P.FT_Cello_ThirdDrop"
+ },
+ {
+  "boss": "Sturmdrang",
+  "map": "Cello_P",
+  "place": "The Demon's Domain",
+  "location": "dlmd_cello_p_io_bossreplay_uaid_d843ae5fac6a439f02_1126779308",
+  "x": 72718.168553,
+  "y": -52725.622995,
+  "z": 21548.425679,
+  "station": "Cello_P.FT_Cello_ThirdDrop"
+ },
+ {
+  "boss": "Colonel Crash",
+  "map": "Cowbell_P",
+  "place": "The Whispering Glacier",
+  "location": "dlmd_cowbell_p_io_bossreplay_uaid_94f6d6f414de13a802_1430136250",
+  "x": 65510.0,
+  "y": 42700.0,
+  "z": 60315.0,
+  "station": "Cowbell_P.SED_Speakeasy_Maelstrom_Entrance"
+ },
+ {
+  "boss": "Big Oil",
+  "map": "Cowbell_P",
+  "place": "The Whispering Glacier",
+  "location": "dlmd_cowbell_p_io_bossreplay_uaid_cc96e51c03aea39202_1299763362",
+  "x": -59209.437852,
+  "y": -95972.620728,
+  "z": 45056.792758,
+  "station": "Cowbell_P.FT_CowbellStart"
+ },
+ {
+  "boss": "Air Raider Scremulous",
+  "map": "Cowbell_P",
+  "place": "The Whispering Glacier",
+  "location": "dlmd_cowbell_p_io_bossreplay_uaid_cc96e51c03aea39202_1651541364",
+  "x": -110400.860325,
+  "y": 98395.617987,
+  "z": 44281.582351,
+  "station": "Cowbell_P.SED_Speakeasy_GhostShip_Entrance"
+ },
+ {
+  "boss": "The Penitent Steel",
+  "map": "Cowbell_P",
+  "place": "The Whispering Glacier",
+  "location": "dlmd_cowbell_p_io_bossreplay_uaid_cc96e51c03aea79202_1857533082",
+  "x": -57699.275245,
+  "y": 92306.461834,
+  "z": 56966.572976,
+  "station": "Cowbell_P.SED_Speakeasy_GhostShip_Entrance"
+ },
+ {
+  "boss": "Corporal Brennan",
+  "map": "Cowbell_P",
+  "place": "The Whispering Glacier",
+  "location": "dlmd_cowbell_p_io_bossreplay_uaid_cc96e51c03aeba9302_1998212469",
+  "x": -22925.43007,
+  "y": 11990.320753,
+  "z": 41942.80989,
+  "station": "Cowbell_P.SED_Speakeasy_DahlBlockade_Entrance"
+ },
+ {
+  "boss": "Crazed Earl",
+  "map": "Cowbell_P",
+  "place": "The Whispering Glacier",
+  "location": "dlmd_cowbell_p_oakinteractiveobject_uaid_e04f43e6da06eb9302_1594745088",
+  "x": 6725.148553,
+  "y": -33498.159532,
+  "z": 39284.664653,
+  "station": "Cowbell_P.FT_BSH_botanist"
+ },
+ {
+  "boss": "Moon-Maddened Callis",
+  "map": "Elpis_P",
+  "place": "Elpis Orbital Shatterfield",
+  "location": "dlmd_elpis_p_io_bossreplay_uaid_2cf05d562853555002_1865449048",
+  "x": -221446.020373,
+  "y": -272327.059053,
+  "z": -312115.468985,
+  "station": "Elpis_P.fast_travel"
+ },
+ {
+  "boss": "Idolator Sol",
+  "map": "Fortress_Grasslands_P",
+  "place": "Fortress Grasslands",
+  "location": "dlmd_fortress_grasslands_p_io_bossreplay_uaid_e04f43e6ae842f4702_2127496748",
+  "x": -43576.545499,
+  "y": -47574.184676,
+  "z": 17895.000222,
+  "station": "Fortress_Grasslands_P.FT_GRA_Fortress_Boss"
+ },
+ {
+  "boss": "Vile Lictor",
+  "map": "Fortress_Mountains_P",
+  "place": "Fortress Mountains",
+  "location": "dlmd_fortress_mountains_p_io_bossreplay_uaid_2cf05d5628535b4f02_1586449935",
+  "x": 36700.0,
+  "y": -28000.0,
+  "z": 2545.0,
+  "station": "Fortress_Mountains_P.FT_Fortress_MOU_Start"
+ },
+ {
+  "boss": "Callis, the Ripper Queen",
+  "map": "Fortress_Shatteredlands_P",
+  "place": "Fortress Shatteredlands",
+  "location": "dlmd_fortress_shatteredlands_p_io_bossreplay_uaid_2cf05d5628534c5002_2142538407",
+  "x": -7666.242168,
+  "y": -49576.031626,
+  "z": 6895.425219,
+  "station": "Fortress_Shatteredlands_P.FT_Fortress_SHA_Start"
+ },
+ {
+  "boss": "Dr. Elena Smith",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1f03d502_1574808960",
+  "x": -53039.0,
+  "y": 32376.0,
+  "z": 2325.0,
+  "station": "Harmonica_P.FT_Harmonica_Blind"
+ },
+ {
+  "boss": "Vulkorr",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1f06c902_1384772829",
+  "x": -82903.736802,
+  "y": 39760.891533,
+  "z": 5222.152031,
+  "station": "Harmonica_P.FT_Harmonica_JungleSafehouse"
+ },
+ {
+  "boss": "RelaxMech",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1f0ec902_1843950215",
+  "x": -189233.307459,
+  "y": -122401.810745,
+  "z": 23400.426095,
+  "station": "Harmonica_P.HarmMain3Spa_PostMission_SendOnly"
+ },
+ {
+  "boss": "Big Bada Boom Drone",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1f22d202_1099951241",
+  "x": -143208.480879,
+  "y": 35722.699962,
+  "z": 8083.383168,
+  "station": "Harmonica_P.FT_Harmonica_JungleSafehouse"
+ },
+ {
+  "boss": "Blackgrin",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1f2fd202_1277265578",
+  "x": 147998.0,
+  "y": 41348.0,
+  "z": 19171.197025,
+  "station": "Harmonica_P.FT_Harmonica_LavaBridge"
+ },
+ {
+  "boss": "Drilla Killa",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1f73d202_1397325503",
+  "x": -224245.652814,
+  "y": 36148.791375,
+  "z": 999.0,
+  "station": "Harmonica_P.FT_Harmonica_JungleSafehouse"
+ },
+ {
+  "boss": "Ducky",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1f9ebf02_1170519008",
+  "x": 81051.974099,
+  "y": 71867.806427,
+  "z": 8686.0,
+  "station": "Harmonica_P.FT_Harmonica_LavaSafehouse"
+ },
+ {
+  "boss": "Jr. Manager Warrant Baggett",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1fa4c402_1942293337",
+  "x": 61635.593698,
+  "y": -181546.344173,
+  "z": 15534.09635,
+  "station": "Harmonica_P.FT_Harmonica_PowerStationEnt"
+ },
+ {
+  "boss": "Megan",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1fb8d402_1097811822",
+  "x": -110159.0,
+  "y": 111444.0,
+  "z": 5291.000239,
+  "station": "Harmonica_P.FT_Harmonica_JungleSafehouse"
+ },
+ {
+  "boss": "Logistics Manager",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1fbfc202_1871170995",
+  "x": 142401.723292,
+  "y": -190334.316475,
+  "z": -29522.266086,
+  "station": "Harmonica_P.FT_Harmonica_PowerStationEnt"
+ },
+ {
+  "boss": "Lieutenant Bume",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1fdac002_2068913639",
+  "x": 13953.183298,
+  "y": 79041.298956,
+  "z": 9995.000299,
+  "station": "Harmonica_P.FT_Harmonica_Blind"
+ },
+ {
+  "boss": "Jayson and his Frame",
+  "map": "Harmonica_P",
+  "place": "Providence Island",
+  "location": "dlmd_harmonica_p_io_bossreplay_uaid_74563cb78d1fe0d102_1292592624",
+  "x": 55424.038462,
+  "y": -12005.599778,
+  "z": 18265.0,
+  "station": "Harmonica_P.FT_Harmonica_LavaBridge"
+ },
+ {
+  "boss": "BETAMAXXX",
+  "map": "Harp_P",
+  "place": "The Toxic Scowl",
+  "location": "dlmd_harp_p_oakinteractiveobject_uaid_00d861c3a6aa1ae102_1631269672",
+  "x": 95979.725612,
+  "y": -23908.750973,
+  "z": 3454.347632,
+  "station": "Harp_P.FT_HarpFacBoss"
+ },
+ {
+  "boss": "Infamous Dave",
+  "map": "Harp_P",
+  "place": "The Toxic Scowl",
+  "location": "dlmd_harp_p_oakinteractiveobject_uaid_00d861c3a6aa9ae102_1488827210",
+  "x": -77967.176203,
+  "y": -23314.650455,
+  "z": -6282.593583,
+  "station": "Harp_P.FT_DLC_Harp_Start"
+ },
+ {
+  "boss": "MAXXXSUPREMENOOLIVES",
+  "map": "Harp_P",
+  "place": "The Toxic Scowl",
+  "location": "dlmd_harp_p_oakinteractiveobject_uaid_089204dcf6e7e8e102_1798517969",
+  "x": 82932.751545,
+  "y": -20437.563697,
+  "z": 2407.374287,
+  "station": "Harp_P.FT_HarpFacBoss"
+ },
+ {
+  "boss": "Skank Eyes",
+  "map": "Harp_P",
+  "place": "The Toxic Scowl",
+  "location": "dlmd_harp_p_oakinteractiveobject_uaid_089204dcf6e7f1e102_1294557535",
+  "x": 26242.93521,
+  "y": 355.354095,
+  "z": 3348.337554,
+  "station": "Harp_P.FT_DLC_Harp_Start"
+ },
+ {
+  "boss": "CL34n.R",
+  "map": "Mandolin1_P",
+  "place": "Mandolin 1",
+  "location": "dlmd_mandolin1_p_io_bossreplay_uaid_b04f130574aa0dce02_1961658328",
+  "x": -73459.408548,
+  "y": -7887.142307,
+  "z": 50697.481221,
+  "station": "Mandolin1_P.FT_Mandolin_BossZane"
+ },
+ {
+  "boss": "F1x.R",
+  "map": "Mandolin1_P",
+  "place": "Mandolin 1",
+  "location": "dlmd_mandolin1_p_io_bossreplay_uaid_b04f130574aa0fce02_1281203690",
+  "x": -16855.489951,
+  "y": -29831.668796,
+  "z": 46659.000037,
+  "station": "Mandolin1_P.FT_Mandolin_P"
+ },
+ {
+  "boss": "Biff Fistful",
+  "map": "Mandolin1_P",
+  "place": "Mandolin 1",
+  "location": "dlmd_mandolin1_p_io_bossreplay_uaid_b04f130574aa30c702_1681661108",
+  "x": -44667.074481,
+  "y": 62184.53643,
+  "z": 61784.04757,
+  "station": "Mandolin1_P.FT_Mandolin_BossZane"
+ },
+ {
+  "boss": "Bloomreaper the Invincible",
+  "map": "Raid1_P",
+  "place": "The Bloom",
+  "location": "dlmd_raid1_p_io_bossreplay_uaid_54bf6467aefc796e02_1384453958",
+  "x": -13419.648383,
+  "y": -1675.455107,
+  "z": 12302.606146,
+  "station": "Raid1_P.FT_Raid1_Approach"
+ },
+ {
+  "boss": "Subjugator & Thol",
+  "map": "Raid2_P",
+  "place": "Lair of the Subjugator",
+  "location": "dlmd_raid2_p_io_bossreplay_uaid_54bf6467aefc2d9a02_2070445050",
+  "x": -21712.3853,
+  "y": -71505.404457,
+  "z": 210516.93225,
+  "station": "Raid2_P.FT_Raid2_Entrance"
+ },
+ {
+  "boss": "Arjay",
+  "map": "UpperCity_P",
+  "place": "Upper City",
+  "location": "dlmd_uppercity_p_io_bossreplay_uaid_74563cb78d1fa15c02_1362280990",
+  "x": 58977.051812,
+  "y": 17820.274168,
+  "z": 35411.293108,
+  "station": "UpperCity_P.FT_UpperCity_AfterPod"
+ },
+ {
+  "boss": "The Timekeeper",
+  "map": "UpperCity_P",
+  "place": "Upper City",
+  "location": "dlmd_uppercity_p_io_bossreplay_uaid_e04f43e6ae84a05002_1128500350",
+  "x": 1149.975087,
+  "y": 310.679331,
+  "z": 103838.000002,
+  "station": "UpperCity_P.FT_Entrance"
+ },
+ {
+  "boss": "Primordial Guardian Inceptus",
+  "map": "Vault_Grasslands_P",
+  "place": "Vault Grasslands",
+  "location": "dlmd_vault_grasslands_p_io_bossreplay_uaid_e04f43e6ae84fd4f02_2091336463",
+  "x": 41782.0,
+  "y": -130138.0,
+  "z": -1341.0,
+  "station": "Vault_Grasslands_P.fast_travel_vault_start"
+ },
+ {
+  "boss": "Primordial Guardian Origo",
+  "map": "Vault_Mountains_P",
+  "place": "Vault Mountains",
+  "location": "dlmd_vault_mountains_p_io_bossreplay_uaid_2cf05d562853d84d02_1287652858",
+  "x": 60893.073501,
+  "y": 18152.053209,
+  "z": 16388.0,
+  "station": "Vault_Mountains_P.FT_Vault_Mou_Start"
+ },
+ {
+  "boss": "Primordial Guardian Radix",
+  "map": "Vault_ShatteredLands_P",
+  "place": "Vault Shattered Lands",
+  "location": "dlmd_vault_shatteredlands_p_io_bossreplay_uaid_2cf05d562853af4f02_1787837744",
+  "x": -34464.180734,
+  "y": -86316.54802,
+  "z": 16926.536253,
+  "station": "Vault_ShatteredLands_P.FT_Vault_Shatteredlands"
+ },
+ {
+  "boss": "Captain Willis",
+  "map": "VaultoftheDamned_P",
+  "place": "The Maelstrom",
+  "location": "dlmd_vaultofthedamned_p_oakinteractiveobject_1",
+  "x": -26539.877294,
+  "y": 180126.563447,
+  "z": 23317.219189,
+  "station": "VaultoftheDamned_P.FT_VotD_Bridge"
+ },
+ {
+  "boss": "Vile Grasp",
+  "map": "Viola_ElpisVile_P",
+  "place": "Dark Side of Elpis",
+  "location": "dlmd_viola_elpisvile_p_io_bossreplay_uaid_08bfb81672990adf02_1467087743",
+  "x": -31117.067525,
+  "y": -65474.291495,
+  "z": 45289.962296,
+  "station": "Viola_ElpisVile_P.FT_Viola_ElpisVile_Entrance"
+ },
+ {
+  "boss": "Hybrid Thresher",
+  "map": "Viola_ElpisVile_P",
+  "place": "Dark Side of Elpis",
+  "location": "dlmd_viola_elpisvile_p_io_bossreplay_uaid_e89c25105cfbbed802_1845570035",
+  "x": -52810.771833,
+  "y": 469.73929,
+  "z": 32601.256947,
+  "station": "Viola_ElpisVile_P.FT_Viola_ElpisVile_Entrance"
+ },
+ {
+  "boss": "The Reject Prototypes",
+  "map": "Viola_P",
+  "place": "Nuada Cove",
+  "location": "dlmd_viola_p_io_bossreplay_uaid_e89c25105c77fede02_1343720636",
+  "x": 2939.944889,
+  "y": -14732.926146,
+  "z": 20650.0,
+  "station": "Viola_P.FT_Viola_Cove_Rift"
+ },
+ {
+  "boss": "Lieutenant Harmony",
+  "map": "VolcanoFortress_P",
+  "place": "Tediore FOB Bravo Lima 4.2",
+  "location": "dlmd_volcanofortress_p_io_bossreplay_uaid_0050568bfc4dddc602_1917027486",
+  "x": 49089.424252,
+  "y": 40427.972299,
+  "z": 421.041298,
+  "station": "VolcanoFortress_P.FTS_FL4K"
+ },
+ {
+  "boss": "Experiment C-23",
+  "map": "VolcanoFortress_P",
+  "place": "Tediore FOB Bravo Lima 4.2",
+  "location": "dlmd_volcanofortress_p_io_bossreplay_uaid_74563cb78d1fb1d402_1796736550",
+  "x": 66236.378377,
+  "y": 5581.344379,
+  "z": 949.805111,
+  "station": "VolcanoFortress_P.FTS_FL4K"
+ },
+ {
+  "boss": "Kolavalin",
+  "map": "VolcanoFortress_P",
+  "place": "Tediore FOB Bravo Lima 4.2",
+  "location": "dlmd_volcanofortress_p_io_bossreplay_uaid_74563cb78d1ffcd402_2032827787",
+  "x": 24064.497861,
+  "y": -7629.162309,
+  "z": -3568.033811,
+  "station": "VolcanoFortress_P.FTS_VolcanoFortress_Start"
+ },
+ {
+  "boss": "Sludgemaw",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_04922658d4a79c2f02_1589462592",
+  "x": 81504.0,
+  "y": 117065.0,
+  "z": 13696.0,
+  "station": "World_P.FT_GRA_Safehouse3"
+ },
+ {
+  "boss": "Directive-0",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_244bfe96422d31ff01_1907577065",
+  "x": 73399.834829,
+  "y": 27198.820274,
+  "z": 14524.051049,
+  "station": "World_P.FT_City_MNT_CentralAlley"
+ },
+ {
+  "boss": "Axemaul",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_244bfe96422d3aff01_2066486654",
+  "x": -63992.983451,
+  "y": -47994.599195,
+  "z": 5317.465312,
+  "station": "World_P.FTS_City_SHA_Safehouse1"
+ },
+ {
+  "boss": "Leader Willem",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_244bfe96422db21d02_1287181538",
+  "x": 11019.169675,
+  "y": -151036.015077,
+  "z": 16145.000024,
+  "station": "World_P.FTS_City_MountainSafehouse2"
+ },
+ {
+  "boss": "Vile Ted & The Experiments",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_2cf05d8c2ce9216402_1506167904",
+  "x": 75243.835443,
+  "y": -49305.00868,
+  "z": 9604.0,
+  "station": "World_P.FT_City_MNT_UnderwaterLabExterior"
+ },
+ {
+  "boss": "Horace",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_38d54710afc02cf601_1987519684",
+  "x": -48928.982984,
+  "y": 149370.523633,
+  "z": 17967.636786,
+  "station": "World_P.FT_GRA_West_NorthSafehouse2"
+ },
+ {
+  "boss": "Core Observer",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_38d54710afc03e0002_1714446409",
+  "x": -122740.0,
+  "y": 112910.00001,
+  "z": 9910.0,
+  "station": "World_P.FT_GRA_POI_ZadrasHouse"
+ },
+ {
+  "boss": "Fractis",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_38d54710afc0720102_1085973631",
+  "x": -26843.946413,
+  "y": -134702.827195,
+  "z": 5880.811353,
+  "station": "World_P.FT_SHA_Silo_01"
+ },
+ {
+  "boss": "Mimicron",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_38d54710afc08a0002_1589927784",
+  "x": 162780.505245,
+  "y": 219416.237212,
+  "z": 6952.395856,
+  "station": "World_P.FT_GRA_Safehouse4"
+ },
+ {
+  "boss": "The Backhive",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefc1b0102_1273536307",
+  "x": 216933.789338,
+  "y": 171395.129625,
+  "z": 9500.433755,
+  "station": "World_P.TS_FFlats_ZadrasLab"
+ },
+ {
+  "boss": "Bramblesong",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefc530e02_1998308892",
+  "x": 112465.520784,
+  "y": -365951.048347,
+  "z": 29408.617764,
+  "station": "World_P.FT_MOU_Silo3_NorthValley"
+ },
+ {
+  "boss": "Voraxis",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefc581402_1707512104",
+  "x": -155156.946095,
+  "y": 277138.249131,
+  "z": 3766.544194,
+  "station": "World_P.FT_GRA_Silo_01"
+ },
+ {
+  "boss": "Rocken Roller",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefc7c0002_1893237322",
+  "x": -162230.370199,
+  "y": -285952.800207,
+  "z": 1173.421803,
+  "station": "World_P.FT_SHA_Silo2_EleciPlat"
+ },
+ {
+  "boss": "Battle Wagon",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefca81a02_1388992592",
+  "x": 114497.666734,
+  "y": -261529.107548,
+  "z": 21964.035975,
+  "station": "World_P.FT_MOU_NorthCliffs_Safehouse4"
+ },
+ {
+  "boss": "Shadowpelt",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefcbe1802_1726729284",
+  "x": 215336.210251,
+  "y": -51841.185988,
+  "z": 16133.394116,
+  "station": "World_P.FT_MOU_Safehouse1_Timberland"
+ },
+ {
+  "boss": "Skull Orchid",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefcd60002_1156551161",
+  "x": -87898.044338,
+  "y": -84342.178499,
+  "z": 8873.938094,
+  "station": "World_P.FT_SHA_Silo_01"
+ },
+ {
+  "boss": "Sidney Pointylegs",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_74563cb78d1f8d0002_1977063315",
+  "x": 17483.153158,
+  "y": 151684.033754,
+  "z": 13772.329596,
+  "station": "World_P.FT_GRA_Safehouse3"
+ },
+ {
+  "boss": "Bio-Bulkhead",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_94f6d6f414de161202_2111909384",
+  "x": 232825.604764,
+  "y": 143256.511004,
+  "z": 20382.373777,
+  "station": "World_P.TS_FFlats_ZadrasLab"
+ },
+ {
+  "boss": "Genone",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_94f6d6f414deab3a02_1902783844",
+  "x": -151369.657531,
+  "y": -27195.229423,
+  "z": 7100.0,
+  "station": "World_P.FT_SHA_Safehouse2_OrderPlateau"
+ },
+ {
+  "boss": "Bio-Thresher Omega",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_94f6d6f414ded05e02_1619776369",
+  "x": -23995.377971,
+  "y": 25259.578687,
+  "z": 11024.000096,
+  "station": "World_P.FT_CITY_GRA_Safehouse3"
+ },
+ {
+  "boss": "Callous Harbinger of Annihilating Death",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_b04f130574aa250102_1374902068",
+  "x": 367218.590617,
+  "y": -93157.179683,
+  "z": 37817.338278,
+  "station": "World_P.FT_MOU_Safehouse2_Highlands"
+ },
+ {
+  "boss": "Oppressor",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_b04f130574aa9e0402_1123078544",
+  "x": 204520.285124,
+  "y": 245842.996205,
+  "z": 12310.004664,
+  "station": "World_P.FT_GRA_Safehouse4"
+ },
+ {
+  "boss": "Skyspanner Kratch",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_cc96e51ab12544f401_1592664794",
+  "x": 263427.725419,
+  "y": -26889.31962,
+  "z": 25450.0001,
+  "station": "World_P.FT_MOU_Silo2_Gorge"
+ },
+ {
+  "boss": "The Divisioner",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_io_bossreplay_uaid_d85ed3466c03ffee01_1901674368",
+  "x": 304721.846146,
+  "y": -175028.960445,
+  "z": 33811.24854,
+  "station": "World_P.FT_MOU_Safehouse3_Valley"
+ },
+ {
+  "boss": "Rippa Roadbirds",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_oakinteractiveobject_uaid_00d861c3a6aa7b2402_1523338173",
+  "x": -113294.33442,
+  "y": -320067.440241,
+  "z": 10422.20246,
+  "station": "World_P.FT_SHA_Silo2_EleciPlat"
+ },
+ {
+  "boss": "Foundry Freaks",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_oakinteractiveobject_uaid_907841cad8657d0102_1585489597",
+  "x": 90526.232076,
+  "y": 258083.168893,
+  "z": 1038.024783,
+  "station": "World_P.FT_GRA_Safehouse4"
+ },
+ {
+  "boss": "Meathead Riders",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_oakinteractiveobject_uaid_d843ae5fac6a7b0102_1648938215",
+  "x": 244884.818516,
+  "y": 74827.772185,
+  "z": 21788.458911,
+  "station": "World_P.FT_MOU_Silo2_Gorge"
+ },
+ {
+  "boss": "Pango Bango",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_oakinteractiveobject_uaid_e04f43e60d77881b02_1565726943",
+  "x": -107087.376769,
+  "y": -67482.853785,
+  "z": 10172.989123,
+  "station": "World_P.FTS_City_Meteor_Transition"
+ },
+ {
+  "boss": "Vile Prototype",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_oakinteractiveobject_uaid_e04f43e60d837fea01_1791653616",
+  "x": 215442.171573,
+  "y": -215456.573584,
+  "z": 35287.758789,
+  "station": "World_P.RS_MOU_FortressExterior"
+ },
+ {
+  "boss": "Splashzone",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_oakinteractiveobject_uaid_e04f43e60d83840102_1427834786",
+  "x": -138083.0,
+  "y": 323152.0,
+  "z": 2205.956002,
+  "station": "World_P.FT_GRA_Silo_01"
+ },
+ {
+  "boss": "Driller Hole",
+  "map": "World_P",
+  "place": "",
+  "location": "dlmd_world_p_oakinteractiveobject_uaid_e04f43e60d83c70202_1344365639",
+  "x": -212095.325758,
+  "y": -110838.521136,
+  "z": 3955.000031,
+  "station": "World_P.FT_SHA_Safehouse2_OrderPlateau"
+ }
+]

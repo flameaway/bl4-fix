@@ -1,0 +1,278 @@
+{
+ "bosses": [
+  {
+   "challenge": "Challenge_UVH_Rankup_7_Parent",
+   "title": "Extreme Vault Hunter",
+   "description": "Defeat Subjugator the Invincible or Thol the Invincible in UVH 6 to unlock UVH 7.",
+   "uvh": 6,
+   "boss": "Subjugator & Thol",
+   "place": "Lair of the Subjugator",
+   "map": "Raid2_P",
+   "location": "dlmd_raid2_p_io_bossreplay_uaid_54bf6467aefc2d9a02_2070445050",
+   "x": -21712.3853,
+   "y": -71505.404457,
+   "z": 210516.93225,
+   "station": "Raid2_P.FT_Raid2_Entrance",
+   "station_at": [
+    -4740.8,
+    -133679.8,
+    205339.3
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_6_Bloomreaper",
+   "title": "Even Superer Ultimater Vault Hunter",
+   "description": "Defeat Bloomreaper the Invincible in UVH 5 to unlock UVH 6.",
+   "uvh": 5,
+   "boss": "Bloomreaper the Invincible",
+   "place": "The Bloom",
+   "map": "Raid1_P",
+   "location": "dlmd_raid1_p_io_bossreplay_uaid_54bf6467aefc796e02_1384453958",
+   "x": -13419.648383,
+   "y": -1675.455107,
+   "z": 12302.606146,
+   "station": "Raid1_P.FT_Raid1_Approach",
+   "station_at": [
+    -82045.5,
+    -51787.6,
+    18848.6
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_4_Order",
+   "title": "But What If... You Were the Fake?",
+   "description": "Kill Mimicron in UVH 3 (Order Bunker, Idolator's Noose, Fadefields).",
+   "uvh": 3,
+   "boss": "Mimicron",
+   "place": "The Fadefields",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_38d54710afc08a0002_1589927784",
+   "x": 162780.505245,
+   "y": 219416.237212,
+   "z": 6952.395856,
+   "station": "World_P.FT_GRA_Safehouse4",
+   "station_at": [
+    173338.0,
+    235821.4,
+    8770.0
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_4_Thresher",
+   "title": "Bloom Boom",
+   "description": "Kill Skull Orchid in UVH 3 (Abandoned Auger Mine, Grindstone of the Worthy, Carcadia Burn).",
+   "uvh": 3,
+   "boss": "Skull Orchid",
+   "place": "Carcadia Burn",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefcd60002_1156551161",
+   "x": -87898.044338,
+   "y": -84342.178499,
+   "z": 8873.938094,
+   "station": "World_P.FT_SHA_Silo_01",
+   "station_at": [
+    -93661.2,
+    -135050.7,
+    7135.9
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_4_Beast",
+   "title": "Draggin' Wagon",
+   "description": "Kill Battle Wagon in UVH 3 (Ripper Drill Site, Stoneblood Forest, Terminus Range).",
+   "uvh": 3,
+   "boss": "The Battle Wagon",
+   "place": "Terminus Range",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefca81a02_1388992592",
+   "x": 114497.666734,
+   "y": -261529.107548,
+   "z": 21964.035975,
+   "station": "World_P.FT_MOU_NorthCliffs_Safehouse4",
+   "station_at": [
+    120316.3,
+    -229433.8,
+    29744.2
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_4_Ripper",
+   "title": "Who Named This Guy",
+   "description": "Kill The Immortal Boneface in UVH 3 (Ripper Drill Site, Cuspid Climb, Terminus Range).",
+   "uvh": 3,
+   "boss": "The Immortal Boneface",
+   "place": "Terminus Range",
+   "map": "World_P",
+   "location": "dlmd_world_p_oakinteractiveobject_uaid_d843ae5fac6a7b0102_1648938215",
+   "x": 244884.818516,
+   "y": 74827.772185,
+   "z": 21788.458911,
+   "station": "World_P.FT_MOU_Silo2_Gorge",
+   "station_at": [
+    235259.0,
+    35775.6,
+    29179.2
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_3_Order",
+   "title": "Now Who's Gonna Watch This Core",
+   "description": "Kill Core Observer in UVH 2 (Order Bunker, The Howl, Fadefields).",
+   "uvh": 2,
+   "boss": "Core Observer",
+   "place": "The Fadefields",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_38d54710afc03e0002_1714446409",
+   "x": -122740.0,
+   "y": 112910.00001,
+   "z": 9910.0,
+   "station": "World_P.FT_GRA_POI_ZadrasHouse",
+   "station_at": [
+    -150901.2,
+    143463.1,
+    16839.0
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_3_Pangolin",
+   "title": "So I Felt Like",
+   "description": "Kill Rocken Roller in UVH 2 (Abandoned Auger Mine, Ruined Sumplands, Carcadia Burn).",
+   "uvh": 2,
+   "boss": "Rocken Roller",
+   "place": "Carcadia Burn",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefc7c0002_1893237322",
+   "x": -162230.370199,
+   "y": -285952.800207,
+   "z": 1173.421803,
+   "station": "World_P.FT_SHA_Silo2_EleciPlat",
+   "station_at": [
+    -106832.0,
+    -285523.6,
+    12369.8
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_3_Cat",
+   "title": "Pelted",
+   "description": "Kill Shadowpelt in UVH 2 (Abandoned Auger Mine, Cuspid Climb, Terminus Range).",
+   "uvh": 2,
+   "boss": "Shadowpelt",
+   "place": "Terminus Range",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefcbe1802_1726729284",
+   "x": 215336.210251,
+   "y": -51841.185988,
+   "z": 16133.394116,
+   "station": "World_P.FT_MOU_Safehouse1_Timberland",
+   "station_at": [
+    149014.3,
+    -12359.6,
+    19716.5
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_3_Ripper",
+   "title": "Blasted Furnace",
+   "description": "Kill Frank the Furnace in UVH 2 (Ripper Drill Site, Idolator's Noose, Fadefields).",
+   "uvh": 2,
+   "boss": "Frank the Furnace",
+   "place": "The Fadefields",
+   "map": "World_P",
+   "location": "dlmd_world_p_oakinteractiveobject_uaid_907841cad8657d0102_1585489597",
+   "x": 90526.232076,
+   "y": 258083.168893,
+   "z": 1038.024783,
+   "station": "World_P.FT_GRA_Safehouse4",
+   "station_at": [
+    173338.0,
+    235821.4,
+    8770.0
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_2_Order",
+   "title": "Bio Break",
+   "description": "Kill Bio-Bulkhead in UVH 1 (Synthetic Nave, Dissected Plateau, Fadefields).",
+   "uvh": 1,
+   "boss": "Bio-Bulkhead",
+   "place": "The Fadefields",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_94f6d6f414de161202_2111909384",
+   "x": 232825.604764,
+   "y": 143256.511004,
+   "z": 20382.373777,
+   "station": "World_P.TS_FFlats_ZadrasLab",
+   "station_at": [
+    190599.0,
+    179089.0,
+    9128.0
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_2_Ripper",
+   "title": "No Points Awarded",
+   "description": "Kill Sydney Pointylegs in UVH 1 (Ripper Drill Site, Hungering Plain, Fadefields).",
+   "uvh": 1,
+   "boss": "Sidney Pointylegs",
+   "place": "The Fadefields",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_74563cb78d1f8d0002_1977063315",
+   "x": 17483.153158,
+   "y": 151684.033754,
+   "z": 13772.329596,
+   "station": "World_P.FT_GRA_Safehouse3",
+   "station_at": [
+    83020.4,
+    159187.2,
+    15195.9
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_2_Creep",
+   "title": "Omega 86'd",
+   "description": "Kill Bio-Thresher Omega in UVH 1 (Fades District, Dominion - Requires previously completing Side Missions \"One Gassy Issue\" / \"One Slimy Issue\").",
+   "uvh": 1,
+   "boss": "Bio-Thresher Omega",
+   "place": "Dominion",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_94f6d6f414ded05e02_1619776369",
+   "x": -23995.377971,
+   "y": 25259.578687,
+   "z": 11024.000096,
+   "station": "World_P.FT_CITY_GRA_Safehouse3",
+   "station_at": [
+    -6024.1,
+    43500.9,
+    11680.0
+   ]
+  },
+  {
+   "challenge": "Challenge_UVH_Rankup_2_Kratch",
+   "title": "Song's Over",
+   "description": "Kill Bramblesong in UVH 1 (Abandoned Auger Mine, Stoneblood Forest, Terminus Range).",
+   "uvh": 1,
+   "boss": "Bramblesong",
+   "place": "Terminus Range",
+   "map": "World_P",
+   "location": "dlmd_world_p_io_bossreplay_uaid_54bf6467aefc530e02_1998308892",
+   "x": 112465.520784,
+   "y": -365951.048347,
+   "z": 29408.617764,
+   "station": "World_P.FT_MOU_Silo3_NorthValley",
+   "station_at": [
+    193589.1,
+    -289667.4,
+    30602.0
+   ]
+  }
+ ],
+ "source_data": {
+  "Engine/Content/_NCS/Nexus-Data-challenge0.ncs": "c1e38f2a31d65205cc51d1373e827138e6d3e5f4",
+  "Engine/Content/_NCS/Nexus-Data-challenge4.ncs": "7e76939d8202da008eaf5b740cb6c361e7cad210",
+  "Engine/Content/_NCS/Nexus-Data-challenge6.ncs": "2ffdda956db244266d27a0376419895a9285593e",
+  "Engine/Content/_NCS/Nexus-Data-gbx_discovery_location_meta_data4.ncs": "9c637fe908b5e2cf9f3162dec12b6012ac0c0e94",
+  "Engine/Content/_NCS/Nexus-Data-gbx_discovery_location_meta_data6.ncs": "65a2713a18c514e23e681fe5cb92eaeaba1e789c",
+  "Engine/Content/_NCS/Nexus-Data-ui_challenge_list0.ncs": "746c8a76a315a2691df9587d036ff973263d9526"
+ }
+}

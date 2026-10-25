@@ -1,0 +1,139 @@
+{
+ "maps": {
+  "banjo_p": {
+   "def": "vmd_banjo_p",
+   "world": "Banjo_P",
+   "actor": "/Game/DLC/Banjo/GameData/BigMap/BP_Map_Banjo_P.BP_Map_Banjo_P_C"
+  },
+  "cello_p": {
+   "def": "vmd_cello_p",
+   "world": "Cello_P",
+   "actor": "/Game/DLC/Cello/GameData/BigMap/BP_Map_Cello_P.BP_Map_Cello_P_C"
+  },
+  "cowbell_p": {
+   "def": "vmd_cowbell_p",
+   "world": "Cowbell_P",
+   "actor": "/Game/DLC/Cowbell/GameData/BigMap/BP_Map_Cowbell_P.BP_Map_Cowbell_P_C"
+  },
+  "elpis_p": {
+   "def": "vmd_elpis_p",
+   "world": "Elpis_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/Elpis_P/BP_Map_Elpis.BP_Map_Elpis_C"
+  },
+  "elpiselevator_p": {
+   "def": "vmd_elpiselevator_p",
+   "world": "ElpisElevator_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/ElpisElevator_P/BP_Map_ElpisElevator.BP_Map_ElpisElevator_C"
+  },
+  "fortress_grasslands_p": {
+   "def": "vmd_fortress_grasslands_p",
+   "world": "Fortress_Grasslands_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/Fortress_Grasslands_P/BP_Map_Fortress_Grasslands.BP_Map_Fortress_Grasslands_C"
+  },
+  "fortress_mountains_p": {
+   "def": "vmd_fortress_mountains_p",
+   "world": "Fortress_Mountains_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/Fortress_Mountains_P/BP_Map_Fortress_Mountains_P.BP_Map_Fortress_Mountains_P_C"
+  },
+  "fortress_shatteredlands_p": {
+   "def": "vmd_fortress_shatteredlands_p",
+   "world": "Fortress_Shatteredlands_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/Fortress_Shatteredlands_P/BP_Map_FortressShatteredlands.BP_Map_FortressShatteredlands_C"
+  },
+  "harmonica_p": {
+   "def": "vmd_harmonica_p",
+   "world": "Harmonica_P",
+   "actor": "/Game/DLC/Harmonica/GameData/BigMap/BP_Map_Harmonica_P.BP_Map_Harmonica_P_C"
+  },
+  "harp_p": {
+   "def": "vmd_harp_p",
+   "world": "Harp_P",
+   "actor": "/Game/DLC/Harp/GameData/BigMap/BP_Map_Harp_P.BP_Map_Harp_P_C"
+  },
+  "intro_p": {
+   "def": "vmd_intro_p",
+   "world": "Intro_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/Intro_P/BP_Map_Intro_P.BP_Map_Intro_P_C"
+  },
+  "mandolin1_p": {
+   "def": "vmd_mandolin1_p",
+   "world": "Mandolin1_P",
+   "actor": "/Game/DLC/Mandolin/GameData/BigMap/BP_Map_Mandolin1_P.BP_Map_Mandolin1_P_C"
+  },
+  "mandolin_cos_p": {
+   "def": "vmd_mandolin_cos_p",
+   "world": "Mandolin_CoS_P",
+   "actor": "/Game/DLC/Mandolin/GameData/BigMap/BP_Map_Mandolin_CoS_P.BP_Map_Mandolin_CoS_P_C"
+  },
+  "mandolin_missioncos_p": {
+   "def": "vmd_mandolin_missioncos_p",
+   "world": "Mandolin_MissionCoS_P",
+   "actor": "/Game/DLC/Mandolin/GameData/BigMap/BP_Map_Mandolin_CoS_P.BP_Map_Mandolin_CoS_P_C"
+  },
+  "raid1_p": {
+   "def": "vmd_raid1_p",
+   "world": "Raid1_P",
+   "actor": "/Game/DLC/Raid1/GameData/BigMap/BP_Map_Raid1_P.BP_Map_Raid1_P_C"
+  },
+  "raid2_p": {
+   "def": "vmd_raid2_p",
+   "world": "Raid2_P",
+   "actor": "/Game/DLC/Raid2/GameData/BigMap/BP_Map_Raid2_P.BP_Map_Raid2_P_C"
+  },
+  "tuba_p": {
+   "def": "vmd_tuba_p",
+   "world": "Tuba_P",
+   "actor": "/Game/DLC/Tuba/GameData/BigMap/BP_Map_Tuba_P.BP_Map_Tuba_P_C"
+  },
+  "uppercity_p": {
+   "def": "vmd_uppercity_p",
+   "world": "UpperCity_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/UpperCity/BP_Map_World_UpperCity.BP_Map_World_UpperCity_C"
+  },
+  "vault_grasslands_p": {
+   "def": "vmd_vault_grasslands_p",
+   "world": "Vault_Grasslands_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/Vault_Grasslands_P/BP_Map_Vault_Grasslands.BP_Map_Vault_Grasslands_C"
+  },
+  "vault_mountains_p": {
+   "def": "vmd_vault_mountains_p",
+   "world": "Vault_Mountains_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/Vault_Mountains_P/BP_Map_Vault_Mountains.BP_Map_Vault_Mountains_C"
+  },
+  "vault_shatteredlands_p": {
+   "def": "vmd_vault_shatteredlands_p",
+   "world": "Vault_ShatteredLands_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/Vault_Shatteredlands_P/BP_Map_Vault_Shatteredlands.BP_Map_Vault_Shatteredlands_C"
+  },
+  "vaultofthedamned_p": {
+   "def": "vmd_vaultofthedamned_p",
+   "world": "VaultoftheDamned_P",
+   "actor": "/Game/DLC/Cowbell/GameData/BigMap/BP_Map_VaultoftheDamned_P.BP_Map_VaultoftheDamned_P_C"
+  },
+  "viola_elpisvile_p": {
+   "def": "vmd_viola_elpisvile_p",
+   "world": "Viola_ElpisVile_P",
+   "actor": "/Game/DLC/Viola/GameData/BigMap/BP_Map_Viola_ElpisVile_P.BP_Map_Viola_ElpisVile_P_C"
+  },
+  "viola_p": {
+   "def": "vmd_viola_p",
+   "world": "Viola_P",
+   "actor": "/Game/DLC/Viola/GameData/BigMap/BP_Map_Viola_P.BP_Map_Viola_P_C"
+  },
+  "volcanofortress_p": {
+   "def": "vmd_volcanofortress_p",
+   "world": "VolcanoFortress_P",
+   "actor": "/Game/DLC/Harmonica/GameData/BigMap/BP_Map_VolcanoFortress_P.BP_Map_VolcanoFortress_P_C"
+  },
+  "world_p": {
+   "def": "vmd_world_p",
+   "world": "World_P",
+   "actor": "/Game/GameData/Map/GeneratedContent/World_P/BP_Map_World_P.BP_Map_World_P_C"
+  }
+ },
+ "source_data": {
+  "Engine/Content/_NCS/Nexus-Data-gbx_discovery_viewable_map_def0.ncs": "0ca951a3c81c25d0e9cd10e21fe3c41b85b250fa",
+  "Engine/Content/_NCS/Nexus-Data-gbx_discovery_viewable_map_def4.ncs": "f53eff9008d69ad02b3206822d76e77a409e2992",
+  "Engine/Content/_NCS/Nexus-Data-gbx_discovery_viewable_map_def6.ncs": "ea6457ecaf27e0ad69b23e1a37cb5f580d8c6057"
+ }
+}

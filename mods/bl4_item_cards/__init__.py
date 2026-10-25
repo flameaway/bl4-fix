@@ -1,0 +1,180 @@
+"""
+Detailed item cards for Borderlands 4.
+
+- Class mods: each skill's name, your rank, the mod's +N, its description and its numbers as
+  "now -> with this mod".
+- Secondary stats get their names, and banner/flavour text renders properly.
+- Firmware: every bonus tier with its numbers, which tiers you have now, and which this item would
+  unlock or cost you if you equipped it.
+- Legendaries: who drops them and how often at your UVH level, with keys to set a waypoint to (or
+  travel to) that boss's Moxxi's Big Encore machine.
+
+How it fits together:
+
+- card_page/: our pak with the game's item card page plus a script and stylesheet (loose files,
+  reloaded by the page when they change), and the generated game data the cards read.
+- skill_stats.py: works out every skill's numbers for your character (a little each frame, a pass
+  a second in menus) and leaves them in a loose file the card reads.
+- encore_waypoint.py: the Big Encore keys, and the messages the card sends back through UI sounds.
+- Card size and "fit to screen" go to the script in a loose settings file. A card taller than the
+  screen scrolls with the mouse wheel (the script handles that on its own).
+
+Turning the mod off removes the pak, and the game's normal cards come back the next time it starts.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from mods_base import SETTINGS_DIR, BoolOption, ButtonOption, KeybindOption, SliderOption, build_mod, hook
+from unrealsdk import logging
+from unrealsdk.hooks import Type
+from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
+
+from . import card_page, encore_waypoint, skill_stats
+
+__version__ = "0.1.1"
+__version_info__ = (0, 1, 1)
+
+GAME_DIR = SETTINGS_DIR.parent.parent
+
+_status = "Detailed item cards: not checked yet."
+_errors: set[str] = set()
+
+
+def log(msg: str) -> None:
+    logging.info(f"[Item Cards] {msg}")
+
+
+def _report_error(ex: Exception) -> None:
+    """The tick runs every frame; report each distinct problem only once."""
+    message = repr(ex)
+    if message not in _errors:
+        _errors.add(message)
+        logging.error(f"[Item Cards] {message}")
+
+
+def sync_page(enabled: bool) -> None:
+    global _status
+    try:
+        _status = card_page.sync(GAME_DIR, enabled)
+    except Exception as ex:  # noqa: BLE001 - never let a file problem break the mod
+        _status = f"Detailed item cards: couldn't update ({ex})."
+    log(_status)
+
+
+# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
+# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
+FRAME_GAP_S = 0.004
+MAX_WAIT_S = 0.012
+_last_call = _ticked_at = 0.0
+
+
+@hook("/Script/Engine.CameraModifier:BlueprintModifyCamera", Type.POST)
+def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
+    global _ticked_at, _last_call
+    started = time.perf_counter()
+    gap, _last_call = started - _last_call, started
+    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
+        return
+    _ticked_at = started
+    # Every frame: the Big Encore keys and trips in progress (cheap, see encore_waypoint.py)
+    try:
+        encore_waypoint.poll_keys(GAME_DIR, waypoint_key.value, travel_key.value)
+    except Exception as ex:  # noqa: BLE001 - never let this break the game's tick
+        _report_error(ex)
+    # skill_stats throttles itself too (a pass is sliced across frames, under 1 ms each)
+    try:
+        skill_stats.tick(GAME_DIR)
+    except Exception as ex:  # noqa: BLE001
+        _report_error(ex)
+
+
+@hook(encore_waypoint.CHANNEL_FUNCS[0], Type.PRE)
+def encore_waypoint_from_inventory(_obj: UObject, args: WrappedStruct, _ret: Any, _func: BoundFunction) -> Any:
+    return encore_waypoint.on_channel(GAME_DIR, args)
+
+
+@hook(encore_waypoint.CHANNEL_FUNCS[1], Type.PRE)
+def encore_waypoint_from_hud(_obj: UObject, args: WrappedStruct, _ret: Any, _func: BoundFunction) -> Any:
+    return encore_waypoint.on_channel(GAME_DIR, args)
+
+
+waypoint_key = KeybindOption(
+    "Big Encore waypoint key",
+    "J",
+    description=(
+        "While hovering a legendary that a boss drops, press this to set your waypoint (and a"
+        " map pin) on that boss's Moxxi's Big Encore machine."
+    ),
+)
+
+travel_key = KeybindOption(
+    "Big Encore travel key",
+    "K",
+    description=(
+        "While hovering a legendary that a boss drops, press this to go to that boss's Moxxi's Big"
+        " Encore machine (fast travel to its map if needed). Solo or as host only."
+    ),
+)
+
+def card_settings(scale: float | None = None, fit: bool | None = None, firmware: bool | None = None) -> dict:
+    return {
+        "scale": (scale_option.value if scale is None else scale) / 100,
+        "fit": fit_option.value if fit is None else fit,
+        "firmware": firmware_option.value if firmware is None else firmware,
+    }
+
+
+def publish_settings(settings: dict | None) -> None:
+    try:
+        card_page.write_settings(GAME_DIR, settings)
+    except OSError as ex:
+        _report_error(ex)
+
+
+# Option callbacks run before the new value is stored, so pass it along
+scale_option = SliderOption(
+    "Card size",
+    100,
+    50,
+    150,
+    5,
+    description="Scales item cards (percent of the game's size). Applies within a couple of seconds.",
+    on_change_while_enabled=lambda _, value: publish_settings(card_settings(scale=value)),
+)
+
+fit_option = BoolOption(
+    "Shrink tall cards to fit",
+    False,
+    description=(
+        "Shrinks a card that would be taller than the screen until it fits. Otherwise a tall card"
+        " scrolls with the mouse wheel in menus (on the HUD it shows its top part)."
+    ),
+    on_change_while_enabled=lambda _, value: publish_settings(card_settings(fit=value)),
+)
+
+firmware_option = BoolOption(
+    "Detailed firmware",
+    True,
+    description=(
+        "Lists every firmware bonus tier with its numbers, marks the tiers you have now, and shows"
+        " which ones equipping the item would unlock or lose."
+    ),
+    on_change_while_enabled=lambda _, value: publish_settings(card_settings(firmware=value)),
+)
+
+status_button = ButtonOption(
+    "Show status",
+    description="Prints to the console whether the detailed cards are installed, or why not.",
+    on_press=lambda _: log(_status),
+)
+
+
+mod = build_mod(
+    options=[scale_option, fit_option, firmware_option, waypoint_key, travel_key, status_button],
+    hooks=[tick, encore_waypoint_from_inventory, encore_waypoint_from_hud],
+    on_enable=lambda: (sync_page(True), publish_settings(card_settings())),
+    on_disable=lambda: (sync_page(False), publish_settings(None)),
+)

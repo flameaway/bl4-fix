@@ -1,0 +1,121 @@
+/* BL4 Easy Respec: the "can't remove that point" message, under the tree name on the right */
+.bl4respec_message {
+    position: absolute;
+    top: 30rem;
+    right: 4rem;
+    width: 33rem;
+    padding: 1.2rem 1.6rem;
+    background-color: rgba(8, 14, 20, 0.92);
+    border: 0.2rem solid #d8433a;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 50;
+}
+
+.bl4respec_title {
+    font-family: Industry-DemiBold;
+    font-size: 2.2rem;
+    color: #ff6a5c;
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+}
+
+.bl4respec_text {
+    font-family: Industry-Medium;
+    font-size: 2rem;
+    color: #d6e0e2;
+}
+
+.bl4respec_hidden {
+    opacity: 0;
+}
+
+/* Buttons (the cursor handler adds hover_effect while hovered) */
+.bl4respec_button {
+    padding: 0.8rem 2rem;
+    background-color: rgba(14, 26, 34, 0.9);
+    border: 0.2rem solid #3f769d;
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #d6e0e2;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.bl4respec_button.hover_effect {
+    background-color: rgba(40, 72, 92, 0.95);
+    border-color: #9fd6ff;
+    color: #ffffff;
+}
+
+/* "Unspec All", under the tree name and points on the right */
+.bl4respec_unspec {
+    position: absolute;
+    top: 23.5rem;
+    right: 4rem;
+    z-index: 40;
+}
+
+/* Confirmation */
+.bl4respec_overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 60;
+}
+
+.bl4respec_overlay.bl4respec_hidden {
+    display: none;
+}
+
+.bl4respec_panel {
+    width: 56rem;
+    padding: 2.4rem 3rem;
+    background-color: rgba(8, 14, 20, 0.97);
+    border: 0.2rem solid #3f769d;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4respec_panel_title {
+    font-family: Industry-DemiBold;
+    font-size: 2.8rem;
+    color: #ffffff;
+    text-transform: uppercase;
+    margin-bottom: 1.2rem;
+}
+
+.bl4respec_panel_text {
+    font-family: Industry-Medium;
+    font-size: 2.1rem;
+    color: #d6e0e2;
+    margin-bottom: 2.4rem;
+}
+
+.bl4respec_panel_buttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+}
+
+.bl4respec_panel_buttons .bl4respec_button {
+    margin-left: 1.6rem;
+}
+
+.bl4respec_confirm {
+    border-color: #d8433a;
+    color: #ff8a7e;
+}
+
+.bl4respec_confirm.hover_effect {
+    background-color: rgba(110, 30, 26, 0.95);
+    border-color: #ff6a5c;
+}

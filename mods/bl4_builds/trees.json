@@ -1,0 +1,290 @@
+{
+ "Progress_Corpohacker_Branch_HackAndSlash_01": {
+  "color": "blue",
+  "tree": "Hack / Slash"
+ },
+ "Progress_Corpohacker_Branch_HackAndSlash_02": {
+  "color": "blue",
+  "tree": "Hack / Slash"
+ },
+ "Progress_Corpohacker_Branch_HackAndSlash_03": {
+  "color": "blue",
+  "tree": "Hack / Slash"
+ },
+ "Progress_Corpohacker_Branch_Virology_01": {
+  "color": "green",
+  "tree": "Virology"
+ },
+ "Progress_Corpohacker_Branch_Virology_02": {
+  "color": "green",
+  "tree": "Virology"
+ },
+ "Progress_Corpohacker_Branch_Virology_03": {
+  "color": "green",
+  "tree": "Virology"
+ },
+ "Progress_Corpohacker_Trunk_Assimilation": {
+  "color": "red",
+  "tree": "Manifestation"
+ },
+ "Progress_Corpohacker_Trunk_HackAndSlash": {
+  "color": "blue",
+  "tree": "Hack / Slash"
+ },
+ "Progress_Corpohacker_Trunk_Virology": {
+  "color": "green",
+  "tree": "Virology"
+ },
+ "Progress_DS_Branch_Death_01": {
+  "color": "green",
+  "tree": "Vexcalation"
+ },
+ "Progress_DS_Branch_Death_02": {
+  "color": "green",
+  "tree": "Vexcalation"
+ },
+ "Progress_DS_Branch_Death_03": {
+  "color": "green",
+  "tree": "Vexcalation"
+ },
+ "Progress_DS_Branch_Domination_01": {
+  "color": "red",
+  "tree": "Here Comes Trouble"
+ },
+ "Progress_DS_Branch_Domination_02": {
+  "color": "red",
+  "tree": "Here Comes Trouble"
+ },
+ "Progress_DS_Branch_Domination_03": {
+  "color": "red",
+  "tree": "Here Comes Trouble"
+ },
+ "Progress_DS_Branch_Duplicate_01": {
+  "color": "blue",
+  "tree": "The Fourth Seal"
+ },
+ "Progress_DS_Branch_Duplicate_02": {
+  "color": "blue",
+  "tree": "The Fourth Seal"
+ },
+ "Progress_DS_Branch_Duplicate_03": {
+  "color": "blue",
+  "tree": "The Fourth Seal"
+ },
+ "Progress_DS_Trunk_Death": {
+  "color": "green",
+  "tree": "Vexcalation"
+ },
+ "Progress_DS_Trunk_Domination": {
+  "color": "red",
+  "tree": "Here Comes Trouble"
+ },
+ "Progress_DS_Trunk_Duplicate": {
+  "color": "blue",
+  "tree": "The Fourth Seal"
+ },
+ "Progress_EXO_Branch_Gimmick_01": {
+  "color": "green",
+  "tree": "This Year's Gimmick"
+ },
+ "Progress_EXO_Branch_Gimmick_02": {
+  "color": "green",
+  "tree": "This Year's Gimmick"
+ },
+ "Progress_EXO_Branch_Gimmick_03": {
+  "color": "green",
+  "tree": "This Year's Gimmick"
+ },
+ "Progress_EXO_Branch_PeoplePerson_01": {
+  "color": "blue",
+  "tree": "People Person"
+ },
+ "Progress_EXO_Branch_PeoplePerson_02": {
+  "color": "blue",
+  "tree": "People Person"
+ },
+ "Progress_EXO_Branch_PeoplePerson_03": {
+  "color": "blue",
+  "tree": "People Person"
+ },
+ "Progress_EXO_Branch_RemoteAgent_01": {
+  "color": "red",
+  "tree": "Remote Agent"
+ },
+ "Progress_EXO_Branch_RemoteAgent_02": {
+  "color": "red",
+  "tree": "Remote Agent"
+ },
+ "Progress_EXO_Branch_RemoteAgent_03": {
+  "color": "red",
+  "tree": "Remote Agent"
+ },
+ "Progress_EXO_Trunk_Gimmick": {
+  "color": "green",
+  "tree": "This Year's Gimmick"
+ },
+ "Progress_EXO_Trunk_PeoplePerson": {
+  "color": "blue",
+  "tree": "People Person"
+ },
+ "Progress_EXO_Trunk_RemoteAgent": {
+  "color": "red",
+  "tree": "Remote Agent"
+ },
+ "Progress_Grav_Branch_ExodusShard_01": {
+  "color": "red",
+  "tree": "Creative Bursts"
+ },
+ "Progress_Grav_Branch_ExodusShard_02": {
+  "color": "red",
+  "tree": "Creative Bursts"
+ },
+ "Progress_Grav_Branch_ExodusShard_03": {
+  "color": "red",
+  "tree": "Creative Bursts"
+ },
+ "Progress_Grav_Branch_StasisShard_01": {
+  "color": "blue",
+  "tree": "Seize the Day"
+ },
+ "Progress_Grav_Branch_StasisShard_02": {
+  "color": "blue",
+  "tree": "Seize the Day"
+ },
+ "Progress_Grav_Branch_StasisShard_03": {
+  "color": "blue",
+  "tree": "Seize the Day"
+ },
+ "Progress_Grav_Branch_TerminalShard_01": {
+  "color": "green",
+  "tree": "Cosmic Brilliance"
+ },
+ "Progress_Grav_Branch_TerminalShard_02": {
+  "color": "green",
+  "tree": "Cosmic Brilliance"
+ },
+ "Progress_Grav_Branch_TerminalShard_03": {
+  "color": "green",
+  "tree": "Cosmic Brilliance"
+ },
+ "Progress_Grav_Trunk_ExodusShard": {
+  "color": "red",
+  "tree": "Creative Bursts"
+ },
+ "Progress_Grav_Trunk_StasisShard": {
+  "color": "blue",
+  "tree": "Seize the Day"
+ },
+ "Progress_Grav_Trunk_TerminalShard": {
+  "color": "green",
+  "tree": "Cosmic Brilliance"
+ },
+ "Progress_PLD_Branch_Calamity_01": {
+  "color": "red",
+  "tree": "Calamity"
+ },
+ "Progress_PLD_Branch_Calamity_02": {
+  "color": "red",
+  "tree": "Calamity"
+ },
+ "Progress_PLD_Branch_Calamity_03": {
+  "color": "red",
+  "tree": "Calamity"
+ },
+ "Progress_PLD_Branch_Cybernetics_01": {
+  "color": "green",
+  "tree": "Cybernetics"
+ },
+ "Progress_PLD_Branch_Cybernetics_02": {
+  "color": "green",
+  "tree": "Cybernetics"
+ },
+ "Progress_PLD_Branch_Cybernetics_03": {
+  "color": "green",
+  "tree": "Cybernetics"
+ },
+ "Progress_PLD_Branch_Vengeance_01": {
+  "color": "blue",
+  "tree": "Vengeance"
+ },
+ "Progress_PLD_Branch_Vengeance_02": {
+  "color": "blue",
+  "tree": "Vengeance"
+ },
+ "Progress_PLD_Branch_Vengeance_03": {
+  "color": "blue",
+  "tree": "Vengeance"
+ },
+ "Progress_PLD_Trunk_Calamity": {
+  "color": "red",
+  "tree": "Calamity"
+ },
+ "Progress_PLD_Trunk_Cybernetics": {
+  "color": "green",
+  "tree": "Cybernetics"
+ },
+ "Progress_PLD_Trunk_Vengeance": {
+  "color": "blue",
+  "tree": "Vengeance"
+ },
+ "Progress_robo_branch_cleromancy_1": {
+  "color": "green",
+  "tree": "Roll the Bones"
+ },
+ "Progress_robo_branch_cleromancy_2": {
+  "color": "green",
+  "tree": "Roll the Bones"
+ },
+ "Progress_robo_branch_cleromancy_3": {
+  "color": "green",
+  "tree": "Roll the Bones"
+ },
+ "Progress_robo_branch_crossFire_1": {
+  "color": "red",
+  "tree": "Chaos Walking"
+ },
+ "Progress_robo_branch_crossFire_2": {
+  "color": "red",
+  "tree": "Chaos Walking"
+ },
+ "Progress_robo_branch_crossFire_3": {
+  "color": "red",
+  "tree": "Chaos Walking"
+ },
+ "Progress_robo_branch_sleightOfHand_1": {
+  "color": "blue",
+  "tree": "Luck of the Draw"
+ },
+ "Progress_robo_branch_sleightOfHand_2": {
+  "color": "blue",
+  "tree": "Luck of the Draw"
+ },
+ "Progress_robo_branch_sleightOfHand_3": {
+  "color": "blue",
+  "tree": "Luck of the Draw"
+ },
+ "Progress_robo_trunk_cleromancy": {
+  "color": "green",
+  "tree": "Roll the Bones"
+ },
+ "Progress_robo_trunk_crossFire": {
+  "color": "red",
+  "tree": "Chaos Walking"
+ },
+ "Progress_robo_trunk_sleightOfHand": {
+  "color": "blue",
+  "tree": "Luck of the Draw"
+ },
+ "progress_corpohacker_branch_Assimilation_01": {
+  "color": "red",
+  "tree": "Manifestation"
+ },
+ "progress_corpohacker_branch_Assimilation_02": {
+  "color": "red",
+  "tree": "Manifestation"
+ },
+ "progress_corpohacker_branch_Assimilation_03": {
+  "color": "red",
+  "tree": "Manifestation"
+ }
+}

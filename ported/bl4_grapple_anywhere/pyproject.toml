@@ -1,0 +1,10 @@
+[project]
+name = "BL4 Grapple Anywhere"
+version = "0.1.0"
+description = "Grapple to any ledge or surface you aim at."
+authors = [{ name = "flame" }, { name = "Yeti (original mod)" }]
+license = "GPL-3.0-only"
+
+[tool.sdkmod]
+supported_games = ["BL4"]
+coop_support = "ClientSide"

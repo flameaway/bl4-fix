@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Backpack Size"
+version = "0.1.0"
+description = "Set your backpack's item limit to any number you like."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

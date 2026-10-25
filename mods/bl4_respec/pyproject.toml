@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Easy Respec"
+version = "0.1.0"
+description = "Right-click any skill in the Skills menu to take a point back out, as long as the tree stays valid."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]
