@@ -1,5 +1,5 @@
 """
-The link between the Weapondex screen (ui/dex.js, running in the game's menu page) and Python.
+The link between the Kairosdex screen (ui/dex.js, running in the game's menu page) and Python.
 
 The screen lives in the same page as the BL4 Mod Menu, the game's menu page, and borrows its
 link: it registers with bl4_mod_menu.extensions, which loads ui/dex.js into the page and serves
@@ -10,8 +10,9 @@ changes: which bosses are beaten on this profile, the dev unlock, the search tex
 requests, and the screen's own view (tab, picks, filters, scroll), which the page sends here so
 it outlives the page and the game (settings/weapondex_view.json).
 
-Search typing: no key events reach page scripts, so while the search box is active we read the
-keyboard from Windows each frame (like the mod menu's rebinding) and send the text in the state.
+Search typing: no key events reach page scripts, so while the search box is active a low-level
+keyboard hook (keyboard.py) reads the keys and keeps them from the game's menus and from every
+mod's hotkeys; the text goes to the page in the state.
 
 Waypoint / Travel buttons on a boss (travel.py): the page asks, the next frame does it, and the
 outcome goes back in the state's "trip" (the page closes the menus once the player is there).
@@ -32,7 +33,7 @@ import unrealsdk
 from mods_base import SETTINGS_DIR, get_pc
 from unrealsdk import logging
 
-from . import data, owned, picture, progress, roll, savegame, thumbs, travel
+from . import data, keyboard, owned, picture, progress, roll, savegame, thumbs, travel
 
 KEY = "weapondex"
 VIEW_FILE = SETTINGS_DIR / "weapondex_view.json"
@@ -52,20 +53,10 @@ MENU_POLL_S = 1.5
 OPEN_POLL_S = 0.5
 MAX_SEARCH = 40
 SAVE_ONLY = 1  # "defeated" time of a boss only the game's save shows (the page says "from your save")
-REPEAT_DELAY_S = 0.45
-REPEAT_S = 0.05
 # The player's UVH level (the drop chances depend on it): read at most this often
 UVH_S = 1.0
 UVH_ATTRIBUTE = "vault_hunter_level"
 MISSING = -1.0e30
-
-VK_BACK, VK_RETURN, VK_ESCAPE, VK_DELETE = 0x08, 0x0D, 0x1B, 0x2E
-_CHARS = {
-    **{0x41 + i: chr(0x61 + i) for i in range(26)},
-    **{0x30 + i: str(i) for i in range(10)},
-    **{0x60 + i: str(i) for i in range(10)},
-    0x20: " ", 0xBD: "-", 0x6D: "-", 0xDE: "'", 0xBE: ".", 0x6E: ".",
-}  # fmt: skip
 
 
 class S:
@@ -79,9 +70,7 @@ class S:
     waiting_until = 0.0
     close_request = 0
     search = ""
-    typing = False
-    held: set[int] = set()  # noqa: RUF012
-    repeat_at = 0.0
+    typing: keyboard.Typing | None = None  # while the search box is being typed in
     toast: dict[str, Any] = {"id": 0, "text": ""}  # noqa: RUF012
     view: dict[str, Any] | None = None  # the page's view, as it last sent it
     hover: str | None = None  # the item the mouse is over
@@ -113,7 +102,7 @@ def available() -> bool:
 
 def say(text: str) -> None:
     S.toast = {"id": S.toast["id"] + 1, "text": text}
-    logging.info(f"[Weapondex] {text}")
+    logging.info(f"[Kairosdex] {text}")
     _changed()
 
 
@@ -138,7 +127,7 @@ def state() -> dict[str, Any]:
         "character": progress.character() is not None,
         "unlock": S.unlocked(),
         "search": S.search,
-        "typing": S.typing,
+        "typing": S.typing is not None,
         "outdated": S.game_dir is not None and not data.data_current(S.game_dir),
         "toast": S.toast,
         "view": _view(),
@@ -168,10 +157,14 @@ def act(action: dict[str, Any]) -> None:
             # What's in the backpack now (the saves can be behind): read over the next frames
             owned.scan_backpack(get_pc(possibly_loading=True))
         case "type":
-            S.typing = bool(action.get("on"))
-            S.held = _held()  # only keys pressed from now on count
+            if action.get("on"):
+                start_typing()
+            else:
+                stop_typing()
         case "search":
             S.search = str(action.get("text") or "")[:MAX_SEARCH]
+            if S.typing is not None:
+                S.typing.text = S.search
         case "roll":
             if isinstance(action.get("item"), str):
                 roll.request(action["item"], int(action.get("count") or 1))
@@ -268,15 +261,15 @@ def _start_small_backfill(game_dir: Path) -> None:
         try:
             made = picture.backfill([game_dir / UI_DIR / "bosses", game_dir / UI_DIR / "items"])
             if made:
-                logging.info(f"[Weapondex] made {made} small pictures")
+                logging.info(f"[Kairosdex] made {made} small pictures")
         except Exception as ex:  # noqa: BLE001
-            logging.error(f"[Weapondex] small pictures: {ex!r}")
+            logging.error(f"[Kairosdex] small pictures: {ex!r}")
 
     threading.Thread(target=run, name=SMALL_THREAD, daemon=True).start()
 
 
 def unregister() -> None:
-    S.typing = False
+    stop_typing()
     S.trip_request = None
     travel.cancel()
     roll.stop()
@@ -319,7 +312,7 @@ def publish(*, force: bool = False) -> None:
             tmp.replace(target)
         except OSError as ex:
             S.published.pop(name, None)  # try again next time
-            logging.dev_warning(f"[Weapondex] couldn't publish {name}: {ex}")
+            logging.dev_warning(f"[Kairosdex] couldn't publish {name}: {ex}")
 
 
 # endregion
@@ -370,13 +363,13 @@ def _showing_now() -> bool:
 
 
 def request_open(boss: str | None = None) -> None:
-    """Opens the Weapondex screen (in the pause menu), on a boss's page if one is given."""
+    """Opens the Kairosdex screen (in the pause menu), on a boss's page if one is given."""
     pc = get_pc(possibly_loading=True)
     if pc is None or pc.Pawn is None:
-        logging.info("[Weapondex] The Weapondex opens in game, not at the title screen.")
+        logging.info("[Kairosdex] The Kairosdex opens in game, not at the title screen.")
         return
     if not available():
-        logging.error("[Weapondex] The Weapondex needs the BL4 Mod Menu mod (it shows in the same page).")
+        logging.error("[Kairosdex] The Kairosdex needs the BL4 Mod Menu mod (it shows in the same page).")
         return
     own = not _menu_showing(pc)
     if own and (menu := _menu_module("menu")) is not None:
@@ -455,46 +448,39 @@ def _trace_tick() -> None:
 # region Per frame
 
 
-def _held() -> set[int]:
-    keys = _menu_module("keys")
-    if keys is None:
-        return set()
-    return {vk for vk in (*_CHARS, VK_BACK, VK_RETURN, VK_ESCAPE, VK_DELETE) if keys.vk_down(vk)}
+def start_typing() -> None:
+    stop_typing()
+    # Starts its hook on its own thread; a hook Windows refused shows up in _poll_typing
+    S.typing = keyboard.Typing(S.search, MAX_SEARCH)
+    _changed()
+
+
+def stop_typing() -> None:
+    typing, S.typing = S.typing, None
+    if typing is None:
+        return
+    typing.stop()
+    S.search = typing.text
+    _changed()
 
 
 def _poll_typing() -> None:
-    keys = _menu_module("keys")
-    if not S.typing or keys is None:
+    typing = S.typing
+    if typing is None:
         return
+    if typing.failed:
+        stop_typing()
+        say("Couldn't read the keyboard for typing.")
+        return
+    # The screen closed (or the menus did): don't keep swallowing keys
     if not screen_open():
-        S.typing = False
-        _changed()
+        stop_typing()
         return
-    if not keys.game_focused():
-        return
-    held = _held()
-    new = held - S.held
-    S.held = held
-    now = time.monotonic()
-    text = S.search
-    if VK_RETURN in new or VK_ESCAPE in new:
-        S.typing = False
+    if typing.poll():
+        S.search = typing.text
         _changed()
-        return
-    if VK_DELETE in new:
-        text = ""
-    if VK_BACK in new:
-        text = text[:-1]
-        S.repeat_at = now + REPEAT_DELAY_S
-    elif VK_BACK in held and now >= S.repeat_at:
-        text = text[:-1]
-        S.repeat_at = now + REPEAT_S
-    for vk in sorted(new):
-        if vk in _CHARS and len(text) < MAX_SEARCH:
-            text += _CHARS[vk]
-    if text != S.search:
-        S.search = text
-        _changed()
+    if typing.done is not None:  # Enter, Esc or Tab
+        stop_typing()
 
 
 def _trip_result(boss_id: str, do: str, state: str, text: str) -> None:
@@ -546,7 +532,7 @@ def _tick_trips() -> None:
         try:
             _do_trip()
         except Exception as ex:  # noqa: BLE001 - a broken trip mustn't break the tick
-            logging.error(f"[Weapondex] trip: {ex!r}")
+            logging.error(f"[Kairosdex] trip: {ex!r}")
 
 
 def tick() -> None:
@@ -561,7 +547,7 @@ def tick() -> None:
     if S.waiting_until and time.monotonic() > S.waiting_until:
         S.waiting_until = 0.0
         if not screen_open():
-            logging.error("[Weapondex] The screen didn't open. Is BL4 Mod Menu enabled (it adds the screen to the pause menu)?")
+            logging.error("[Kairosdex] The screen didn't open. Is BL4 Mod Menu enabled (it adds the screen to the pause menu)?")
     elif S.waiting_until and screen_open():
         S.waiting_until = 0.0
 

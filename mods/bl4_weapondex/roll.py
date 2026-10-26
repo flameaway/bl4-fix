@@ -93,7 +93,7 @@ class Game(stats.Game):
                 # be a denormal, which no table holds
                 value = float(struct.unpack("<f", raw)[0]) if bits & 0x7F800000 else float(struct.unpack("<i", raw)[0])
             except Exception as ex:  # noqa: BLE001
-                logging.dev_warning(f"[Weapondex] table cell {key}: {ex!r}")
+                logging.dev_warning(f"[Kairosdex] table cell {key}: {ex!r}")
             Game.cells[key] = value
         return Game.cells[key]
 
@@ -168,7 +168,7 @@ def hover_state(key: str | None) -> dict[str, Any] | None:
 
 
 def _fail(key: str, text: str) -> None:
-    logging.dev_warning(f"[Weapondex] roll {key}: {text}")
+    logging.dev_warning(f"[Kairosdex] roll {key}: {text}")
     S.status[key] = text
     S.queue = [q for q in S.queue if q[0] != key]
     S.current = None
@@ -256,10 +256,10 @@ def roll_now(key: str, pc: Any) -> dict[str, Any] | str | None:
         return f"Rolling is off for this game version ({ex})."
     try:
         if not ident.load(serial):
-            logging.dev_warning(f"[Weapondex] the game didn't read our roll of {key}: {serial}")
+            logging.dev_warning(f"[Kairosdex] the game didn't read our roll of {key}: {serial}")
             return "The game didn't accept the rolled item."
         if not identity.check_parts(ident.address, parts[0][1], parts[1:]):
-            logging.dev_warning(f"[Weapondex] the game read our roll of {key} differently: {serial}")
+            logging.dev_warning(f"[Kairosdex] the game read our roll of {key} differently: {serial}")
             return "The game read the roll differently."
         values = stats.read_values(ident.address)
         if values is None:
@@ -318,7 +318,7 @@ def tick() -> None:
     try:
         result = roll_now(key, pc)
     except Exception as ex:  # noqa: BLE001
-        logging.error(f"[Weapondex] roll {key}: {ex!r}")
+        logging.error(f"[Kairosdex] roll {key}: {ex!r}")
         result = f"Rolling failed ({ex})."
     if result is None:
         return  # weights still being looked up

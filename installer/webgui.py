@@ -9,10 +9,10 @@ fallback for PCs without the WebView2 runtime.
 
 from __future__ import annotations
 
-import base64
 import ctypes
 import json
 import os
+import subprocess
 import sys
 import threading
 import winreg
@@ -61,13 +61,6 @@ def webview2_available() -> bool:
                 return True
     return False
 
-
-def _icon_data_uri() -> str:
-    for path in (HERE / "icon.png", HERE / "icon.ico"):
-        if path.is_file():
-            mime = "image/png" if path.suffix == ".png" else "image/x-icon"
-            return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
-    return ""
 
 
 class Api:
@@ -138,7 +131,6 @@ class Api:
         return {
             "version": shared.MOD_VERSION,
             "sdk_version": shared.SDK_VERSION,
-            "icon": _icon_data_uri(),
             "game_dir": str(found[0]) if found else "",
             "default_port": shared.DEFAULT_PORT,
             "lan_ip": core.lan_ip() or "",
@@ -178,7 +170,7 @@ class Api:
                  "value": vc or "missing", "hint": f"needs {need_vc}+ (installed for you)"},
                 {"key": "sdk", "label": "Python SDK", "ok": st.sdk_ok,
                  "value": st.sdk or "missing", "hint": f"needs {shared.SDK_VERSION}"},
-                {"key": "mod", "label": "BL4 Direct", "ok": st.mod_ok,
+                {"key": "mod", "label": "BL4 Direct Connect", "ok": st.mod_ok,
                  "value": st.mod or "missing", "hint": f"this app: {shared.MOD_VERSION}"},
                 {"key": "fw", "label": "Firewall", "ok": st.firewall is not None and config.firewall_up_to_date(),
                  "value": "locked" if st.firewall else "no rule",
@@ -201,6 +193,22 @@ class Api:
 
     def is_game_dir(self, game_dir: str) -> bool:
         return bool(game_dir) and core.is_game_dir(Path(game_dir))
+
+    def launch_game(self, game_dir: str) -> str:
+        """
+        Starts Borderlands 4: through Steam for a Steam install, else its exe. This app runs
+        elevated, and Steam started from here would run as admin too, so explorer.exe opens it:
+        the running (unelevated) shell takes the request over. Returns an error, or "".
+        """
+        path = Path(game_dir)
+        if not game_dir or not core.is_game_dir(path):
+            return "Pick the Borderlands 4 folder first."
+        if core.game_running():
+            return "Borderlands 4 is already running."
+        steam = any(part.lower() == "steamapps" for part in path.parts)
+        target = f"steam://rungameid/{shared.STEAM_APP_ID}" if steam else str(path / core.GAME_EXE_REL)
+        subprocess.Popen(["explorer.exe", target], creationflags=subprocess.CREATE_NO_WINDOW)  # noqa: S603, S607
+        return ""
 
     def open_folder(self, game_dir: str) -> None:
         if game_dir and Path(game_dir).is_dir():
@@ -276,20 +284,39 @@ def _round_corners(window) -> None:  # noqa: ANN001
         pass
 
 
+def _window_size() -> tuple[int, int]:
+    """
+    16:9 like the game, so its layouts (sized in rem = 1/108 of the height) fit: about 80% of the
+    work area, at most 1600 wide. Read before pywebview makes the process DPI aware, so these are
+    the logical pixels it expects.
+    """
+
+    class Rect(ctypes.Structure):
+        _fields_ = (("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long))
+
+    area = Rect()
+    if not ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(area), 0):  # SPI_GETWORKAREA
+        return 1280, 720
+    width = min(1600, int((area.right - area.left) * 0.82), int((area.bottom - area.top) * 0.85 * 16 / 9))
+    width = max(960, width)
+    return width, width * 9 // 16
+
+
 def run() -> None:
     import webview  # noqa: PLC0415
 
     api = Api()
+    width, height = _window_size()
     window = webview.create_window(
-        f"BL4 Direct {shared.MOD_VERSION}",
+        f"BL4 Fix {shared.MOD_VERSION}",
         url=str(UI_DIR / "index.html"),
         js_api=api,
-        width=1180,
-        height=800,
-        min_size=(1000, 700),
+        width=width,
+        height=height,
+        resizable=False,
         frameless=True,
         easy_drag=False,
-        background_color="#07090d",
+        background_color="#00030a",
     )
     api._window = window  # noqa: SLF001
     window.events.shown += lambda: _round_corners(window)

@@ -2,8 +2,10 @@
 Reroll for Borderlands 4: reroll the modifiers at the bottom of a class mod or enhancement (the
 stat lines like "+12% Gun Damage") for Eridium.
 
-- Reroll all: 5 Eridium. Every modifier rolls again.
-- Replace one: 10 Eridium. Pick a modifier; it changes to a different one, the rest stay.
+- Reroll all: 25 Eridium. Every modifier rolls again.
+- Replace one: 50 Eridium. Pick a modifier; it changes to a different one, the rest stay.
+
+Both prices are options (the host's count in co-op: its copy makes and charges every reroll).
 
 The skills, manufacturer perks, firmware, level and rarity never change, and a legendary keeps the
 stat it always comes with. New modifiers follow the game's own rules (see reroll.py), so a
@@ -36,7 +38,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from mods_base import SETTINGS_DIR, BaseOption, ButtonOption, KeybindOption, NestedOption, build_mod, command, hook
+from mods_base import (
+    SETTINGS_DIR,
+    BaseOption,
+    ButtonOption,
+    KeybindOption,
+    NestedOption,
+    SliderOption,
+    build_mod,
+    command,
+    hook,
+)
 from unrealsdk import logging
 from unrealsdk.hooks import Type
 
@@ -47,15 +59,13 @@ try:
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo/host only
     coop = None
 
-__version__ = "0.1.0"
-__version_info__ = (0, 1, 0)
+__version__ = "0.1.1"
+__version_info__ = (0, 1, 1)
 
 FEATURE = "reroll"
 SERVICE = "reroll.apply"
 
 GAME_DIR = SETTINGS_DIR.parent.parent
-COST_ALL = 5
-COST_ONE = 10
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 # The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
 # together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
@@ -196,14 +206,14 @@ def _check(cost: int) -> None:
 def plan_all(handle: int, serial: str | None = None, seed: int | None = None) -> Plan:
     """Rolls every free modifier again. Raises Refused if it can't."""
     slot = _slot(handle, serial)
-    _check(COST_ALL)
+    _check(cost_all())
     seed = random.getrandbits(48) if seed is None else seed
     new_serial = reroll.reroll_all(slot.item, random.Random(seed))
     after = reroll.read(new_serial) if new_serial else None
     if after is None:
         raise Refused("This item has no modifiers that can be rerolled.")
     changes = [f"{a.name} is now {b.name}" for a, b in zip(slot.item.lines, after.lines, strict=True) if a.part != b.part]
-    return Plan(slot, after, COST_ALL, f"Rerolled: {', '.join(changes) if changes else 'the same modifiers came up again'}.",
+    return Plan(slot, after, cost_all(), f"Rerolled: {', '.join(changes) if changes else 'the same modifiers came up again'}.",
                 "all", None, seed)  # fmt: skip
 
 
@@ -216,13 +226,13 @@ def plan_one(handle: int, line: int, serial: str | None = None, seed: int | None
     old = slot.item.lines[line]
     if old.locked:
         raise Refused(f"{old.name} comes with this legendary and can't be rerolled.")
-    _check(COST_ONE)
+    _check(cost_one())
     seed = random.getrandbits(48) if seed is None else seed
     new_serial = reroll.reroll_one(slot.item, line, random.Random(seed))
     after = reroll.read(new_serial) if new_serial else None
     if after is None:
         raise Refused(f"There's nothing else {old.name} could become on this item.")
-    return Plan(slot, after, COST_ONE, f"Replaced {old.name} with {after.lines[line].name}.", "one", line, seed)
+    return Plan(slot, after, cost_one(), f"Replaced {old.name} with {after.lines[line].name}.", "one", line, seed)
 
 
 def apply(plan: Plan) -> Outcome:
@@ -338,7 +348,7 @@ def _item_page(slot: game.Slot) -> NestedOption:
     children: list[BaseOption] = [
         ButtonOption(
             "all",
-            display_name=f"Reroll all modifiers ({COST_ALL} Eridium)",
+            display_name=f"Reroll all modifiers ({cost_all()} Eridium)",
             description="Every modifier rolls again (it can land on what it had)."
             + (" The legendary's own stat stays." if any(line.locked for line in item.lines) else ""),
             on_press=lambda _: reroll_all(handle, serial),
@@ -355,7 +365,7 @@ def _item_page(slot: game.Slot) -> NestedOption:
         else:
             children.append(ButtonOption(
                 f"line{i}",
-                display_name=f"Replace {line.name} ({COST_ONE} Eridium)",
+                display_name=f"Replace {line.name} ({cost_one()} Eridium)",
                 description=f"Swaps {line.name} for a different random modifier. The others stay.",
                 on_press=lambda _, i=i: reroll_one(handle, i, serial),
             ))  # fmt: skip
@@ -372,23 +382,23 @@ def _balance_text(eridium: int) -> str:
 
 
 def _build() -> list[BaseOption]:
-    keys: list[BaseOption] = [reroll_key, pick_key]
+    settings: list[BaseOption] = [reroll_key, pick_key, cost_all_option, cost_one_option]
     S.balance_option = S.balance = None
     if (why := _blocked()) is not None:
-        return [_info(why), *keys]
+        return [_info(why), *settings]
     try:
         # Showing only: the buttons carry handle + serial, and a press reads the item live (_slot)
         slots = game.cached_items()
         eridium = game.balance()
     except game.RerollError as ex:
-        return [_info(str(ex)), *keys]
+        return [_info(str(ex)), *settings]
     info = _info(
         _balance_text(eridium),
-        f"Reroll all of an item's modifiers for {COST_ALL} Eridium, or replace one for {COST_ONE}."
+        f"Reroll all of an item's modifiers for {cost_all()} Eridium, or replace one for {cost_one()}."
         " Or hover the item in your backpack and use the keys below.",
     )
     S.balance_option, S.balance = info, eridium
-    options: list[BaseOption] = [info, *keys]
+    options: list[BaseOption] = [info, *settings]
     if not slots:
         options.append(_info("No class mods or enhancements in your backpack"))
     options += [_item_page(slot) for slot in slots]
@@ -402,7 +412,7 @@ def _signature() -> Any:
     if not ok or not host:
         return ("blocked", ok, host)
     try:
-        return tuple((s.handle, s.item.serial, s.equipped) for s in game.cached_items())
+        return cost_all(), cost_one(), tuple((s.handle, s.item.serial, s.equipped) for s in game.cached_items())
     except game.RerollError as ex:
         return str(ex)
 
@@ -511,7 +521,7 @@ def reroll_command(args: argparse.Namespace) -> None:
         log(str(ex))
         return
     if args.item is None:
-        log(f"You have {game.balance()} Eridium. 'reroll <item>' rerolls all ({COST_ALL}), 'reroll <item> <modifier>' replaces one ({COST_ONE}).")
+        log(f"You have {game.balance()} Eridium. 'reroll <item>' rerolls all ({cost_all()}), 'reroll <item> <modifier>' replaces one ({cost_one()}).")
         for n, slot in enumerate(slots, 1):
             log(f"{n}. {_title(slot)}")
             for m, line in enumerate(slot.item.lines, 1):
@@ -541,8 +551,8 @@ reroll_key = KeybindOption(
     "Reroll key",
     "T",
     description=(
-        f"While hovering a class mod or enhancement in your backpack: rerolls all its modifiers"
-        f" ({COST_ALL} Eridium), or the one you picked with the pick key ({COST_ONE} Eridium)."
+        "While hovering a class mod or enhancement in your backpack: rerolls all its modifiers, or"
+        " the one you picked with the pick key."
     ),
 )
 pick_key = KeybindOption(
@@ -554,11 +564,46 @@ pick_key = KeybindOption(
     ),
 )
 
+
+# The item pages show the prices: they're in _signature, so changing one rebuilds the pages
+
+cost_all_option = SliderOption(
+    "Reroll all cost",
+    25,
+    0,
+    1000,
+    5,
+    description=(
+        "Eridium to reroll every modifier on an item. In co-op the host's price counts: its copy"
+        " makes and charges every reroll."
+    ),
+)
+cost_one_option = SliderOption(
+    "Replace one cost",
+    50,
+    0,
+    1000,
+    5,
+    description=(
+        "Eridium to replace one modifier you picked. In co-op the host's price counts: its copy"
+        " makes and charges every reroll."
+    ),
+)
+
+
+def cost_all() -> int:
+    return int(cost_all_option.value)
+
+
+def cost_one() -> int:
+    return int(cost_one_option.value)
+
+
 card.S.plan_all = plan_all
 card.S.plan_one = plan_one
 card.S.apply = apply_async
 card.S.keys = lambda: (reroll_key.value, pick_key.value)
-card.S.costs = (COST_ALL, COST_ONE)
+card.S.costs = lambda: (cost_all(), cost_one())
 card.S.blocked = _blocked
 
 
@@ -579,7 +624,7 @@ def _disable() -> None:
 mod = build_mod(
     # The rest of the options are built from the backpack (_refresh); these are listed here so
     # their saved values load
-    options=[reroll_key, pick_key],
+    options=[reroll_key, pick_key, cost_all_option, cost_one_option],
     hooks=[_tick],
     commands=[reroll_command],
     on_enable=_enable,

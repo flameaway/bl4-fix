@@ -108,9 +108,9 @@ def _read(folder: Path, stamp: Any) -> None:
         if found != S.beaten:
             S.beaten = frozenset(found)
             S.changed = True
-            logging.info(f"[Weapondex] From your save: {len(found)} bosses beaten")
+            logging.info(f"[Kairosdex] From your save: {len(found)} bosses beaten")
     except Exception as ex:  # noqa: BLE001 - the dex still works without it
-        logging.error(f"[Weapondex] Couldn't read the game's save: {ex}")
+        logging.error(f"[Kairosdex] Couldn't read the game's save: {ex}")
     S.stamp = stamp
 
 
@@ -269,7 +269,7 @@ def _key(steam_id: int, profile: bytes) -> bytes | None:
             if _works(key, profile):
                 _remember(ident, offset)
                 return key
-    logging.info("[Weapondex] Looking for the save key in the game's exe (once after a game patch, a few seconds)")
+    logging.info("[Kairosdex] Looking for the save key in the game's exe (once after a game patch, a few seconds)")
     offset = _scan(exe, steam_id, profile)
     if offset is None:
         return None

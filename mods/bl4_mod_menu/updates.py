@@ -46,7 +46,7 @@ except ImportError:  # offline tests
     logging = None  # type: ignore[assignment]
 
 # The GitHub repository the releases come from, "owner/name". Empty: no update checks at all.
-REPO = "flameaway/bl4-direct"
+REPO = "flameaway/bl4-fix"
 MANIFEST_NAME = "manifest.json"
 MANIFEST_FORMAT = 1
 USER_AGENT = "BL4-Mod-Menu-Updater"
@@ -228,7 +228,7 @@ def _get(url: str, limit: int, progress: Any = None) -> bytes:
 def fetch_manifest(repo: str) -> dict[str, Any]:
     manifest = json.loads(_get(manifest_url(repo), MAX_MANIFEST).decode("utf-8"))
     if not isinstance(manifest, dict) or manifest.get("format") != MANIFEST_FORMAT:
-        raise RuntimeError("the release's manifest.json is in a format this Mod Menu doesn't know; update it with BL4 Mods Setup")
+        raise RuntimeError("the release's manifest.json is in a format this Mod Menu doesn't know; update it with BL4 Fix Setup")
     if not isinstance(manifest.get("mods"), dict) or not manifest.get("release"):
         raise RuntimeError("the release's manifest.json is incomplete")
     return manifest
@@ -271,7 +271,7 @@ def _sdk_problem(game_dir: Path, manifest: dict[str, Any]) -> str:
     have = installed_sdk(game_dir)
     if wanted and have and version_key(have) < version_key(wanted):
         return (
-            f"This release needs Python SDK {wanted} (you have {have}): get the new BL4 Mods Setup from"
+            f"This release needs Python SDK {wanted} (you have {have}): get the new BL4 Fix Setup from"
             f" {releases_page(U.repo)} and run it."
         )
     return ""

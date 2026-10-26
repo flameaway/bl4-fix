@@ -1,18 +1,19 @@
 """
-BL4 Direct setup & friends app.
+BL4 Fix setup & friends app.
 
 With no arguments, opens the GUI. Command line use (from a terminal):
 
-    BL4DirectSetup.exe --status
-    BL4DirectSetup.exe --install [--game DIR] [--skip-intro on|off] [--mods all|none|defaults|ID,ID...]
-    BL4DirectSetup.exe --add-mod ID[,ID...] | --remove-mod ID[,ID...]
-    BL4DirectSetup.exe --list-mods
-    BL4DirectSetup.exe --skip-intro on|off
-    BL4DirectSetup.exe --uninstall [--remove-sdk]
-    BL4DirectSetup.exe --add-friend NAME IP [--port N]
-    BL4DirectSetup.exe --remove-friend NAME
-    BL4DirectSetup.exe --host-port N | --allow-lan on|off
-    BL4DirectSetup.exe --apply-firewall
+    BL4FixSetup.exe --status
+    BL4FixSetup.exe --install [--game DIR] [--skip-intro on|off] [--mods all|none|defaults|ID,ID...]
+    BL4FixSetup.exe --add-mod ID[,ID...] | --remove-mod ID[,ID...]
+    BL4FixSetup.exe --list-mods
+    BL4FixSetup.exe --skip-intro on|off
+    BL4FixSetup.exe --uninstall [--remove-sdk]
+    BL4FixSetup.exe --add-friend NAME IP [--port N]
+    BL4FixSetup.exe --remove-friend NAME
+    BL4FixSetup.exe --host-port N | --allow-lan on|off
+    BL4FixSetup.exe --apply-firewall
+    BL4FixSetup.exe --prepare-pages    (the installed mods' shim paks + page scripts, see core)
 """
 
 from __future__ import annotations
@@ -71,6 +72,12 @@ def cli(args: argparse.Namespace) -> int:
     config = core.load_config(game)
     changed_config = False
 
+    if args.prepare_pages:
+        if core.game_running():
+            raise SystemExit("Close Borderlands 4 first.")
+        core.prepare_pages(game, core.installed_mods(game))
+        return 0
+
     if args.list_mods:
         installed = core.installed_mods(game)
         for info in catalog.MODS:
@@ -122,7 +129,7 @@ def cli(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="BL4DirectSetup")
+    parser = argparse.ArgumentParser(prog="BL4FixSetup")
     parser.add_argument("--game", help="Borderlands 4 install folder (auto-detected otherwise)")
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--install", action="store_true")
@@ -139,6 +146,7 @@ def main() -> int:
     parser.add_argument("--add-mod", metavar="IDS", help="install these mods (comma list), keep the rest")
     parser.add_argument("--remove-mod", metavar="IDS", help="remove these mods (comma list), keep the rest")
     parser.add_argument("--list-mods", action="store_true", help="every mod this app can install")
+    parser.add_argument("--prepare-pages", action="store_true", help="set up the installed mods' game pages now")
 
     if len(sys.argv) == 1:
         _run_gui()

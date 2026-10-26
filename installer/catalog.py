@@ -20,7 +20,7 @@ class ModInfo:
     blurb: str
     source: str = "mods"  # repo folder: "mods" (ours) or "ported" (GPL-3.0 ports of Yeti's mods)
     required: bool = False
-    default: bool = False  # ticked on a first install
+    default: bool = True  # ticked on a first install (every mod is, by the user's choice, 2026-10-25)
     paks: tuple[str, ...] = ()
     ui_dirs: tuple[str, ...] = ()
     # Loose pictures made on the dev machine (too big for the .sdkmod the in-game updater fetches):
@@ -56,7 +56,7 @@ MODS: tuple[ModInfo, ...] = (
     ),
     ModInfo("bl4_builds", "Build Presets", "Five build slots in the inventory: gear, skills and specs.", ui_dirs=("bl4builds",)),
     ModInfo("bl4_reroll", "Reroll", "Reroll class mod and enhancement stats for Eridium.", ui_dirs=("bl4reroll",)),
-    ModInfo("bl4_weapondex", "Weapondex", "A dex of the bosses you've beaten and their legendaries (F8).", ui_dirs=("bl4weapondex",), assets=("bl4weapondex/bosses", "bl4weapondex/items")),
+    ModInfo("bl4_weapondex", "Kairosdex", "A dex of the bosses you've beaten and their legendaries (F8).", paks=(_pak(4248),), ui_dirs=("bl4weapondex",), assets=("bl4weapondex/bosses", "bl4weapondex/items")),
     ModInfo("bl4_uvh_teleport", "UVH Boss Teleport", "Hover a UVH boss challenge and press T to go there.", ui_dirs=("bl4uvhtp",)),
     ModInfo("bl4_minimap", "Minimap", "A minimap with the ECHO map's art, fog, icons and route (N)."),
     ModInfo("bl4_third_person", "Third Person", "H: over-the-shoulder camera with aiming."),

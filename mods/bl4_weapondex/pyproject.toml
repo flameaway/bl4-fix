@@ -1,6 +1,6 @@
 [project]
-name = "BL4 Weapondex"
-version = "0.3.0"
+name = "BL4 Kairosdex"
+version = "0.4.0"
 description = "A dex of every boss you've beaten and the legendaries it drops, searchable and sortable."
 authors = [{ name = "flame" }]
 

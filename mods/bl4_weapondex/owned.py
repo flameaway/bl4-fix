@@ -77,7 +77,7 @@ def _load() -> None:
             FILE.replace(bad)
         except OSError:
             pass
-        logging.error(f"[Weapondex] {FILE.name} was unreadable ({ex}); moved aside to {bad.name}")
+        logging.error(f"[Kairosdex] {FILE.name} was unreadable ({ex}); moved aside to {bad.name}")
 
 
 def items() -> frozenset[str]:
@@ -94,21 +94,21 @@ def _keys(serials: list[str]) -> set[str]:
     return found
 
 
-def add_serials(serials: list[str]) -> int:
-    """Records the legendaries among these serials. Any thread. Returns how many were new."""
+def add_serials(serials: list[str]) -> set[str]:
+    """Records the legendaries among these serials. Any thread. Returns the keys that were new."""
     load()
     found = _keys(serials)
     with S.lock:
         new = found - S.items
         if not new:
-            return 0
+            return set()
         S.items = frozenset(S.items | new)
         S.version += 1
         # Saved under the lock: two threads saving at once could land the older list last
         _save(sorted(S.items))
         total = len(S.items)
-    logging.info(f"[Weapondex] Obtained: {len(new)} more legendaries recorded ({total} in all)")
-    return len(new)
+    logging.info(f"[Kairosdex] Obtained: {len(new)} more legendaries recorded ({total} in all)")
+    return new
 
 
 def rebuild(held: list[str]) -> bool:
@@ -127,7 +127,7 @@ def rebuild(held: list[str]) -> bool:
         S.version += 1
         _save(sorted(S.items))
     if gone:
-        logging.info(f"[Weapondex] Obtained: rebuilt from the saves, {len(gone)} not held taken out ({len(S.items)} left)")
+        logging.info(f"[Kairosdex] Obtained: rebuilt from the saves, {len(gone)} not held taken out ({len(S.items)} left)")
     return bool(gone)
 
 
@@ -156,7 +156,7 @@ def _save(keys: list[str]) -> None:
         tmp.write_text(json.dumps({"version": VERSION, "items": keys}, indent=1), encoding="utf-8")
         tmp.replace(FILE)
     except OSError as ex:
-        logging.error(f"[Weapondex] Couldn't save {FILE.name}: {ex}")
+        logging.error(f"[Kairosdex] Couldn't save {FILE.name}: {ex}")
 
 
 # region The live backpack
@@ -176,29 +176,35 @@ def tick() -> None:
     except StopIteration:
         S.walk = None
     except Exception as ex:  # noqa: BLE001 - the dex works without it
-        logging.dev_warning(f"[Weapondex] backpack read failed: {ex!r}")
+        logging.dev_warning(f"[Kairosdex] backpack read failed: {ex!r}")
         S.walk = None
 
 
-def _walk(pc: Any) -> Any:
+def serial_of(item: Any) -> str | None:
+    """The serial text of a backpack slot's InventoryItem, or None (an empty slot, unreadable)."""
     from . import stats  # noqa: PLC0415
 
+    if item.Handle.Handle == -1:
+        return None
+    identity = item.Item.data.Identity._get_address()  # noqa: SLF001
+    head = stats._read(identity + SERIAL_PTR, SERIAL_LEN - SERIAL_PTR + 8)  # noqa: SLF001
+    if head is None:
+        return None
+    pointer = int.from_bytes(head[:8], "little")
+    length = int.from_bytes(head[SERIAL_LEN - SERIAL_PTR :], "little")
+    if 2 < length <= 4096 and (text := stats._read(pointer, length)):  # noqa: SLF001
+        return text.split(b"\0", 1)[0].decode("ascii", "replace")
+    return None
+
+
+def _walk(pc: Any) -> Any:
     slots = pc.PlayerState.BackpackItems.items
     count = len(slots)
     serials = []
     for start in range(0, count, SLOTS_PER_TICK):
         for i in range(start, min(count, start + SLOTS_PER_TICK)):
-            item = slots[i].InventoryItem
-            if item.Handle.Handle == -1:
-                continue
-            identity = item.Item.data.Identity._get_address()  # noqa: SLF001
-            head = stats._read(identity + SERIAL_PTR, SERIAL_LEN - SERIAL_PTR + 8)  # noqa: SLF001
-            if head is None:
-                continue
-            pointer = int.from_bytes(head[:8], "little")
-            length = int.from_bytes(head[SERIAL_LEN - SERIAL_PTR :], "little")
-            if 2 < length <= 4096 and (text := stats._read(pointer, length)):  # noqa: SLF001
-                serials.append(text.split(b"\0", 1)[0].decode("ascii", "replace"))
+            if serial := serial_of(slots[i].InventoryItem):
+                serials.append(serial)
         yield
     add_serials(serials)
 

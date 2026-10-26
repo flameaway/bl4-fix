@@ -19,6 +19,7 @@ fleet-uploads/
 .bridge/
 # reverse-engineering scratch: a 650 MB image dump and a local capstone install
 dev/re/dump/
+dev/re/ui_dump/
 dev/re/pylib/
 installer/build/
 installer/.venv/
@@ -46,3 +47,6 @@ dev/bl4_*
 oo2core_*.dll
 # mod settings and per-character data written by the mods at runtime
 settings/
+
+# Game UI files the setup page uses (tools/gen_setup_ui.py), from the dev install
+installer/ui/game/

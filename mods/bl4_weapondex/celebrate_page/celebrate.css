@@ -1,0 +1,183 @@
+/* Kairosdex celebrations: our copy of the game's special HUD banner (celebrate_main.js). Everything
+   is scoped to .bl4kdx_celeb; the game's own banner styles (celebratory_notifications.css) do the
+   rest. Colours are the game's rarity colours (_shared/css/color_tint_filters.css, oak_markup.css). */
+
+.bl4kdx_gone {
+    display: none !important;
+}
+
+/* Where the game's animation starts from. The game's own banner starts from where its previous
+   one ended (the reversed animation leaves these hidden); ours is a fresh copy every time. */
+.bl4kdx_celeb .celeb_sn_notif_bkg,
+.bl4kdx_celeb .celeb_sn_bit_left,
+.bl4kdx_celeb .celeb_sn_bit_right,
+.bl4kdx_celeb .celeb_sn_notif_icon_container,
+.bl4kdx_celeb .celeb_sn_notif_txt,
+.bl4kdx_celeb .celeb_sn_fui_left,
+.bl4kdx_celeb .celeb_sn_fui_right,
+.bl4kdx_celeb .celeb_sn_decor_left,
+.bl4kdx_celeb .celeb_sn_decor_right,
+.bl4kdx_celeb .verb_descriptor_arrows,
+.bl4kdx_celeb .celeb_notif_verb_description_txt,
+.bl4kdx_celeb .celeb_notif_reward_wrapper {
+    opacity: 0;
+}
+
+.bl4kdx_celeb .celeb_sn_notif_verb_description_bkgd {
+    transform: scaleX(0) scaleY(0.1);
+}
+
+/* The backdrop art: the game's own banner diamonds */
+.bl4kdx_celeb .bl4kdx_art {
+    width: 24rem;
+    height: 24rem;
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+}
+
+.bl4kdx_boss .bl4kdx_art {
+    background-image: url("coui://uiresources/celebratory_notifications/assets/ui_art_asset/ui_art_celeb_bkg_missioncontract.png");
+}
+
+.bl4kdx_legendary .bl4kdx_art {
+    background-image: url("coui://uiresources/celebratory_notifications/assets/ui_art_asset/ui_art_celeb_bkg_missionmain.png");
+}
+
+.bl4kdx_pearl .bl4kdx_art {
+    background-image: url("coui://uiresources/celebratory_notifications/assets/ui_art_asset/ui_art_celeb_bkg_vault.png");
+    /* Its gold in the pearl colour (#97ffd2), the way the game tints rarity art */
+    filter: coh-color-matrix(0.18, 0.35, 0.07, 0, 0, 0.3, 0.59, 0.11, 0, 0, 0.25, 0.48, 0.09, 0, 0, 0, 0, 0, 1, 0);
+}
+
+/* The picture above the text, in the place of the banner's small icon (the game's animation pops it in) */
+.bl4kdx_celeb .celeb_sn_notif_icon_container {
+    width: 15rem;
+    height: 15rem;
+    top: -22rem;
+}
+
+.bl4kdx_legendary .celeb_sn_notif_icon_container,
+.bl4kdx_pearl .celeb_sn_notif_icon_container {
+    width: 26rem;
+    height: 13rem;
+    top: -20rem;
+}
+
+.bl4kdx_celeb .celeb_sn_notif_icon_bkgd2 {
+    display: none;
+}
+
+.bl4kdx_celeb .bl4kdx_icon {
+    width: 100%;
+    height: 100%;
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+}
+
+/* No picture yet (not baked): the game's icon at its usual size */
+.bl4kdx_no_picture .bl4kdx_icon {
+    width: 6rem;
+    height: 6rem;
+}
+
+.bl4kdx_glow {
+    position: absolute;
+    left: -25%;
+    top: -25%;
+    width: 150%;
+    height: 150%;
+    opacity: 0.85;
+    background-image: radial-gradient(closest-side, rgba(255, 217, 0, 0.42) 0%, rgba(243, 149, 0, 0.18) 55%, rgba(243, 149, 0, 0) 100%);
+    animation: bl4kdx_pulse 1.6s ease-in-out 1.3s infinite alternate;
+}
+
+.bl4kdx_boss .bl4kdx_glow {
+    background-image: radial-gradient(closest-side, rgba(210, 60, 45, 0.38) 0%, rgba(120, 20, 20, 0.16) 55%, rgba(120, 20, 20, 0) 100%);
+}
+
+.bl4kdx_pearl .bl4kdx_glow {
+    background-image: radial-gradient(closest-side, rgba(151, 255, 210, 0.42) 0%, rgba(14, 175, 173, 0.2) 50%, rgba(214, 60, 200, 0.08) 75%, rgba(214, 60, 200, 0) 100%);
+}
+
+@keyframes bl4kdx_pulse {
+    from {
+        opacity: 0.55;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* The name, with the item's maker and type under it */
+.bl4kdx_celeb .celeb_sn_notif_txt {
+    height: auto;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 4rem;
+}
+
+.bl4kdx_name {
+    position: relative;
+    font-family: Industry-Bold;
+    font-size: 3.6rem;
+    text-align: center;
+}
+
+.bl4kdx_legendary .bl4kdx_name {
+    color: #ffd900;
+}
+
+.bl4kdx_pearl .bl4kdx_name {
+    color: #97ffd2;
+}
+
+.bl4kdx_sub {
+    position: relative;
+    font-family: Industry-Medium;
+    font-size: 2rem;
+    color: #e4d9ce;
+    margin: 0.1rem 0rem 0.3rem 0rem;
+}
+
+/* Pearls: the game's pearl texture behind the name, as on their item cards */
+.bl4kdx_band {
+    display: none;
+}
+
+.bl4kdx_pearl .bl4kdx_band {
+    display: block;
+    position: absolute;
+    width: 46rem;
+    height: 6.1rem;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background-image: url("common://uiresources/dlc_rarity_pips/assets/ui_art_pearl_texture_itemcard.png");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+    opacity: 0.8;
+}
+
+.bl4kdx_legendary .celeb_notif_verb_description_txt {
+    color: #f39500;
+}
+
+.bl4kdx_pearl .celeb_notif_verb_description_txt {
+    color: #97ffd2;
+}
+
+.bl4kdx_boss .celeb_notif_verb_description_txt {
+    color: #e4d9ce;
+}
+
+.bl4kdx_pearl .celeb_notif_reward_cntr {
+    border-color: #0eafad;
+}
+
+.bl4kdx_boss .celeb_notif_reward_cntr {
+    border-color: #a94b41;
+}

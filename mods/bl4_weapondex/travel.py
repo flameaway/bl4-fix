@@ -67,7 +67,7 @@ def machines() -> dict[str, dict[str, Any]]:
             loaded = json.loads((resources.files(__package__) / "travel.json").read_text(encoding="utf-8"))
             S.machines = loaded["bosses"]
         except (OSError, ValueError, KeyError) as ex:
-            logging.error(f"[Weapondex] travel.json: {ex!r}")
+            logging.error(f"[Kairosdex] travel.json: {ex!r}")
             S.machines = {}
     return S.machines
 
@@ -218,7 +218,7 @@ def start(target: dict[str, Any]) -> bool | None:
     if here:
         if not _teleport_next_to(target):
             raise Refused(f"No room to stand next to {target['boss']}'s Big Encore machine; follow the waypoint.")
-        logging.info(f"[Weapondex] At {target['boss']} ({target['place']})")
+        logging.info(f"[Kairosdex] At {target['boss']} ({target['place']})")
         return True
 
     # Another map: the game's own fast travel there, then the last stretch once it has loaded
@@ -229,13 +229,13 @@ def start(target: dict[str, Any]) -> bool | None:
     args.bLocalOnly = False
     fn(args)
     S.trip = {"boss": target, "started": time.monotonic(), "arrived_at": None}
-    logging.info(f"[Weapondex] Travelling to {target['station']} for {target['boss']}")
+    logging.info(f"[Kairosdex] Travelling to {target['station']} for {target['boss']}")
     return False
 
 
 def _end(message: str, *, error: bool = False) -> None:
     S.trip = None
-    (logging.error if error else logging.info)(f"[Weapondex] {message}")
+    (logging.error if error else logging.info)(f"[Kairosdex] {message}")
 
 
 def tick() -> None:

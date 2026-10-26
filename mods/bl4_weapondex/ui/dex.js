@@ -1,6 +1,6 @@
 "use strict";
 
-// Weapondex: a dex of BL4's bosses and the legendaries they drop, as a screen in the game's menu
+// Kairosdex: a dex of BL4's bosses and the legendaries they drop, as a screen in the game's menu
 // page (the page the pause menu lives in).
 //
 // The BL4 Mod Menu runs this file (its extensions.js) and runs it again when it changes, so it
@@ -556,7 +556,7 @@
         var frame = el("div", "bl4dex_frame");
 
         var header = el("div", "bl4dex_header");
-        header.appendChild(el("p", "bl4dex_title", "WEAPONDEX"));
+        header.appendChild(el("p", "bl4dex_title", "KAIROSDEX"));
         ui.progress = el("div", "bl4dex_progress");
         header.appendChild(ui.progress);
         ui.notice = el("p", "bl4dex_notice");
@@ -1884,7 +1884,7 @@
         next(0);
     }
 
-    // A "Weapondex" entry in the pause menu, under the Mod Menu's "Mods" (or Options)
+    // A "Kairosdex" entry in the pause menu, under the Mod Menu's "Mods" (or Options)
     function injectPauseEntry() {
         var list = document.querySelector('[data-input-id="menu_pause_list"]');
         if (!list || list.querySelector(".bl4dex_pause_entry")) return;
@@ -1894,7 +1894,7 @@
         var after = list.querySelector(".bl4mm_pause_entry") || options;
         var entry = el("div", options.className + " bl4dex_pause_entry");
         var slot = el("div", optionsBtn.className);
-        var b = button("Weapondex", function () {
+        var b = button("Kairosdex", function () {
             open(false, null);
         });
         var theirs = optionsBtn.querySelector(".button_txt");

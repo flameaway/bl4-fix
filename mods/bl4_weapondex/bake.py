@@ -96,7 +96,7 @@ HIDDEN_SHOW_FLAGS = ("Fog", "Atmosphere", "VolumetricFog", "Cloud", "LocalFogVol
 
 
 def log(msg: str) -> None:
-    logging.info(f"[Weapondex] {msg}")
+    logging.info(f"[Kairosdex] {msg}")
 
 
 @dataclass
@@ -260,7 +260,7 @@ def _protect(pawn: UObject) -> None:
         lib = unrealsdk.find_class("GbxTargetingFunctionLibrary").ClassDefaultObject
         lib.SetInvisibleToAI(pawn, PROTECT_REASON, True)
     except Exception as ex:  # noqa: BLE001
-        logging.error(f"[Weapondex] Couldn't hide you from AI: {ex}")
+        logging.error(f"[Kairosdex] Couldn't hide you from AI: {ex}")
 
 
 def _unprotect() -> None:
@@ -273,7 +273,7 @@ def _unprotect() -> None:
         lib = unrealsdk.find_class("GbxTargetingFunctionLibrary").ClassDefaultObject
         lib.SetInvisibleToAI(pawn, PROTECT_REASON, False)
     except Exception as ex:  # noqa: BLE001
-        logging.error(f"[Weapondex] Couldn't unhide you from AI: {ex}")
+        logging.error(f"[Kairosdex] Couldn't unhide you from AI: {ex}")
 
 
 # endregion
@@ -703,7 +703,7 @@ def _convert_all(pending: queue.Queue) -> None:
             picture.write_small(png, SIZE, SIZE, rgba)  # the copy the page's thumbnails use
             _write_index(png.parent)  # keep the page's list current while the bake runs
         except Exception as ex:  # noqa: BLE001
-            logging.error(f"[Weapondex] Couldn't make the picture of {name}: {ex}")
+            logging.error(f"[Kairosdex] Couldn't make the picture of {name}: {ex}")
 
 
 def tick() -> None:
@@ -764,7 +764,7 @@ def tick() -> None:
             _mark(None)
             S.job = None
     except Exception as ex:  # noqa: BLE001 - one bad boss mustn't stop the rest
-        logging.error(f"[Weapondex] No picture of {job.boss['name']}: {ex}")
+        logging.error(f"[Kairosdex] No picture of {job.boss['name']}: {ex}")
         S.failed.append(job.boss["name"])
         _destroy(job)
         _mark(None)

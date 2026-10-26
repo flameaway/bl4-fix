@@ -1,12 +1,14 @@
 """
-Builds dist/BL4DirectSetup.exe.
+Builds dist/BL4FixSetup.exe (the BL4 Fix setup app).
 
     python installer/build.py
 
 Steps: fetch + verify the pinned SDK release, pack every mod in catalog.py (mods/ and ported/) into
 .sdkmod files, zip the mods' pictures (catalog `assets`, e.g. Weapondex's boss and item pictures,
 taken from this machine's game folder: BL4_GAME_DIR overrides it), then bundle everything with
-PyInstaller (installed into installer/.venv on first run). The ported mods are GPL-3.0: each of
+PyInstaller (installed into installer/.venv on first run). The setup window's page (installer/ui/)
+uses the game's own menus, fonts and art: tools/gen_setup_ui.py copies them into installer/ui/game/
+first (dev machine only, not in git). The ported mods are GPL-3.0: each of
 their .sdkmod files carries ported/LICENSE.
 """
 
@@ -34,6 +36,7 @@ BUILD = HERE / "build"
 PAYLOAD = BUILD / "payload"
 CACHE = BUILD / "cache"
 VENV = HERE / ".venv"
+ICON = HERE / "ui" / "game" / "_setup"
 # Where the mods' pictures are taken from (catalog `assets`): the dev's own install
 GAME_DIR = Path(os.environ.get("BL4_GAME_DIR", r"C:\Program Files (x86)\Steam\steamapps\common\Borderlands 4"))
 
@@ -125,6 +128,9 @@ def ensure_pyinstaller() -> Path:
 
 def main() -> None:
     version = check_versions()
+    # The setup window's game UI files (fonts, menus, Claptrap), taken from this machine's install
+    if not all((ICON / name).is_file() for name in ("claptrap.png", "icon.ico", "icon.png")):
+        raise SystemExit("installer/ui/game/ is missing: run python tools/gen_setup_ui.py --oodle <oo2core_*_win64.dll>")
     shutil.rmtree(PAYLOAD, ignore_errors=True)
     PAYLOAD.mkdir(parents=True)
     shutil.copyfile(fetch_sdk(), PAYLOAD / "oak2-sdk.zip")
@@ -139,21 +145,22 @@ def main() -> None:
     shutil.copyfile(MOD_SRC / "shared.py", PAYLOAD / "shared.py")
     # The installer moves the logo movies itself too (its Skip intro switch)
     shutil.copyfile(SKIP_INTRO_SRC / "movies.py", PAYLOAD / "movies.py")
-    print(f"payload ready (BL4 Direct {version}, {len(catalog.MODS)} mods)")
+    print(f"payload ready (BL4 Fix {version}, {len(catalog.MODS)} mods)")
 
     python = ensure_pyinstaller()
     subprocess.run(
         [
             str(python), "-m", "PyInstaller",
             "--noconfirm", "--clean", "--onefile", "--windowed", "--uac-admin",
-            "--name", "BL4DirectSetup",
+            "--name", "BL4FixSetup",
             "--distpath", str(REPO / "dist"),
             "--workpath", str(BUILD / "pyinstaller"),
             "--specpath", str(BUILD),
             "--add-data", f"{PAYLOAD};payload",
-            "--icon", str(HERE / "icon.ico"),
-            "--add-data", f"{HERE / 'icon.ico'};.",
-            "--add-data", f"{HERE / 'icon.png'};.",
+            # The game's vault symbol (tools/gen_setup_ui.py), for the exe, its windows and shortcut
+            "--icon", str(ICON / "icon.ico"),
+            "--add-data", f"{ICON / 'icon.ico'};.",
+            "--add-data", f"{ICON / 'icon.png'};.",
             "--add-data", f"{HERE / 'ui'};ui",
             "--paths", str(HERE),
             "--paths", str(PAYLOAD),
@@ -162,12 +169,20 @@ def main() -> None:
             "--hidden-import", "catalog",
             "--hidden-import", "webgui",
             "--hidden-import", "gui",
+            # What the mods' page modules import when core.prepare_pages runs them from the
+            # .sdkmod (PyInstaller only bundles what the app itself imports)
+            "--hidden-import", "importlib.resources",
+            "--hidden-import", "dataclasses",
+            "--hidden-import", "zlib",
+            "--hidden-import", "struct",
+            "--hidden-import", "hashlib",
+            "--hidden-import", "threading",
             str(HERE / "main.py"),
         ],
         check=True,
         cwd=HERE,
     )
-    print(f"built {REPO / 'dist' / 'BL4DirectSetup.exe'}")
+    print(f"built {REPO / 'dist' / 'BL4FixSetup.exe'}")
 
 
 if __name__ == "__main__":

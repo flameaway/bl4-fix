@@ -1,9 +1,14 @@
-# BL4 Direct Connect
+# BL4 Fix
+
+A set of Borderlands 4 mods with one setup app: direct IP co-op (BL4 Direct Connect), an in-game
+mod menu, detailed item cards, a minimap, a boss and legendary dex, quality-of-life fixes and more.
+
+## BL4 Direct Connect
 
 Direct IP co-op for Borderlands 4, without SHiFT matchmaking or Steam invites. One player hosts and
 friends join by IP address, all from an in-game panel (press **F6**).
 
-## How it works
+### How it works
 
 BL4 routes co-op through Gearbox's SHiFT networking (`ShiftNetDriver`). The game also ships
 Unreal's `SteamNetDriver`, which talks plain UDP whenever it's given an IP address rather than a
@@ -13,17 +18,18 @@ Stopping hosting or leaving puts the SHiFT driver back.
 
 ## Install
 
-Run `BL4DirectSetup.exe` (both players). It:
+Run `BL4FixSetup.exe` (both players). It:
 
 - finds your Borderlands 4 install (Steam or Epic)
 - installs the Microsoft VC++ runtime if needed
 - installs the pinned Python SDK version (0.3), the BL4 Direct mod and the Mod Menu, already
   enabled
-- installs the optional mods you tick (Detailed Item Cards is ticked by default; the rest, from
-  ECHO Anywhere to the Minimap and the ports of Yeti's mods, are up to you)
+- installs the optional mods you tick (all of them on a first install; untick what you don't
+  want, from ECHO Anywhere to the Minimap and the ports of Yeti's mods)
+- sets up the game pages the mods replace, so everything works on the first launch
 - adds a firewall rule so only friends you've added can reach a game you host
 
-Close the game first. Run it again any time (Start menu > **BL4 Mods Setup**) to add or remove
+Close the game first. Run it again any time (Start menu > **BL4 Fix Setup**) to add or remove
 mods, repair, uninstall, or manage friends. Every mod's settings and keys are in game: **F7**, or
 **MODS** in the pause menu and on the title screen (under Continue).
 
@@ -106,7 +112,7 @@ quirks, networking, runtime UMG UI, and the two-instance test harness).
   edited page and game data in `card_page/` after a game patch; `tools/ui_live.py` restyles cards
   live while the game runs)
 - `ported/`: our GPL-3.0 rewrites of Yeti's mods (see `ported/README.md`)
-- `installer/`: the setup app (`python installer/build.py` produces `dist/BL4DirectSetup.exe`;
+- `installer/`: the setup app (`python installer/build.py` produces `dist/BL4FixSetup.exe`;
   `installer/catalog.py` lists the mods it can install)
 - `dev/bl4_bridge/` + `tools/`: test harness (run Python inside a game instance, drive game
   windows from the desktop session, UDP relay for packet inspection)

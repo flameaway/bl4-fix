@@ -84,7 +84,7 @@ class S:
     plan_one: Callable[[int, int, str], Any] | None = None
     apply: Callable[[Any, Callable[[dict[str, Any]], None]], None] | None = None  # (plan, done)
     keys: Callable[[], tuple[str | None, str | None]] = lambda: (None, None)
-    costs: tuple[int, int] = (0, 0)
+    costs: Callable[[], tuple[int, int]] = lambda: (0, 0)  # (all, one), from the options
     blocked: Callable[[], str | None] = lambda: None
 
 
@@ -255,6 +255,7 @@ def _items_state() -> list[dict[str, Any]]:
 
 def state() -> dict[str, Any]:
     reroll_key, pick_key = S.keys()
+    cost_all, cost_one = S.costs()
     try:
         eridium = game.balance()
     except game.RerollError:
@@ -262,7 +263,7 @@ def state() -> dict[str, Any]:
     confirming = S.confirm_handle is not None and time.monotonic() < S.confirm_until
     return {
         "keys": {"reroll": reroll_key, "pick": pick_key},
-        "costs": {"all": S.costs[0], "one": S.costs[1]},
+        "costs": {"all": cost_all, "one": cost_one},
         "eridium": eridium,
         "blocked": S.blocked(),
         "items": _items_state(),

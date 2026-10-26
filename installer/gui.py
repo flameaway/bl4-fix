@@ -1,4 +1,4 @@
-"""Tkinter GUI for BL4 Direct: setup and mod choice on one tab, friends + firewall on the other."""
+"""Tkinter GUI for BL4 Fix: setup and mod choice on one tab, friends + firewall on the other."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ PAD = {"padx": 8, "pady": 4}
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title(f"BL4 Direct {shared.MOD_VERSION}")
+        self.title(f"BL4 Fix {shared.MOD_VERSION}")
         icon = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "icon.ico"
         if icon.exists():
             self.iconbitmap(default=str(icon))
@@ -133,7 +133,7 @@ class App(tk.Tk):
     def game(self) -> Path | None:
         path = Path(self.game_dir.get())
         if not core.is_game_dir(path):
-            messagebox.showerror("BL4 Direct", "Pick your Borderlands 4 install folder first.")
+            messagebox.showerror("BL4 Fix", "Pick your Borderlands 4 install folder first.")
             return None
         return path
 
@@ -171,7 +171,7 @@ class App(tk.Tk):
                 func()
             except Exception as ex:  # noqa: BLE001
                 self.log(f"Error: {ex}")
-                self.on_ui(lambda ex=ex: messagebox.showerror("BL4 Direct", str(ex)))
+                self.on_ui(lambda ex=ex: messagebox.showerror("BL4 Fix", str(ex)))
             finally:
                 self.busy = False
                 self.on_ui(self.refresh_status)
@@ -185,7 +185,7 @@ class App(tk.Tk):
         chosen = self.selected_mods()
         dropping = [catalog.BY_ID[m].name for m in catalog.OPTIONAL if m in core.installed_mods(game) and m not in chosen]
         if dropping and not messagebox.askyesno(
-            "BL4 Direct",
+            "BL4 Fix",
             "These mods will be removed (their settings are kept):\n\n" + "\n".join(dropping) + "\n\nContinue?",
         ):
             return
@@ -196,8 +196,8 @@ class App(tk.Tk):
         if not game:
             return
         remove_sdk = messagebox.askyesnocancel(
-            "Uninstall BL4 Direct",
-            "This removes BL4 Direct and every mod this app installed.\n\n"
+            "Uninstall BL4 Fix",
+            "This removes every mod BL4 Fix installed.\n\n"
             "Also remove the Python SDK?\n\nChoose No if you use other SDK mods.",
         )
         if remove_sdk is None:
@@ -264,7 +264,7 @@ class App(tk.Tk):
         ttk.Button(frame, text="Save && update firewall", command=self.save_friends).pack(anchor="e", **PAD)
         ttk.Label(
             frame,
-            text="In game: press F6 for the BL4 Direct panel - host, join, and add friends there too.",
+            text="In game: press F6 for the co-op panel (BL4 Direct Connect) - host, join, and add friends there too.",
             foreground="#555",
         ).pack(anchor="w", **PAD)
         return frame
@@ -298,7 +298,7 @@ class App(tk.Tk):
         name = self.f_name.get().strip()
         ip = shared.normalize_ipv4(self.f_ip.get()) or ""
         if not name or not ip:
-            messagebox.showerror("BL4 Direct", "Enter a name and an IPv4 address like 203.0.113.5")
+            messagebox.showerror("BL4 Fix", "Enter a name and an IPv4 address like 203.0.113.5")
             return
         for item in self.tree.get_children():
             if self.tree.item(item, "values")[0].lower() == name.lower():
@@ -327,8 +327,8 @@ class App(tk.Tk):
         self.log("Saved friends list.")
         self._run_task("Firewall", lambda: core.apply_firewall(game, self.log))
         messagebox.showinfo(
-            "BL4 Direct",
-            "Saved. If the game is running, press 'Reload friends' in the BL4 Direct mod menu.",
+            "BL4 Fix",
+            "Saved. If the game is running, press 'Reload friends' in the BL4 Direct Connect panel (F6).",
         )
 
     # endregion

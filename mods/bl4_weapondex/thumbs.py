@@ -82,7 +82,7 @@ class S:
 
 
 def log(msg: str) -> None:
-    logging.info(f"[Weapondex] {msg}")
+    logging.info(f"[Kairosdex] {msg}")
 
 
 def pictures_dir(game_dir: Path) -> Path:
@@ -281,7 +281,7 @@ def tick() -> None:
     try:
         _step(pc, now)
     except Exception as ex:  # noqa: BLE001
-        logging.error(f"[Weapondex] item picture {S.key}: {ex!r}")
+        logging.error(f"[Kairosdex] item picture {S.key}: {ex!r}")
         S.failed[S.key or "?"] = repr(ex)
         S.key = None
 
@@ -377,7 +377,7 @@ def shoot(key: str, serial: str) -> bool:
             return False
         Shots.unavailable = _resolve()
         if Shots.unavailable:
-            logging.dev_warning(f"[Weapondex] no pictures for rolls: {Shots.unavailable}")
+            logging.dev_warning(f"[Kairosdex] no pictures for rolls: {Shots.unavailable}")
             return False
     if not _request(serial):
         return False
@@ -458,7 +458,7 @@ def _write_all(pending: queue.Queue) -> None:
             picture.write_small(path, WIDTH, HEIGHT, rgba)  # the copy the page's thumbnails use
             _write_index(path.parent)
         except Exception as ex:  # noqa: BLE001
-            logging.error(f"[Weapondex] couldn't save {path.name}: {ex!r}")
+            logging.error(f"[Kairosdex] couldn't save {path.name}: {ex!r}")
 
 
 def _to_bytes(raw: bytes) -> bytes:

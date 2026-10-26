@@ -51,7 +51,7 @@ update_option = BoolOption(
     True,
     description=(
         "Once per launch, asks GitHub (on a background thread) whether there are newer versions of"
-        " the mods installed by BL4 Mods Setup. Nothing downloads until you press Update all on the"
+        " the mods installed by BL4 Fix Setup. Nothing downloads until you press Update all on the"
         " Updates page."
     ),
 )

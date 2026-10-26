@@ -5,7 +5,7 @@ Builds a GitHub release for the in-game updater (dev only).
 
 Writes dist/release/:
 - one .sdkmod per mod in installer/catalog.py (byte-for-byte reproducible, see installer/build.py)
-- BL4DirectSetup.exe, rebuilt first by installer/build.py (unless --no-exe), so the setup app
+- BL4FixSetup.exe, rebuilt first by installer/build.py (unless --no-exe), so the setup app
   installs exactly these files
 - manifest.json, which the Mod Menu reads (format: mods/bl4_mod_menu/updates.py)
 - notes.md, the release text (what changed, from each mod's CHANGELOG.md if it has one)
@@ -94,7 +94,7 @@ def main() -> int:
     parser.add_argument("--tag", default="v" + dt.date.today().strftime("%Y.%m.%d"))
     parser.add_argument("--allow-same-version", action="store_true")
     parser.add_argument("--offline", action="store_true", help="don't compare with the published release")
-    parser.add_argument("--no-exe", action="store_true", help="use the existing dist/BL4DirectSetup.exe")
+    parser.add_argument("--no-exe", action="store_true", help="use the existing dist/BL4FixSetup.exe")
     args = parser.parse_args()
 
     repo = update_repo()
@@ -102,9 +102,11 @@ def main() -> int:
         print("warning: REPO in mods/bl4_mod_menu/updates.py is empty, so the Mod Menu won't check for updates")
     if not args.no_exe:
         build.main()
-    exe = REPO_ROOT / "dist" / "BL4DirectSetup.exe"
+    # The release asset name: the Mod Menu's updater takes it from the manifest ("asset"), so the
+    # rename from BL4DirectSetup.exe works for older versions too
+    exe = REPO_ROOT / "dist" / "BL4FixSetup.exe"
     if not exe.is_file():
-        raise SystemExit("dist/BL4DirectSetup.exe is missing: run installer/build.py")
+        raise SystemExit("dist/BL4FixSetup.exe is missing: run installer/build.py")
 
     shutil.rmtree(OUT, ignore_errors=True)
     OUT.mkdir(parents=True)
@@ -161,7 +163,7 @@ def main() -> int:
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
     if len(notes_md) == 2:  # noqa: PLR2004
         notes_md.append("No mod versions changed.")
-    notes_md += ["", "Install or update: run BL4DirectSetup.exe, or press Update all on MODS in game."]
+    notes_md += ["", "Install or update: run BL4FixSetup.exe, or press Update all on MODS in game."]
     (OUT / "notes.md").write_text("\n".join(notes_md) + "\n", encoding="utf-8")
 
     print(f"\n{len(mods)} mods + setup app + manifest in {OUT}")

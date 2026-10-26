@@ -1,7 +1,7 @@
 [project]
 name = "BL4 Reroll"
-version = "0.1.0"
-description = "Reroll the modifiers on class mods and enhancements for Eridium: 5 to reroll them all, 10 to replace one. Each item gets a page in the mod menu (F7); or type reroll in the console."
+version = "0.1.1"
+description = "Reroll the modifiers on class mods and enhancements for Eridium: 25 to reroll them all, 50 to replace one (both changeable in its settings). Each item gets a page in the mod menu (F7); or type reroll in the console."
 authors = [{ name = "flame" }]
 
 [tool.sdkmod]

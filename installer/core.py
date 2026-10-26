@@ -1,5 +1,5 @@
 """
-Install / status / uninstall logic for BL4 Direct, shared by the GUI and the CLI.
+Install / status / uninstall logic for BL4 Fix, shared by the GUI and the CLI.
 
 Payload files (the pinned SDK zip and the built .sdkmod files) are bundled next to this module by the
 build script, under `payload/`.
@@ -45,7 +45,9 @@ SKIP_INTRO = "bl4_skip_intro"
 MOD_PAKS_REL = Path("OakGame/Content/Paks/~mods")
 UI_REL = Path("OakGame/Content/uiresources")
 # A Start menu entry for the copy of this app in the game folder, to add or remove mods later
-SHORTCUT_NAME = "BL4 Mods Setup.lnk"
+SHORTCUT_NAME = "BL4 Fix Setup.lnk"
+# What the shortcut was called before the project was BL4 Fix (2026-10-25): removed on install
+OLD_SHORTCUT_NAMES = ("BL4 Mods Setup.lnk",)
 
 # The SDK is built with a recent MSVC; older runtimes fail to load its DLLs
 VCREDIST_MIN = (14, 44)
@@ -242,7 +244,7 @@ class Status:
             f"Game:       {self.game_dir}",
             f"{mark(self.vcredist_ok)}VC++ runtime: {vc} (need {'.'.join(map(str, VCREDIST_MIN))}+)",
             f"{mark(self.sdk_ok)}Python SDK:   {self.sdk or 'not installed'} (need {shared.SDK_VERSION})",
-            f"{mark(self.mod_ok)}BL4 Direct:   {self.mod or 'not installed'} (this app: {shared.MOD_VERSION})",
+            f"{mark(self.mod_ok)}BL4 Direct Connect: {self.mod or 'not installed'} (this app: {shared.MOD_VERSION})",
             f"{mark(self.firewall is not None)}Firewall:     {self.firewall or 'no rule (hosted games reachable by anyone who can reach the port)'}",
             f"Skip intro:   {self._intro_line()}",
             f"Mods:         {self._mods_line()}",
@@ -425,17 +427,20 @@ def install(
     added = [catalog.BY_ID[m].name for m in catalog.OPTIONAL if m in chosen and m not in before]
     optional = len(chosen) - len(catalog.REQUIRED)
     log(
-        f"Installed BL4 Direct {shared.MOD_VERSION}, the Mod Menu and {optional} optional mod(s)"
+        f"Installed BL4 Fix {shared.MOD_VERSION}: BL4 Direct Connect, the Mod Menu and {optional} optional mod(s)"
         + (f" (new: {', '.join(added)})." if added else "."),
     )
     if SKIP_INTRO in chosen:
         set_skip_intro(game_dir, True, log)
+    prepare_pages(game_dir, chosen, log)
 
     # A copy of this app inside the game folder, so the in-game panel can ask it (with a UAC prompt)
     # to update the firewall when friends are added in game, and to add or remove mods later
     if getattr(sys, "frozen", False):
         tools = game_dir / TOOLS_DIR_REL
         tools.mkdir(parents=True, exist_ok=True)
+        # Still named BL4DirectSetup.exe in the game folder: BL4 Direct Connect (its firewall button)
+        # and the Mod Menu's updater look for it there, older versions included
         target = tools / "BL4DirectSetup.exe"
         version_file = tools / "version.txt"  # the in-game updater compares it with the latest release
         try:
@@ -458,7 +463,7 @@ def install(
         settings / INSTALL_RECORD,
         {"mod": shared.MOD_VERSION, "sdk": shared.SDK_VERSION, "mods": sorted(chosen)},
     )
-    log("Done. In game: F6 for the BL4 Direct panel, F7 (or MODS in the pause menu) for mod settings.")
+    log("Done. In game: F6 for co-op (BL4 Direct Connect), F7 (or MODS in the pause menu) for mod settings.")
 
 
 def _write_json(path: Path, data: object) -> None:
@@ -574,13 +579,25 @@ def _shortcut_path() -> Path | None:
     return Path(appdata) / "Microsoft/Windows/Start Menu/Programs" / SHORTCUT_NAME if appdata else None
 
 
+def _refresh_icons() -> None:
+    """
+    Explorer caches icons by path, so a replaced exe kept showing its old icon (shortcut, pins)
+    until the cache refreshed: SHCNE_ASSOCCHANGED makes the shell reload them.
+    """
+    try:
+        ctypes.WinDLL("shell32").SHChangeNotify(0x08000000, 0x0000, None, None)  # SHCNE_ASSOCCHANGED, SHCNF_IDLIST
+    except (OSError, AttributeError):
+        pass
+
+
 def _make_shortcut(target: Path, log=print) -> None:  # noqa: ANN001
-    """Start menu > BL4 Mods Setup, to add or remove mods any time."""
+    """Start menu > BL4 Fix Setup, to add or remove mods any time."""
     if (link := _shortcut_path()) is None:
         return
     script = (
         "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:BL4_LINK);"
         "$s.TargetPath = $env:BL4_TARGET; $s.WorkingDirectory = $env:BL4_DIR;"
+        "$s.IconLocation = $env:BL4_TARGET + ',0';"
         "$s.Description = 'Add or remove Borderlands 4 mods'; $s.Save()"
     )
     env = {**os.environ, "BL4_LINK": str(link), "BL4_TARGET": str(target), "BL4_DIR": str(target.parent)}
@@ -594,7 +611,10 @@ def _make_shortcut(target: Path, log=print) -> None:  # noqa: ANN001
         log(f"Couldn't make the Start menu shortcut ({ex}).")
         return
     if res.returncode == 0:
-        log("Start menu: 'BL4 Mods Setup' adds or removes mods any time.")
+        log("Start menu: 'BL4 Fix Setup' adds or removes mods any time.")
+        for old in OLD_SHORTCUT_NAMES:
+            (link.parent / old).unlink(missing_ok=True)
+        _refresh_icons()
     else:
         log(f"Couldn't make the Start menu shortcut: {res.stderr.strip()[:200]}")
 
@@ -622,15 +642,106 @@ def uninstall(game_dir: Path, remove_sdk: bool, log=print) -> None:  # noqa: ANN
     (sdk_mods / "settings" / INSTALL_RECORD).unlink(missing_ok=True)
     shutil.rmtree(game_dir / TOOLS_DIR_REL, ignore_errors=True)
     if (link := _shortcut_path()) is not None:
-        link.unlink(missing_ok=True)
+        for name in (link.name, *OLD_SHORTCUT_NAMES):
+            (link.parent / name).unlink(missing_ok=True)
     firewall.remove_rule()
-    log("Removed BL4 Direct, its mods and the firewall rule (your friends list and mod settings are kept).")
+    log("Removed BL4 Fix: its mods and the firewall rule (your friends list and mod settings are kept).")
 
     if remove_sdk:
         for name in _sdk_zip_names():
             if not name.startswith("sdk_mods/settings/"):
                 (game_dir / name).unlink(missing_ok=True)
         log("Removed the Python SDK files (other mods in sdk_mods were left alone).")
+
+
+# endregion
+# region Game pages
+#
+# Some mods replace a game page (pause menu, title screen, item card, Skills, ECHO pages) with a
+# shim pak that loads a loose script of theirs. A mod builds that pak itself when it's enabled, but
+# the game reads paks only at startup: on its own, a fresh install's first launch had no MODS
+# button, no Item Cards and old F6/F7 panels until a second restart. So the installer runs the
+# mods' own page code first, while the game is closed: every check the mod makes (the game's page
+# unchanged since the shim was made, no other ~mods pak replacing it) and the same pak bytes, so
+# the mod in game finds its pak current and leaves it alone.
+
+# (mod id, page module in the mod, whether its sync() takes `enabled`)
+PAGE_MODULES: tuple[tuple[str, str, bool], ...] = (
+    ("bl4_mod_menu", "pause_page", False),
+    ("bl4_mod_menu", "main_page", False),
+    ("bl4_item_cards", "card_page", True),
+    ("bl4_respec", "skills_page", True),
+    ("bl4_instant_tabs", "pages", False),
+    ("bl4_weapondex", "celebrate_page", True),
+)
+# Loose scripts those pages load at once, which these mods publish from code that only runs in
+# game (it imports the SDK): mod id -> (folder in the .sdkmod, folder under uiresources). Item
+# Cards and Easy Respec publish theirs from their page module's sync().
+PAGE_SCRIPTS: dict[str, tuple[str, str]] = {
+    "bl4_mod_menu": ("ui", "bl4modmenu"),
+    "bl4_instant_tabs": ("ui", "bl4instanttabs"),
+}
+
+
+def mod_enabled(game_dir: Path, mod_id: str) -> bool:
+    """The mod manager's enabled flag (settings/<id>.json); a mod without one loads enabled."""
+    try:
+        data = json.loads((game_dir / "sdk_mods" / "settings" / f"{mod_id}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    return bool(data.get("enabled", True)) if isinstance(data, dict) else True
+
+
+def _load_page_module(root: Path, mod_id: str, module: str):  # noqa: ANN202
+    """
+    Imports `<mod>.<module>` from an unpacked copy of the mod without running the mod's own
+    __init__ (which needs the game): a stand-in parent package under a private name.
+    """
+    import importlib  # noqa: PLC0415
+    import types  # noqa: PLC0415
+
+    alias = f"_bl4setup_{mod_id}"
+    for name in [n for n in sys.modules if n == alias or n.startswith(alias + ".")]:
+        del sys.modules[name]
+    package = types.ModuleType(alias)
+    package.__path__ = [str(root / mod_id)]  # type: ignore[attr-defined]
+    sys.modules[alias] = package
+    return importlib.import_module(f"{alias}.{module}")
+
+
+def prepare_pages(game_dir: Path, chosen: set[str] | frozenset[str], log=print) -> None:  # noqa: ANN001
+    """Puts the installed mods' shim paks and page scripts in place before the game first starts."""
+    wanted = [(m, page, flag) for m, page, flag in PAGE_MODULES if m in chosen]
+    if not wanted:
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for mod_id in dict.fromkeys(m for m, _, _ in wanted):
+            with zipfile.ZipFile(payload_mod(mod_id)) as zf:
+                zf.extractall(root)
+        for mod_id, page, takes_enabled in wanted:
+            enabled = mod_enabled(game_dir, mod_id)
+            if not enabled and not takes_enabled:
+                continue  # left to the mod: it removes its own page when switched off in game
+            try:
+                module = _load_page_module(root, mod_id, page)
+                status = module.sync(game_dir, enabled) if takes_enabled else module.sync(game_dir)
+            except Exception as ex:  # noqa: BLE001 - the mod sets its page up in game anyway
+                status = f"couldn't prepare its page ({ex}); it does that itself in game (one extra restart)"
+            log(f"{catalog.BY_ID[mod_id].name}: {status}")
+        for mod_id, (folder, ui_dir) in PAGE_SCRIPTS.items():
+            if mod_id not in chosen or not mod_enabled(game_dir, mod_id):
+                continue
+            source = root / mod_id / folder
+            target = game_dir / UI_REL / ui_dir
+            target.mkdir(parents=True, exist_ok=True)
+            for path in sorted(source.glob("*")):
+                if path.is_file():
+                    tmp_file = target / (path.name + ".tmp")
+                    tmp_file.write_bytes(path.read_bytes())
+                    tmp_file.replace(target / path.name)
+        for alias in [n for n in sys.modules if n.startswith("_bl4setup_")]:
+            del sys.modules[alias]
 
 
 # endregion

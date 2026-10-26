@@ -1,5 +1,5 @@
 """
-Weapondex for Borderlands 4: a dex of the game's bosses and the legendaries they drop.
+Kairosdex for Borderlands 4: a dex of the game's bosses and the legendaries they drop.
 
 Beat a boss and it's registered in the dex, with its drop table: every legendary and pearl it
 has a dedicated drop for, what kind of item each is, and the chance per kill (normal, at your UVH
@@ -8,7 +8,7 @@ with the bosses' pictures and buttons to set a waypoint on (or travel to) a boss
 machine. Items stay "???" until you've had one ("Obtained items only", on by default, so beating a
 boss doesn't spoil its drops); with that off, a boss's drops show once you beat it.
 
-Open it with F8 (in game or in any menu), from the Weapondex entry in the pause menu, or with the
+Open it with F8 (in game or in any menu), from the Kairosdex entry in the pause menu, or with the
 `dex` console command. Search by boss, area or item name (click the search box and type), filter
 by region, item type or manufacturer, and sort by name, number, area, type or chance.
 
@@ -17,6 +17,10 @@ progress.py). A boss counts when you're in the fight as it dies (tracker.py). Bo
 before the mod come from the game's own saves (savegame.py: activities finished on the profile,
 every character's finished missions). The dex itself is made from the game's own data (tools/gen_weapondex.py ->
 dex.json); if a game patch changes that data the screen says so, and the dex needs rebuilding.
+
+The first time a boss is beaten or a legendary or pearl is obtained, the game's own big HUD
+banner celebrates it with its picture (celebrate.py, drawn by celebrate_page/: option
+"Celebrations").
 
 The screen is HTML in the game's menu page, through the BL4 Mod Menu (screen.py), which must be
 installed. Dev options: "Unlock everything" shows the whole dex; "Forget this character's bosses"
@@ -44,7 +48,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import bake, data, progress, savegame, screen, thumbs, tracker
+from . import bake, celebrate, data, progress, savegame, screen, thumbs, tracker
 
 __version__ = "0.2.0"
 __version_info__ = (0, 2, 0)
@@ -59,12 +63,15 @@ BOSS_DIED_FUNC = "/Script/OakGame.OakBossFight:BossDied"
 
 
 def log(msg: str) -> None:
-    logging.info(f"[Weapondex] {msg}")
+    logging.info(f"[Kairosdex] {msg}")
 
 
 def beaten(boss_id: str) -> None:
+    first = celebrate.first_kill(boss_id)  # asked before the win is recorded
     if progress.mark(boss_id):
-        screen.say(f"{data.boss_name(boss_id)} registered in the Weapondex!")
+        screen.say(f"{data.boss_name(boss_id)} registered in the Kairosdex!")
+        if first:
+            celebrate.boss(boss_id)
 
 
 # region Options
@@ -77,7 +84,7 @@ def _changed(*_: Any) -> None:
 open_key = KeybindOption(
     "Open key",
     "F8",
-    description="Opens and closes the Weapondex. Works in game and in the game's menus.",
+    description="Opens and closes the Kairosdex. Works in game and in the game's menus.",
 )
 
 obtained_option = BoolOption(
@@ -101,6 +108,16 @@ list_hover_option = BoolOption(
     on_change=_changed,
 )
 
+celebrate_option = BoolOption(
+    "Celebrations",
+    True,
+    description=(
+        "The game's big banner, with the boss's or item's picture, the first time you beat a boss or get a"
+        " legendary or pearl (on any character). Turning this on or off applies from the next game start."
+    ),
+    on_change_while_enabled=lambda _, value: celebrate.sync(bool(value)),
+)
+
 unlock_option = BoolOption(
     "Unlock everything",
     False,
@@ -117,7 +134,7 @@ def _forget_all(_: ButtonOption) -> None:
         screen.say("Load a character first.")
         return
     progress.forget()
-    screen.say("This character's Weapondex was cleared.")
+    screen.say("This character's Kairosdex was cleared.")
 
 
 forget_button = ButtonOption(
@@ -127,7 +144,7 @@ forget_button = ButtonOption(
 )
 
 open_button = ButtonOption(
-    "Open the Weapondex",
+    "Open the Kairosdex",
     description="Opens the dex.",
     on_press=lambda _: screen.request_open(),
 )
@@ -171,7 +188,7 @@ screen.S.list_hover = lambda: bool(list_hover_option.value)
 @command(
     "dex",
     description=(
-        "Opens the Weapondex. `dex beat <boss>` / `dex forget <boss>` mark a boss by hand. `dex bake all`"
+        "Opens the Kairosdex. `dex beat <boss>` / `dex forget <boss>` mark a boss by hand. `dex bake all`"
         " (or `dex bake <boss>`) takes the bosses' pictures, `dex bake items` the legendaries' pictures,"
         " `dex bake stop` stops."
     ),
@@ -183,6 +200,14 @@ def dex_command(args: argparse.Namespace) -> None:
         S.pending_open = time.monotonic() + 0.3
         return
     verb, name = words[0].lower(), " ".join(words[1:])
+    if verb == "celebrate":
+        # dex celebrate boss|legendary|pearl [name]: shows a banner now (records nothing)
+        kind, _, rest = name.partition(" ")
+        if kind not in ("boss", "legendary", "pearl"):
+            log("Usage: dex celebrate boss|legendary|pearl [name]")
+            return
+        log(celebrate.test(kind, rest.strip()))
+        return
     if verb == "bake":
         _bake_command(words[1:])
         return
@@ -272,7 +297,7 @@ def boss_died(_obj: UObject, args: WrappedStruct, _ret: Any, _func: BoundFunctio
         if actor is not None and (boss := tracker.identify(actor)) is not None:
             beaten(boss)
     except Exception as ex:  # noqa: BLE001 - never break the game's own handling
-        logging.error(f"[Weapondex] {ex!r}")
+        logging.error(f"[Kairosdex] {ex!r}")
 
 
 @hook(TICK_FUNC, Type.POST)
@@ -285,7 +310,7 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
     try:
         _tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
-        logging.error(f"[Weapondex] {ex!r}")
+        logging.error(f"[Kairosdex] {ex!r}")
         logging.exception(ex)
 
 
@@ -296,6 +321,7 @@ def _tick() -> None:
     screen.tick()
     tracker.tick(beaten)
     savegame.tick(screen._changed)  # noqa: SLF001
+    celebrate.tick()
     bake.tick()
     if S.pending_open and time.monotonic() > S.pending_open:
         S.pending_open = 0.0
@@ -310,9 +336,11 @@ def _tick() -> None:
 
 def _enable() -> None:
     S.key_was_down = True
+    celebrate.setup(GAME_DIR, lambda: bool(celebrate_option.value))
+    celebrate.sync(bool(celebrate_option.value))
     S.registered = screen.register(GAME_DIR)
     if not S.registered:
-        log("Waiting for BL4 Mod Menu: the Weapondex screen lives in its page.")
+        log("Waiting for BL4 Mod Menu: the Kairosdex screen lives in its page.")
 
 
 def _disable() -> None:
@@ -321,13 +349,15 @@ def _disable() -> None:
     thumbs.stop("stopped (mod disabled)")
     screen.unregister()
     tracker.forget()
+    celebrate.forget()
+    celebrate.sync(False, wait=True)  # small files only; done before a re-enable's sync can start
     S.registered = False
 
 
 # endregion
 
 mod = build_mod(
-    options=[open_button, open_key, obtained_option, list_hover_option, dev_options],
+    options=[open_button, open_key, obtained_option, list_hover_option, celebrate_option, dev_options],
     keybinds=[],
     hooks=[tick, boss_died],
     commands=[dex_command],

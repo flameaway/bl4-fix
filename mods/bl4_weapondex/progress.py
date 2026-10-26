@@ -41,7 +41,7 @@ def _load() -> dict[str, Any]:
                 FILE.replace(bad)
             except OSError:
                 pass
-            logging.error(f"[Weapondex] {FILE.name} was unreadable ({ex}); moved aside to {bad.name}")
+            logging.error(f"[Kairosdex] {FILE.name} was unreadable ({ex}); moved aside to {bad.name}")
     return _all
 
 
@@ -52,7 +52,7 @@ def _save() -> None:
         tmp.write_text(json.dumps(_load(), indent=1, sort_keys=True), encoding="utf-8")
         tmp.replace(FILE)
     except OSError as ex:
-        logging.error(f"[Weapondex] Couldn't save progress: {ex}")
+        logging.error(f"[Kairosdex] Couldn't save progress: {ex}")
 
 
 def character() -> str | None:

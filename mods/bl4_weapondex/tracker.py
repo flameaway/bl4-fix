@@ -68,7 +68,7 @@ def tick(beaten: Callable[[str], None]) -> None:
         boss = identify(actor)
         if boss is not None:
             _watched.append((WeakPointer(actor), boss))
-            logging.dev_warning(f"[Weapondex] watching {actor.Name} ({boss})")
+            logging.dev_warning(f"[Kairosdex] watching {actor.Name} ({boss})")
     for entry in list(_watched):
         actor = entry[0]()
         if actor is None:

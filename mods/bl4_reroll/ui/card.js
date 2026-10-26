@@ -2,7 +2,7 @@
 
 // BL4 Reroll on the item card: hover a class mod or enhancement in your backpack and
 //
-//     [T] Reroll All (5 Eridium)     every modifier rolls again (after asking)
+//     [T] Reroll All (25 Eridium)     every modifier rolls again (after asking)
 //     [G] Pick One                   marks a modifier (G again: the next); T then replaces it
 //
 // The BL4 Mod Menu runs this file in the game's menu page (its extensions.js) and runs it again
@@ -339,7 +339,7 @@
     // game's modifier rows, a box after the modifiers), never on top of it, so nothing has to be
     // positioned and nothing can show up in the wrong place while the card moves.
 
-    // "[T] Reroll All (5 Eridium)" next to the game's own prompts. One entry per kind, added after
+    // "[T] Reroll All (25 Eridium)" next to the game's own prompts. One entry per kind, added after
     // the game's list and only ever updated, never moved. Runs on every poll, so it only writes
     // what changed, and measures the game's glyph only when the prompt (re)appears.
     function setStyle(el, name, value) {

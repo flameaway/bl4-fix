@@ -23,6 +23,9 @@ SUBMODULES = (
     "bl4_weapondex.picture",
     "bl4_weapondex.thumbs",
     "bl4_weapondex.travel",
+    "bl4_weapondex.keyboard",
+    "bl4_weapondex.celebrate_page",
+    "bl4_weapondex.celebrate",
     "bl4_weapondex.screen",
     "bl4_weapondex.bake",
 )
