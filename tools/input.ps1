@@ -4,6 +4,7 @@
 #   tools/input.ps1 -ProcessId 1234 -X 205 -Y 197
 #   tools/input.ps1 -ProcessId 1234 -X 205 -Y 197 -Right   (right click)
 #   tools/input.ps1 -ProcessId 1234 -X 205 -Y 197 -Move    (hover only)
+#   tools/input.ps1 -ProcessId 1234 -X 205 -Y 197 -Wheel -120   (mouse wheel there; negative = down)
 #   tools/input.ps1 -ProcessId 1234 -Key 0x0D        (virtual-key code, e.g. Enter)
 #   tools/input.ps1 -ProcessId 1234 -Text "mods"     (typed characters)
 param(
@@ -13,7 +14,8 @@ param(
     [int]$Key = -1,
     [string]$Text = "",
     [switch]$Right,
-    [switch]$Move
+    [switch]$Move,
+    [int]$Wheel = 0
 )
 
 Add-Type @"
@@ -68,6 +70,15 @@ if ($X -ge 0) {
     $lp = [IntPtr](($p.Y -shl 16) -bor ($p.X -band 0xFFFF))
     [void][InputNative]::PostMessage($hwnd, 0x0200, [IntPtr]0, $lp)   # WM_MOUSEMOVE
     if ($Move) { "moved to client ($($p.X), $($p.Y))"; return }
+    if ($Wheel -ne 0) {
+        # WM_MOUSEWHEEL: delta in the high word of wParam, screen coordinates in lParam
+        Start-Sleep -Milliseconds 150
+        $sx = $r.L + [int]($X / $scale); $sy = $r.T + [int]($Y / $scale)
+        $wp = [IntPtr]([int64](($Wheel -band 0xFFFF) -shl 16))
+        $slp = [IntPtr](($sy -shl 16) -bor ($sx -band 0xFFFF))
+        [void][InputNative]::PostMessage($hwnd, 0x020A, $wp, $slp)
+        "wheel $Wheel at client ($($p.X), $($p.Y))"; return
+    }
     Start-Sleep -Milliseconds 150
     if ($Right) {
         [void][InputNative]::PostMessage($hwnd, 0x0204, [IntPtr]2, $lp)   # WM_RBUTTONDOWN

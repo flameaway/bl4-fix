@@ -95,6 +95,8 @@ def handle(req: dict) -> dict:
                     extra.append("-Right")
                 elif req.get("button") == "none":
                     extra.append("-Move")
+                if req.get("wheel"):
+                    extra += ["-Wheel", str(int(req["wheel"]))]
             elif "text" in req:
                 extra = ["-Text", str(req["text"])]
             else:
@@ -180,6 +182,8 @@ def main() -> None:
             print(request({"action": "input", "pid": pid, "x": x, "y": y, "button": "right"}))
         case ["move", pid, x, y]:
             print(request({"action": "input", "pid": pid, "x": x, "y": y, "button": "none"}))
+        case ["wheel", pid, x, y, delta]:
+            print(request({"action": "input", "pid": pid, "x": x, "y": y, "wheel": delta}))
         case ["type", pid, text]:
             print(request({"action": "input", "pid": pid, "text": text}))
         case ["key", pid, key]:

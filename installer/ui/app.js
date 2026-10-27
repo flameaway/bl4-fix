@@ -877,7 +877,7 @@ function mockApi() {
     ["bl4_minimap", "Minimap", "A minimap with the ECHO map's art, fog, icons and route (N).", "mods", 0, 0, "N"],
     ["bl4_third_person", "Third Person", "H: over-the-shoulder camera with aiming.", "mods", 0, 0, "H"],
     ["bl4_vehicles_anywhere", "Vehicles Anywhere", "Summon and drive where vehicles aren't allowed.", "mods", 0, 0, ""],
-    ["bl4_backpack_size", "Backpack Size", "Set the backpack item limit.", "mods", 0, 0, ""],
+    ["bl4_backpack_size", "Backpack Size", "Set the backpack, bank and Lost Loot limits.", "mods", 0, 0, ""],
     ["bl4_shoot_open", "Shoot to Open", "Shoot a container or chest to open it.", "mods", 0, 0, ""],
     ["bl4_less_fog", "Less Fog", "Thin out the haze over the world.", "mods", 0, 0, ""],
     ["bl4_perf", "Performance Fixes", "Fewer hitches: no DLSS reload after menus, cheaper mod hooks.", "mods", 0, 0, ""],

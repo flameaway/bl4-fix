@@ -26,7 +26,7 @@
 ---
 
 <p align="center">
-  <img src="docs/images/showcase.jpg" alt="Item cards with class mod skills, the Kairosdex, the Minimap, Reroll, Build Presets and the setup app" width="100%">
+  <img src="docs/images/showcase.jpg" alt="A class mod item card with its skills, the Kairosdex, the Carnage Report, the Minimap, Build Presets and the setup app" width="100%">
 </p>
 
 ## Why BL4 Fix?
@@ -37,8 +37,9 @@
   tick, sets up the firewall, and prepares every page the mods change before your first launch.
 - **Settings inside the game.** Every mod's options and keys are on one **MODS** screen (F7, the
   pause menu or the title screen), built from the game's own menus.
-- **Made to cost nothing.** Every mod is measured to show no frame-time difference with it on or
-  off and no hitches. There's even a mod that removes some of the game's own hitches.
+- **Built to cost nothing.** Every mod is held to a strict frame-time budget (no per-frame work
+  when it isn't needed, nothing heavy on the game thread). There's even a mod that removes some
+  of the game's own hitches.
 - **Safe to remove.** Every mod puts back what it changed when you switch it off. The installer
   never writes your save files, and its mods step aside on their own after a game patch until
   they've been updated.
@@ -46,6 +47,8 @@
   when the game closes.
 
 ## Install
+
+You need Borderlands 4 on Windows (Steam or Epic). The setup app brings everything else.
 
 1. **[Download `BL4FixSetup.exe`](https://github.com/flameaway/bl4-fix/releases/latest/download/BL4FixSetup.exe)**
    and close Borderlands 4.
@@ -94,14 +97,28 @@ Every key can be changed on the **MODS** screen. Keys only act while the game wi
 | **F6** | BL4 Direct Connect | Open the co-op page: host, join, add friends |
 | **F7** | Mod Menu | Open the MODS screen (works in game, in menus and on the title screen) |
 | **F8** | Kairosdex | Open the boss and legendary dex |
+| **F9** | Carnage Meter | Open the Carnage Report: everyone's damage this fight and this session |
 | **J / K** | Detailed Item Cards | On a legendary's card: set a waypoint to / travel to its boss's Big Encore machine |
-| **T / G** | Reroll | On a class mod or enhancement: reroll all its stats / replace one |
+| **T / G** | Reroll | On a class mod or enhancement: reroll all its stats / replace one. On a legendary or pearl: reroll the whole item |
 | **T** | UVH Boss Teleport | On a UVH boss challenge: go to its Big Encore machine |
 | **H** | Third Person | Switch between first and third person (**K** swaps the shoulder) |
 | **N** | Minimap | Show or hide the minimap |
 | **Right click** | Easy Respec | On a skill in the Skills menu: take a point back |
 
 ## The mods
+
+[Direct Connect](#bl4-direct-connect-co-op-by-ip) •
+[Mod Menu](#mod-menu) •
+[Item Cards](#detailed-item-cards) •
+[Kairosdex](#kairosdex) •
+[Carnage Meter](#carnage-meter) •
+[Minimap](#minimap) •
+[Reroll](#reroll) •
+[Build Presets](#build-presets) •
+[Easy Respec](#easy-respec) •
+[Third Person](#third-person) •
+[Less Fog](#less-fog) •
+[and the rest](#and-the-rest)
 
 ### BL4 Direct Connect: co-op by IP
 
@@ -152,12 +169,18 @@ player in a co-op game.
 ### Mod Menu
 
 Settings for every mod in one screen that looks like part of the game. Open it with **F7**, or
-**MODS** in the pause menu and on the title screen (under Continue). Changes take effect at once
-and are saved. Its **Updates** page lists new versions of your mods (see [Updates](#updates)).
+**MODS** in the pause menu and on the title screen (under Continue). Toggles, sliders and key
+bindings use the game's own Options controls, the panel on the right explains whatever you
+hover, and changes take effect at once and are saved. Its **Updates** page lists new versions
+of your mods (see [Updates](#updates)).
 
-| The pause menu gets **Mods** and **Kairosdex** | The MODS screen's Updates page |
+<p align="center">
+  <img src="docs/images/mod-menu.jpg" alt="The MODS screen on the Minimap's page: on/off toggles, sliders for size, range and icon size, and the show/hide key" width="88%">
+</p>
+
+| The pause menu gets **Mods**, **Kairosdex** and **Carnage Report** | The MODS screen's Updates page |
 |:---:|:---:|
-| <img src="docs/images/pause-menu.jpg" alt="Pause menu with Mods and Kairosdex entries"> | <img src="docs/images/mod-menu-updates.jpg" alt="MODS screen, Updates page"> |
+| <img src="docs/images/pause-menu.jpg" alt="Pause menu with Mods, Kairosdex and Carnage Report entries, and the News panel moved to the bottom right by Tidy Pause Menu"> | <img src="docs/images/mod-menu-updates.jpg" alt="MODS screen, Updates page"> |
 
 ### Detailed Item Cards
 
@@ -186,13 +209,24 @@ your first kill of each boss and each new legendary.
 
 | Bosses and their drop rates | Items, with stats at your level |
 |:---:|:---:|
-| <img src="docs/images/dex-bosses.jpg" alt="Kairosdex boss page: Idolator Sol and its dedicated drops"> | <img src="docs/images/dex-items.jpg" alt="Kairosdex item page: Herald with the boss that drops it"> |
+| <img src="docs/images/dex-bosses.jpg" alt="Kairosdex boss page: Idolator Sol and its dedicated drops"> | <img src="docs/images/dex-items.jpg" alt="Kairosdex item page: Golden God with its stats at your level"> |
 
 <p align="center">
   <img src="docs/images/dex-banners.jpg" alt="HUD banners: NEW LEGENDARY Jetset and BOSS DEFEATED Axemaul" width="80%">
 </p>
 
-<sub>The dex screenshots were taken before the rename, so their title still reads "Weapondex".</sub>
+### Carnage Meter
+
+*New, still in testing: not in the setup app yet.* Who's carrying the squad? **F9** (or **Carnage Report** in the pause
+menu) shows every player's damage: total, DPS, kills, crit share, biggest hit and share of the
+team's damage. It also lists each player's top damage sources by name (that Star Helix, burning,
+grenades, skills) and a damage-mix bar. **This Fight** starts over after a lull of a few seconds,
+**Session** keeps the whole run, and when a boss dies a results panel names the MVP. In co-op the
+host's copy counts everyone's damage, and friends see the same board.
+
+<p align="center">
+  <img src="docs/images/carnage-report.jpg" alt="Carnage Report: four player cards ranked by damage, each with DPS, kills, crits, top damage sources and a damage mix bar" width="88%">
+</p>
 
 ### Minimap
 
@@ -208,7 +242,9 @@ about 0.13 ms a frame.
 
 Don't like a stat on a class mod or enhancement? Hover it and press **T** to reroll all its
 modifiers or **G** to replace one, for Eridium (25 and 50 by default, changeable in its
-settings). In co-op, the host's copy does the reroll for you.
+settings). On a legendary or pearl, **T** rerolls the whole item (100 Eridium by default): a fresh
+roll at its level with the game's own drop odds, so rare parts stay rare. In co-op, the host's copy
+does the reroll for you.
 
 <p align="center">
   <img src="docs/images/reroll.jpg" alt="Reroll: a class mod card with Reroll All / Pick One prompts and a REROLL result note" width="88%">
@@ -227,10 +263,11 @@ load a build, or the next and previous one.
 ### Easy Respec
 
 Right-click a skill in the Skills menu to take a point back out, as long as the tree stays
-valid. No more full respec to fix one misclick.
+valid. No more full respec to fix one misclick. The menu's button bar shows the new
+**Remove Point** hint.
 
 <p align="center">
-  <img src="docs/images/respec.jpg" alt="The Skills menu" width="80%">
+  <img src="docs/images/respec.jpg" alt="The Skills menu with a skill tooltip open and a Remove Point (right mouse) hint in the button bar" width="88%">
 </p>
 
 ### Third Person
@@ -258,9 +295,10 @@ Thins out the haze over the world: lower fog density, pushed further away, adjus
 | **ECHO Anywhere** | Open the ECHO menu when the game normally refuses (falling, mid-air...). |
 | **UVH Boss Teleport** | Hover an Ultimate Vault Hunter boss challenge and press **T** to go to its Big Encore machine. |
 | **Vehicles Anywhere** | Summon and drive your vehicle where the game says vehicles aren't allowed. |
-| **Backpack Size** | Set the backpack's item limit to any number. |
+| **Backpack Size** | Set how many items your backpack, bank and Lost Loot hold. |
 | **Shoot to Open** | Shoot a container or chest to open it. |
 | **Performance Fixes** | Fewer hitches: Python garbage collection without stalls, cheaper mod hooks, and optionally frame generation kept on in menus. |
+| **Tidy Pause Menu** | Moves the pause menu's News panel to the bottom right, under the party list, so it no longer covers Quit Game. Or hide it. |
 
 **Ports of Yeti's mods.** These are our own GPL-3.0 rewrites of [Yeti's BL4 SDK mods](https://github.com/RedxYeti/yeti-bl4-sdk),
 following this repo's rules (no per-frame cost, everything restored on disable, options in the
@@ -282,8 +320,9 @@ table says so.
 
 | Mod | In co-op |
 |---|---|
-| Mod Menu, Skip Intro, Less Fog, Instant Menu Tabs, ECHO Anywhere, Third Person, Minimap, Item Cards (cards), Performance Fixes | Local: works for whoever runs it, host or friend. |
+| Mod Menu, Skip Intro, Less Fog, Instant Menu Tabs, ECHO Anywhere, Third Person, Minimap, Item Cards (cards), Performance Fixes, Tidy Pause Menu | Local: works for whoever runs it, host or friend. |
 | Kairosdex | Local; friends' kills are tracked through the boss health bar. |
+| Carnage Meter | The host's copy counts every player's damage; a friend's screen shows the host's board (both need it). |
 | Easy Respec | Works for a friend on its own; the host needs nothing. |
 | Backpack Size, Encore Tweaks | The host's copy covers every player. |
 | Dialog Skipper | The host skips for everyone; a friend skips on their own screen. Game speed: host only. |
