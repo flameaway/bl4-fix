@@ -1,11 +1,15 @@
 """
-Rerolling from the item card: hover a class mod or enhancement in your backpack and press a key.
+Rerolling from the item card: hover a class mod, enhancement, legendary or pearl in your backpack
+and press a key.
 
 - The reroll key rerolls every modifier, after asking (press it again to confirm), or, once one
   is picked, replaces just that one. The card spins first and the item changes once the reels
   land.
 - The pick key steps through the item's modifiers: the picked one is marked on the card, and the
   reroll key then replaces it. Stepping past the last one goes back to "all".
+- On a legendary or pearl (not a class mod: that has its modifiers) the reroll key rerolls the
+  whole item, after asking. Its card is matched by name, level and equipped (its stats aren't
+  lines we know), so two copies of one legendary at one level are "use the mod menu".
 
 The card lives in the game's menu page, the same page as the BL4 Mod Menu, so this borrows the
 Mod Menu's link (bl4_mod_menu.extensions): the menu loads ui/card.js into the page, the script
@@ -29,7 +33,7 @@ from typing import Any
 
 from unrealsdk import logging
 
-from . import game, reroll
+from . import game, legendary, reroll
 
 KEY = "reroll"
 UI_DIR = "OakGame/Content/uiresources/bl4reroll"
@@ -48,6 +52,7 @@ RECHECK_S = 0.5
 # card.js's reel timing (SPIN_MS, STAGGER_MS, ONE_SPIN_MS, LANDED_MS): if the page doesn't say the
 # reels landed by then (say, the card was closed), the reroll is made anyway
 SPIN_S, STAGGER_S, ONE_SPIN_S, LANDED_S = 1.1, 0.42, 1.5, 0.8
+LEGEND_SPIN_S = 1.6
 SLACK_S = 2.0
 
 _TAGS = re.compile(r"\[/?\w+\]|<[^>]*>")
@@ -82,9 +87,10 @@ class S:
     # The mod's own reroll functions and options, set by __init__
     plan_all: Callable[[int, str], Any] | None = None
     plan_one: Callable[[int, int, str], Any] | None = None
+    plan_legendary: Callable[[int, str], Any] | None = None
     apply: Callable[[Any, Callable[[dict[str, Any]], None]], None] | None = None  # (plan, done)
     keys: Callable[[], tuple[str | None, str | None]] = lambda: (None, None)
-    costs: Callable[[], tuple[int, int]] = lambda: (0, 0)  # (all, one), from the options
+    costs: Callable[[], tuple[int, int, int]] = lambda: (0, 0, 0)  # (all, one, legendary), from the options
     blocked: Callable[[], str | None] = lambda: None
 
 
@@ -130,6 +136,11 @@ def _rows_for(item: reroll.Item, rows: list[str]) -> list[int] | None:
     return [by_line[i] for i in range(len(names))]
 
 
+def _name_key(text: Any) -> str:
+    """An item name to compare: letters and digits only ("Juliet's Sparkle" -> "julietssparkle")."""
+    return re.sub(r"[^a-z0-9]", "", _TAGS.sub(" ", str(text or "")).lower())
+
+
 def _level(text: Any) -> int | None:
     match = re.search(r"\d+", str(text or ""))
     return int(match.group()) if match else None
@@ -151,7 +162,7 @@ def match(card: dict[str, Any]) -> tuple[game.Slot | None, list[int], str | None
     backpack list (for showing; a reroll reads the item live again), looked at again if nothing
     matches, in case the list is behind the backpack.
     """
-    if card.get("type") not in ("classmod", "enhancement"):
+    if card.get("type") not in ("classmod", "enhancement", "legendary"):
         return None, [], "not rerollable"
     slot, rows, why = _match_in(game.cached_items(), card)
     if why is not None:
@@ -159,8 +170,29 @@ def match(card: dict[str, Any]) -> tuple[game.Slot | None, list[int], str | None
     return slot, rows, why
 
 
+def _legend_matches(item: legendary.Legend, card_name: str) -> bool:
+    name = _name_key(item.name)
+    return bool(name) and (card_name == name or (len(name) >= 4 and name in card_name))  # noqa: PLR2004
+
+
+def _match_legend(slots: list[game.Slot], card: dict[str, Any]) -> tuple[game.Slot | None, list[int], str | None]:
+    """A legendary / pearl card: the backpack legendary with its name, level and equipped state."""
+    name = _name_key(card.get("name"))
+    level = _level(card.get("level"))
+    equipped = card.get("banner") == "equipped"
+    found = [s for s in slots if isinstance(s.item, legendary.Legend) and s.item.level == level
+             and s.equipped == equipped and _legend_matches(s.item, name)]  # fmt: skip
+    if not found:
+        return None, [], "not in your backpack"
+    if len({s.item.serial for s in found}) > 1:
+        return None, [], "ambiguous"
+    return found[0], [], None
+
+
 def _match_in(slots: list[game.Slot], card: dict[str, Any]) -> tuple[game.Slot | None, list[int], str | None]:
     kind = card.get("type")
+    if kind == "legendary":
+        return _match_legend(slots, card)
     rows = [_plain(text) for text in card.get("secondary") or []]
     level = _level(card.get("level"))
     rarity = str(card.get("rarity") or "").lower()
@@ -200,7 +232,7 @@ def _hover_state() -> dict[str, Any] | None:
     hover = S.hover
     if hover is None:
         return None
-    out = {k: hover[k] for k in ("fp", "ok", "reason", "rows", "names", "locked", "equipped")}
+    out = {k: hover[k] for k in ("fp", "ok", "reason", "rows", "names", "locked", "equipped", "legend")}
     out["pick"] = S.pick
     out["order"] = _pick_order(hover) if hover["ok"] else []
     out["confirm"] = _confirming(hover)
@@ -237,6 +269,20 @@ def _items_state() -> list[dict[str, Any]]:
     out = []
     for slot in slots:
         item = slot.item
+        if isinstance(item, legendary.Legend):
+            out.append({
+                "handle": slot.handle,
+                "serial": item.serial,
+                "kind": "legendary",
+                "level": item.level,
+                "rarity": item.rarity,
+                "equipped": slot.equipped,
+                "name": _name_key(item.name),
+                "title": item.name,
+                "pearl": item.pearl,
+                "plain": [], "names": [], "locked": [], "skills": {},
+            })  # fmt: skip
+            continue
         out.append({
             "handle": slot.handle,
             "serial": item.serial,
@@ -255,7 +301,7 @@ def _items_state() -> list[dict[str, Any]]:
 
 def state() -> dict[str, Any]:
     reroll_key, pick_key = S.keys()
-    cost_all, cost_one = S.costs()
+    cost_all, cost_one, cost_legendary = S.costs()
     try:
         eridium = game.balance()
     except game.RerollError:
@@ -263,7 +309,7 @@ def state() -> dict[str, Any]:
     confirming = S.confirm_handle is not None and time.monotonic() < S.confirm_until
     return {
         "keys": {"reroll": reroll_key, "pick": pick_key},
-        "costs": {"all": cost_all, "one": cost_one},
+        "costs": {"all": cost_all, "one": cost_one, "legendary": cost_legendary},
         "eridium": eridium,
         "blocked": S.blocked(),
         "items": _items_state(),
@@ -286,7 +332,7 @@ def _set_hover(fp: str | None, card: dict[str, Any] | None) -> None:
     if S.hover is not None and S.hover["fp"] == fp:
         return
     hover: dict[str, Any] = {"fp": fp, "ok": False, "reason": None, "rows": [], "names": [], "locked": [],
-                             "equipped": False, "handle": None, "serial": None}  # fmt: skip
+                             "equipped": False, "handle": None, "serial": None, "legend": False}  # fmt: skip
     if (why := S.blocked()) is not None:
         hover["reason"] = why
     else:
@@ -304,6 +350,7 @@ def _set_hover(fp: str | None, card: dict[str, Any] | None) -> None:
                 equipped=slot.equipped,
                 handle=slot.handle,
                 serial=slot.item.serial,
+                legend=isinstance(slot.item, legendary.Legend),
             )
     if hover["ok"] and hover["handle"] != S.pick_handle:
         S.pick = None
@@ -393,6 +440,8 @@ def _reel(item: reroll.Item, index: int, landed: str, rng: random.Random) -> lis
 
 def _spin_time(spinning: int, kind: str) -> float:
     """How long the card's reels take to land (card.js), plus room for a slow page."""
+    if kind == "legendary":
+        return LEGEND_SPIN_S + LANDED_S + SLACK_S
     return (ONE_SPIN_S if kind == "one" else SPIN_S + STAGGER_S * max(0, spinning - 1)) + LANDED_S + SLACK_S
 
 
@@ -404,6 +453,9 @@ def _roll(kind: str, hover: dict[str, Any], line: int | None) -> None:
         if kind == "all":
             assert S.plan_all is not None
             plan = S.plan_all(hover["handle"], hover["serial"])
+        elif kind == "legendary":
+            assert S.plan_legendary is not None
+            plan = S.plan_legendary(hover["handle"], hover["serial"])
         else:
             assert S.plan_one is not None and line is not None
             plan = S.plan_one(hover["handle"], line, hover["serial"])
@@ -413,6 +465,15 @@ def _roll(kind: str, hover: dict[str, Any], line: int | None) -> None:
         _changed()
         return
     lines = []
+    if kind == "legendary":
+        # No reels: the card's banner spins, then the item changes
+        before = legendary.read(plan.slot.item.serial)
+        roll.update(lines=[], cost=plan.cost, equipped=plan.slot.equipped,
+                    name=before.name if before else "", pearl=bool(before and before.pearl))  # fmt: skip
+        S.roll = roll
+        S.pending = {"id": roll["id"], "plan": plan, "due": time.monotonic() + _spin_time(0, kind)}
+        _changed()
+        return
     for i, (old, new) in enumerate(zip(plan.slot.item.lines, plan.after.lines, strict=True)):
         spins = not old.locked and (kind == "all" or i == line)
         lines.append({
@@ -502,7 +563,7 @@ def tick() -> None:
             _roll("one", hover, S.pick)
         elif _confirming(hover):
             _cancel_confirm()
-            _roll("all", hover, None)
+            _roll("legendary" if hover["legend"] else "all", hover, None)
         else:
             # Ask first: the card shows "Reroll all modifiers?" until the second press
             S.confirm_handle = hover["handle"]

@@ -5,6 +5,10 @@
 //     [T] Reroll All (25 Eridium)     every modifier rolls again (after asking)
 //     [G] Pick One                   marks a modifier (G again: the next); T then replaces it
 //
+// or a legendary or pearl (weapons and gear; a legendary class mod has its modifiers instead):
+//
+//     [T] Reroll Legendary (100 Eridium)   a fresh roll of the whole item (after asking)
+//
 // The BL4 Mod Menu runs this file in the game's menu page (its extensions.js) and runs it again
 // when it changes, so it tears its last copy down first. Python (bl4_reroll/card.py) does the
 // work: we tell it which card is showing (the card has no item id, so we send what it shows: name,
@@ -59,6 +63,8 @@
     var SOUND_DONE = "MarkItemFavorite";
     var SOUND_ERROR = "Error";
     var SILENT_REASONS = { "not rerollable": 1, "not in your backpack": 1 };
+    // A legendary has no reels: the banner spins this long (card.py's LEGEND_SPIN_S matches)
+    var LEGEND_SPIN_MS = 1600;
 
     if (ext.teardowns[KEY]) {
         try {
@@ -158,9 +164,27 @@
         return cards[0] || null;
     }
 
+    function isLegendRarity(rarity) {
+        var r = String(rarity || "").toLowerCase();
+        return r === "legendary" || r.indexOf("pearl") === 0;
+    }
+
     function cardInfo(card) {
         var d = card && card.DataModel;
-        if (!d || d.abbreviated || (d.itemtype !== "classmod" && d.itemtype !== "enhancement")) return null;
+        if (!d || d.abbreviated) return null;
+        if (d.itemtype !== "classmod" && d.itemtype !== "enhancement") {
+            // A legendary / pearl weapon or gear: matched by name, level and equipped
+            if (!isLegendRarity(d.rarityident)) return null;
+            return {
+                name: String(d.name || "").trim(),
+                level: String(d.level || ""),
+                rarity: String(d.rarityident || ""),
+                type: "legendary",
+                banner: String(d.bannertype || ""),
+                secondary: [],
+                skills: [],
+            };
+        }
         return {
             name: String(d.name || "").trim(),
             level: String(d.level || ""),
@@ -298,6 +322,11 @@
         return out;
     }
 
+    // As card.py's _name_key: letters and digits only
+    function nameKey(text) {
+        return String(text || "").replace(TAGS, " ").toLowerCase().replace(/[^a-z0-9]/g, "");
+    }
+
     function sameSkills(a, b) {
         var ka = Object.keys(a), kb = Object.keys(b);
         if (ka.length !== kb.length) return false;
@@ -308,6 +337,7 @@
     // {item, rows} for the card, {ambiguous: true}, or null (not one of ours)
     function matchCard(info) {
         if (!info || !state || !state.items) return null;
+        if (info.type === "legendary") return matchLegend(info);
         var rowTexts = info.secondary.map(plain);
         var level = firstNumber(info.level);
         var rarity = info.rarity.toLowerCase();
@@ -326,6 +356,21 @@
             if (hasSkills && Object.keys(item.skills).length && !sameSkills(item.skills, skills)) return;
             var rows = rowsFor(item.plain, rowTexts);
             if (rows) found.push({ item: item, rows: rows });
+        });
+        if (!found.length) return null;
+        for (var i = 1; i < found.length; i++) if (found[i].item.serial !== found[0].item.serial) return { ambiguous: true };
+        return found[0];
+    }
+
+    // A legendary / pearl: the backpack legendary with its name, level and equipped state
+    function matchLegend(info) {
+        var name = nameKey(info.name);
+        var level = firstNumber(info.level);
+        var equipped = info.banner === "equipped";
+        var found = [];
+        state.items.forEach(function (item) {
+            if (item.kind !== "legendary" || item.level !== level || item.equipped !== equipped || !item.name) return;
+            if (name === item.name || (item.name.length >= 4 && name.indexOf(item.name) >= 0)) found.push({ item: item, rows: [] });
         });
         if (!found.length) return null;
         for (var i = 1; i < found.length; i++) if (found[i].item.serial !== found[0].item.serial) return { ambiguous: true };
@@ -424,6 +469,12 @@
         } else if (m && m.ambiguous) {
             reroll = "Reroll: use the mod menu for this one";
             dim = true;
+        } else if (m && m.item.kind === "legendary") {
+            var lc = choice(m);
+            var what = m.item.pearl ? "Pearl" : "Legendary";
+            keyed = true;
+            reroll = (lc.confirm ? "Yes, Reroll " + m.item.title : "Reroll " + what) + " (" + costs.legendary + " Eridium)";
+            dim = state.eridium !== null && state.eridium < costs.legendary;
         } else if (m) {
             var c = choice(m);
             var free = pickOrder(m);
@@ -559,6 +610,8 @@
         }
         var bulbsL = bulbs();
         var title = element("p", "bl4rr_banner_title", roll.kind === "one" ? "REROLLING" : "REROLL");
+        // A legendary's banner spins on its own for a moment (no reels to wait for)
+        var minMs = roll.kind === "legendary" ? LEGEND_SPIN_MS : 0;
         var bulbsR = bulbs();
         banner.appendChild(bulbsL);
         banner.appendChild(title);
@@ -566,7 +619,7 @@
         var sub = element("p", "bl4rr_banner_sub", "-" + roll.cost + " Eridium");
         at.box.appendChild(banner);
         at.box.appendChild(sub);
-        anim = { card: card, roll: roll, reels: reels, banner: banner, title: title, sub: sub, started: now, finished: 0, lastTick: 0, revealed: false };
+        anim = { card: card, roll: roll, reels: reels, banner: banner, title: title, sub: sub, started: now, finished: 0, lastTick: 0, revealed: false, minMs: minMs };
         playSound(SOUND_PAY);
         step();
     }
@@ -594,9 +647,11 @@
         anim = null;
     }
 
+    // The modifiers' section, or on a weapon or gear card its main stats
+    var BANNER_SECTIONS = [".item_card_secondary_section", ".item_card_enhancement", ".item_card_primary_stats_section", ".item_card_header"];
     function placeBanner(card, at) {
-        var section = card.querySelector(".item_card_secondary_section") || card.querySelector(".item_card_enhancement");
-        var r = rect(section);
+        var r = null;
+        for (var s = 0; s < BANNER_SECTIONS.length && !(r && r.height > 0); s++) r = rect(card.querySelector(BANNER_SECTIONS[s]));
         if (!r || r.height <= 0) return;
         var w = r.width / at.scale;
         anim.banner.style.left = (r.left - at.origin.left) / at.scale + "px";
@@ -610,6 +665,7 @@
     }
 
     function finishText(roll) {
+        if (roll.kind === "legendary") return roll.pearl ? "NEW PEARL ROLL!" : "NEW ROLL!";
         var spun = roll.lines.filter(function (l) { return l.spins; });
         var changed = spun.filter(function (l) { return l.changed; });
         if (roll.kind === "one") return "REPLACED!";
@@ -682,6 +738,14 @@
             }
             if (!reel.stopped) spinning++;
         }
+        if (anim.minMs && now - anim.started < anim.minMs) {
+            // A legendary: tick like a spinning reel until the banner's time is up
+            spinning++;
+            if (Math.floor((now - anim.started) / 90) !== anim.lastStep) {
+                anim.lastStep = Math.floor((now - anim.started) / 90);
+                ticked = true;
+            }
+        }
         if (ticked && now - anim.lastTick > TICK_SOUND_MS) {
             anim.lastTick = now;
             playSound(SOUND_TICK);
@@ -748,7 +812,7 @@
             anim.sub.textContent = result.ok ? "-" + roll.cost + " Eridium, " + result.left + " left" : result.error;
         }
         if (result.ok) {
-            toast("Reroll", result.message, result.equipped ? "Equip it from your backpack to use the new modifiers" : "", false);
+            toast("Reroll", result.message, result.equipped ? "Equip it again from your backpack to use the new roll" : "", false);
         } else {
             toast("Reroll failed", result.error, "", true);
             playSound(SOUND_ERROR);
@@ -774,7 +838,7 @@
         rr.toastTimer = setTimeout(function () { box.classList.add("bl4rr_toast_hidden"); }, TOAST_MS);
     }
 
-    // A class mod / enhancement card is up, or the reels spin: watch every frame, poll fast
+    // A class mod / enhancement / legendary card is up, or the reels spin: watch every frame, poll fast
     function busy() {
         return !!anim || !!(shown.card && shown.fp);
     }

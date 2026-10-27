@@ -30,6 +30,8 @@ from collections.abc import Iterator
 
 import copy
 import ctypes
+import math
+import struct
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -39,7 +41,7 @@ from mods_base import ENGINE, get_pc
 from unrealsdk import logging
 from unrealsdk.unreal import FGbxDefPtr, WrappedStruct
 
-from . import native, reroll
+from . import legendary, native, reroll, serialgen
 
 # FInventoryIdentity: the serial's text pointer and length
 SERIAL_PTR = 0xA0
@@ -90,6 +92,11 @@ def read_serial(identity: Any) -> str | None:
     return serial if serial.startswith("@U") else None
 
 
+def decode(serial: str) -> reroll.Item | legendary.Legend | None:
+    """What Reroll can do with an item: a class mod / enhancement's stat lines, or a whole legendary / pearl."""
+    return reroll.read(serial) or legendary.read(serial)
+
+
 # region Backpack
 
 
@@ -98,7 +105,7 @@ class Slot:
     index: int
     handle: int
     equipped: bool
-    item: reroll.Item
+    item: reroll.Item | legendary.Legend
 
 
 class _Acting:
@@ -154,7 +161,8 @@ def _sorted(slots: list[Slot]) -> list[Slot]:
 
 def items() -> list[Slot]:
     """
-    The class mods and enhancements in the backpack (equipped ones too), equipped first, read live
+    The class mods, enhancements, legendaries and pearls in the backpack (equipped ones too),
+    equipped first, read live
     (every serial from memory). For showing things, cached_items() is much cheaper.
     """
     out = []
@@ -163,7 +171,7 @@ def items() -> list[Slot]:
         if inv.Handle.Handle == -1:
             continue
         serial = read_serial(inv.Item.data.Identity)
-        item = reroll.read(serial) if serial else None
+        item = decode(serial) if serial else None
         if item is not None:
             out.append(Slot(index, inv.Handle.Handle, _equipped(inv), item))
     return _sorted(out)
@@ -181,7 +189,7 @@ def find(handle: int) -> Slot | None:
         if inv.Handle.Handle != handle:
             continue
         serial = read_serial(inv.Item.data.Identity)
-        item = reroll.read(serial) if serial else None
+        item = decode(serial) if serial else None
         cached = Backpack.serials.get(handle)
         if cached is not None and cached[0] != serial:
             # The cache had another serial for it: look at everything again next time
@@ -219,7 +227,7 @@ class Backpack:
     slots: list[Slot] | None = None
     walked_at = -1e9
     # handle -> (serial, decoded item or None for any other item)
-    serials: dict[int, tuple[str | None, reroll.Item | None]] = {}  # noqa: RUF012
+    serials: dict[int, tuple[str | None, reroll.Item | legendary.Legend | None]] = {}  # noqa: RUF012
     walks = 0
     stale = False  # invalidate() was called since the last walk
     missed_logged = False
@@ -246,7 +254,7 @@ def invalidate(handle: int | None = None) -> None:
 
 def _walk(ps: Any) -> list[Slot]:
     known = Backpack.serials
-    seen: dict[int, tuple[str | None, reroll.Item | None]] = {}
+    seen: dict[int, tuple[str | None, reroll.Item | legendary.Legend | None]] = {}
     out = []
     for index, entry in enumerate(ps.BackpackItems.items):
         inv = entry.InventoryItem
@@ -256,7 +264,7 @@ def _walk(ps: Any) -> list[Slot]:
         hit = known.get(handle)
         if hit is None:
             serial = read_serial(inv.Item.data.Identity)
-            hit = (serial, reroll.read(serial) if serial else None)
+            hit = (serial, decode(serial) if serial else None)
         if hit[0] is not None:
             # (An unreadable serial, say an item still arriving, is read again next walk)
             seen[handle] = hit
@@ -400,7 +408,7 @@ def _replace(slot: Slot, new_serial: str) -> tuple[int, bool]:
     entry = _entry(slot.handle)
     if entry is None or read_serial(entry.InventoryItem.Item.data.Identity) != slot.item.serial:
         raise RerollError("That item changed; try again.")
-    new = reroll.read(new_serial)
+    new = decode(new_serial)
     if new is None:
         raise RerollError("The new item didn't read back.")
     if native.available():
@@ -452,6 +460,70 @@ def _replace_slow(slot: Slot, entry: Any, new_serial: str) -> int:
         return int(landed.InventoryItem.Handle.Handle)
     finally:
         set_balance(CASH, cash)
+
+
+# endregion
+# region Legendary roll values
+
+
+class Values:
+    """
+    Game values a legendary roll's weights, level gates and part chances name (legendaries.json
+    "values"): attributes, all constants or table cells (`attr_weight_weapon_grip_hyp` = 0.3,
+    `Att_MinGameStage_*` = a LootSchedule cell), and data table cells. Asked from the game once
+    per session (~0.02-0.07 ms each, a few dozen for an item's first roll), as Kairosdex does
+    (bl4_weapondex/roll.py Game).
+    """
+
+    MISSING = -1.0e30
+    PARAM_FLOAT = 8  # GbxParam: the value sits at +8
+    constants: dict[str, float | None] = {}  # noqa: RUF012
+    cells: dict[tuple[str, str, str], float] = {}  # noqa: RUF012
+
+    @staticmethod
+    def _pawn() -> Any:
+        pawn = get_pc().Pawn if get_pc() else None
+        if pawn is None:
+            raise RerollError("Load into the game first.")
+        return pawn
+
+    @classmethod
+    def constant(cls, name: str) -> float | None:
+        if name not in cls.constants:
+            lib = unrealsdk.find_class("GbxAttributeBlueprintLibrary").ClassDefaultObject
+            pawn = cls._pawn()
+            try:
+                value = float(lib.GetValueOfAttribute(name, pawn, cls.MISSING))
+            except Exception:  # noqa: BLE001
+                value = cls.MISSING
+            cls.constants[name] = None if value == cls.MISSING or not math.isfinite(value) else value
+        return cls.constants[name]
+
+    @classmethod
+    def cell(cls, table: str, row: str, column: str) -> float:
+        key = (table, row, column)
+        if key not in cls.cells:
+            pawn = cls._pawn()
+            value = 0.0
+            try:
+                tables = unrealsdk.find_object("ScriptStruct", "/Script/GbxEngine.GbxUEDataTableDef")
+                handle = unrealsdk.make_struct("DataTableValueHandle", DataTable=FGbxDefPtr(table, tables), RowName=row, ColumnName=column)
+                lib = unrealsdk.find_class("GbxDataTableFunctionLibrary").ClassDefaultObject
+                param = lib.GetDataTableValueFromHandle(handle, pawn)[0]
+                raw = _read(param._get_address() + cls.PARAM_FLOAT, 4) or bytes(4)
+                bits = struct.unpack("<I", raw)[0]
+                # Int columns come back as the int itself; as a float that would be a denormal,
+                # which no table holds
+                value = float(struct.unpack("<f", raw)[0]) if bits & 0x7F800000 else float(struct.unpack("<i", raw)[0])
+            except Exception as ex:  # noqa: BLE001
+                logging.dev_warning(f"[Reroll] table cell {key}: {ex!r}")
+            cls.cells[key] = value
+        return cls.cells[key]
+
+    @classmethod
+    def resolve(cls, spec: dict[str, Any]) -> float:
+        """A weight / gate / chance (serialgen.Resolve)."""
+        return serialgen.product(spec, cls.constant, cls.cell)
 
 
 # endregion

@@ -1,11 +1,15 @@
 """
 Reroll for Borderlands 4: reroll the modifiers at the bottom of a class mod or enhancement (the
-stat lines like "+12% Gun Damage") for Eridium.
+stat lines like "+12% Gun Damage"), or a whole legendary or pearl, for Eridium.
 
 - Reroll all: 25 Eridium. Every modifier rolls again.
 - Replace one: 50 Eridium. Pick a modifier; it changes to a different one, the rest stay.
+- Reroll a legendary or pearl: 100 Eridium. A fresh drop of the same item at its level: every part
+  the game rolls (element, barrel and body accessories, grip, scope, magazine, licensed parts,
+  firmware, a class mod's skills) rolls again with the game's own weights, so rare parts stay
+  rare (legendary.py). Its level and an applied cosmetic stay.
 
-Both prices are options (the host's count in co-op: its copy makes and charges every reroll).
+The prices are options (the host's count in co-op: its copy makes and charges every reroll).
 
 The skills, manufacturer perks, firmware, level and rarity never change, and a legendary keeps the
 stat it always comes with. New modifiers follow the game's own rules (see reroll.py), so a
@@ -13,18 +17,20 @@ rerolled item is one the game could have dropped.
 
 The quickest way is from the item card (card.py): hover a class mod or enhancement in your
 backpack and press T to reroll all its modifiers, or G to pick one (G again for the next) and then T
-to replace just that one. The card plays it as a slot machine. This needs the BL4 Mod Menu, whose
-page the card is in.
+to replace just that one. On a legendary or pearl, T (twice) rerolls the whole item. The card plays
+it as a slot machine. This needs the BL4 Mod Menu, whose page the card is in.
 
-Or open it from the mod menu (F7, or MODS in the pause menu): each class mod and enhancement you
-carry has a page with its modifiers. Or from the console: `reroll` lists them, `reroll 2` rerolls
-all of item 2's modifiers, `reroll 2 1` replaces its first one.
+Or open it from the mod menu (F7, or MODS in the pause menu): each class mod, enhancement,
+legendary and pearl you carry has a page (a legendary class mod has both). Or from the console:
+`reroll` lists them, `reroll 2` rerolls all of item 2's modifiers (a whole legendary), `reroll 2 1`
+replaces its first one.
 
 How the item changes is in native.py (in place, with the game's own functions, the way its
 Firmware Transfer does it) and game.py (the fallback for other game builds: sell + mail); which
 lines can change, and to what, is in reroll.py, from game data in parts.json
-(tools/gen_reroll_parts.py). If a game patch changes that data, rerolling turns itself off until
-parts.json is regenerated, rather than making items from stale tables.
+(tools/gen_reroll_parts.py); legendary rolls are in legendary.py + serialgen.py, from
+legendaries.json (tools/gen_reroll_legendaries.py). If a game patch changes that data, rerolling
+turns itself off until both are regenerated, rather than making items from stale tables.
 """
 
 from __future__ import annotations
@@ -52,15 +58,15 @@ from mods_base import (
 from unrealsdk import logging
 from unrealsdk.hooks import Type
 
-from . import card, game, pak, reroll
+from . import card, game, legendary, pak, reroll
 
 try:
     from bl4_direct import coop
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo/host only
     coop = None
 
-__version__ = "0.1.1"
-__version_info__ = (0, 1, 1)
+__version__ = "0.2.0"
+__version_info__ = (0, 2, 0)
 
 FEATURE = "reroll"
 SERVICE = "reroll.apply"
@@ -102,7 +108,8 @@ def _check_data() -> None:
     global _data_ok
     try:
         paks = sorted((GAME_DIR / "OakGame" / "Content" / "Paks").glob("*.pak"))
-        prints = reroll.data().get("source_data") or {}
+        # The class mod / enhancement tables and the legendary rules (the same inv files)
+        prints = {**(reroll.data().get("source_data") or {}), **legendary.source_data()}
         ok = bool(prints) and all(
             (entry := pak.winning_entry(paks, path)) is not None and entry.sha1 == sha1
             for path, sha1 in prints.items()
@@ -124,7 +131,7 @@ def start_data_check() -> None:
 
 def data_ok() -> bool | None:
     """
-    Whether the game files parts.json was made from are unchanged (checked once per session, off
+    Whether the game files parts.json and legendaries.json were made from are unchanged (checked once per session, off
     the game thread), or None while that's still being checked.
     """
     if _data_ok is None:
@@ -161,7 +168,7 @@ class Plan:
     """A reroll that's been rolled but not made yet."""
 
     slot: game.Slot
-    after: reroll.Item
+    after: reroll.Item | legendary.Legend
     cost: int
     what: str  # "Rerolled: X is now Y."
     # What rolled it: the host rolls the same again for a co-op client's reroll and checks it matches
@@ -172,8 +179,8 @@ class Plan:
 
 @dataclass
 class Outcome:
-    before: reroll.Item
-    after: reroll.Item
+    before: reroll.Item | legendary.Legend
+    after: reroll.Item | legendary.Legend
     equipped: bool  # it was equipped and now sits unequipped in the backpack (the slow swap)
     handle: int  # the new item's
     cost: int
@@ -206,6 +213,8 @@ def _check(cost: int) -> None:
 def plan_all(handle: int, serial: str | None = None, seed: int | None = None) -> Plan:
     """Rolls every free modifier again. Raises Refused if it can't."""
     slot = _slot(handle, serial)
+    if isinstance(slot.item, legendary.Legend):
+        raise Refused("A legendary's parts are rerolled all together, not one by one.")
     _check(cost_all())
     seed = random.getrandbits(48) if seed is None else seed
     new_serial = reroll.reroll_all(slot.item, random.Random(seed))
@@ -220,6 +229,8 @@ def plan_all(handle: int, serial: str | None = None, seed: int | None = None) ->
 def plan_one(handle: int, line: int, serial: str | None = None, seed: int | None = None) -> Plan:
     """Rolls one modifier into a different one. Raises Refused if it can't."""
     slot = _slot(handle, serial)
+    if isinstance(slot.item, legendary.Legend):
+        raise Refused("A legendary's parts are rerolled all together, not one by one.")
     if line >= len(slot.item.lines):
         S.signature = None
         raise Refused("That item changed; have another look.")
@@ -233,6 +244,26 @@ def plan_one(handle: int, line: int, serial: str | None = None, seed: int | None
     if after is None:
         raise Refused(f"There's nothing else {old.name} could become on this item.")
     return Plan(slot, after, cost_one(), f"Replaced {old.name} with {after.lines[line].name}.", "one", line, seed)
+
+
+def plan_legendary(handle: int, serial: str | None = None, seed: int | None = None) -> Plan:
+    """Rolls a legendary or pearl again, as a fresh drop at its level. Raises Refused if it can't."""
+    slot = _slot(handle, serial)
+    item = legendary.read(slot.item.serial)
+    if item is None:
+        raise Refused("Only legendaries and pearls can be rerolled whole.")
+    _check(cost_legendary())
+    seed = random.getrandbits(48) if seed is None else seed
+    try:
+        new_serial = legendary.reroll(item, random.Random(seed), game.Values.resolve)
+    except (ValueError, KeyError, IndexError) as ex:
+        raise Refused(f"Couldn't roll this {item.name} again ({ex}); nothing was changed.") from ex
+    after = game.decode(new_serial)
+    if after is None:
+        raise Refused(f"Couldn't roll this {item.name} again; nothing was changed.")
+    kind = "pearl" if item.pearl else "legendary"
+    return Plan(slot, after, cost_legendary(), f"Rerolled your {item.name}: a fresh {kind} roll at level {item.level}.",
+                "legendary", None, seed)  # fmt: skip
 
 
 def apply(plan: Plan) -> Outcome:
@@ -289,6 +320,8 @@ def _serve(req: Any) -> dict[str, Any]:
             seed = int(data["seed"])
             if data.get("kind") == "one":
                 plan = plan_one(slot.handle, int(data["line"]), slot.item.serial, seed)
+            elif data.get("kind") == "legendary":
+                plan = plan_legendary(slot.handle, slot.item.serial, seed)
             else:
                 plan = plan_all(slot.handle, slot.item.serial, seed)
             if plan.after.serial != data.get("after"):
@@ -321,6 +354,13 @@ def reroll_one(handle: int, line: int, serial: str | None = None) -> None:
         tell(str(ex), error=True)
 
 
+def reroll_legendary(handle: int, serial: str | None = None) -> None:
+    try:
+        apply_async(plan_legendary(handle, serial), _tell_result)
+    except (Refused, game.RerollError) as ex:
+        tell(str(ex), error=True)
+
+
 # endregion
 # region Menu
 
@@ -339,11 +379,38 @@ class S:
 
 def _title(slot: game.Slot) -> str:
     item = slot.item
-    text = f"{item.rarity.capitalize()} {item.label}, Lv {item.level}".strip()
+    if isinstance(item, legendary.Legend):
+        text = f"{item.name} ({'Pearl' if item.pearl else 'Legendary'} {item.label}), Lv {item.level}"
+    else:
+        text = f"{item.rarity.capitalize()} {item.label}, Lv {item.level}".strip()
     return text + (" (equipped)" if slot.equipped else "")
 
 
+def _legendary_button(slot: game.Slot, item: legendary.Legend, display_name: str) -> ButtonOption:
+    handle, serial = slot.handle, slot.item.serial
+    return ButtonOption(
+        "legendary",
+        display_name=f"{display_name} ({cost_legendary()} Eridium)",
+        description=(
+            f"A fresh roll of this {item.name} at level {item.level}, as if it dropped again: every"
+            " part the game rolls (element, accessories, licensed parts, firmware, skills and"
+            " modifiers) rolls again with the game's own odds, so rare parts stay rare. Its level"
+            " and any cosmetic stay."
+        ),
+        on_press=lambda _: reroll_legendary(handle, serial),
+    )
+
+
+def _legendary_page(slot: game.Slot, item: legendary.Legend) -> NestedOption:
+    kind = "pearl" if item.pearl else "legendary"
+    children: list[BaseOption] = [_legendary_button(slot, item, f"Reroll this {kind}")]
+    return NestedOption(f"item{slot.handle}", children, display_name=_title(slot),
+                        description=f"{item.maker} {item.label}. Reroll it for a new roll of its parts.".strip())  # fmt: skip
+
+
 def _item_page(slot: game.Slot) -> NestedOption:
+    if isinstance(slot.item, legendary.Legend):
+        return _legendary_page(slot, slot.item)
     item, handle, serial = slot.item, slot.handle, slot.item.serial
     children: list[BaseOption] = [
         ButtonOption(
@@ -369,6 +436,9 @@ def _item_page(slot: game.Slot) -> NestedOption:
                 description=f"Swaps {line.name} for a different random modifier. The others stay.",
                 on_press=lambda _, i=i: reroll_one(handle, i, serial),
             ))  # fmt: skip
+    if (whole := legendary.read(serial)) is not None:
+        # A legendary class mod: its skills, modifiers and firmware can also roll again together
+        children.append(_legendary_button(slot, whole, "Reroll the whole item"))
     names = ", ".join(line.name for line in item.lines) or "none"
     return NestedOption(f"item{handle}", children, display_name=_title(slot), description=f"Modifiers: {names}.")
 
@@ -382,7 +452,7 @@ def _balance_text(eridium: int) -> str:
 
 
 def _build() -> list[BaseOption]:
-    settings: list[BaseOption] = [reroll_key, pick_key, cost_all_option, cost_one_option]
+    settings: list[BaseOption] = [reroll_key, pick_key, cost_all_option, cost_one_option, cost_legendary_option]
     S.balance_option = S.balance = None
     if (why := _blocked()) is not None:
         return [_info(why), *settings]
@@ -394,13 +464,14 @@ def _build() -> list[BaseOption]:
         return [_info(str(ex)), *settings]
     info = _info(
         _balance_text(eridium),
-        f"Reroll all of an item's modifiers for {cost_all()} Eridium, or replace one for {cost_one()}."
-        " Or hover the item in your backpack and use the keys below.",
+        f"Reroll all of an item's modifiers for {cost_all()} Eridium, or replace one for {cost_one()};"
+        f" a whole legendary or pearl for {cost_legendary()}. Or hover the item in your backpack and"
+        " use the keys below.",
     )
     S.balance_option, S.balance = info, eridium
     options: list[BaseOption] = [info, *settings]
     if not slots:
-        options.append(_info("No class mods or enhancements in your backpack"))
+        options.append(_info("No class mods, enhancements, legendaries or pearls in your backpack"))
     options += [_item_page(slot) for slot in slots]
     return options
 
@@ -412,7 +483,7 @@ def _signature() -> Any:
     if not ok or not host:
         return ("blocked", ok, host)
     try:
-        return cost_all(), cost_one(), tuple((s.handle, s.item.serial, s.equipped) for s in game.cached_items())
+        return cost_all(), cost_one(), cost_legendary(), tuple((s.handle, s.item.serial, s.equipped) for s in game.cached_items())
     except game.RerollError as ex:
         return str(ex)
 
@@ -513,7 +584,7 @@ def _report(ex: Exception) -> None:
 # region Console
 
 
-@command("reroll", description="List your class mods and enhancements, or reroll their modifiers.")
+@command("reroll", description="List your class mods, enhancements, legendaries and pearls, or reroll them.")
 def reroll_command(args: argparse.Namespace) -> None:
     try:
         slots = game.items()
@@ -521,7 +592,8 @@ def reroll_command(args: argparse.Namespace) -> None:
         log(str(ex))
         return
     if args.item is None:
-        log(f"You have {game.balance()} Eridium. 'reroll <item>' rerolls all ({cost_all()}), 'reroll <item> <modifier>' replaces one ({cost_one()}).")
+        log(f"You have {game.balance()} Eridium. 'reroll <item>' rerolls all ({cost_all()}; a whole legendary or pearl"
+            f" {cost_legendary()}), 'reroll <item> <modifier>' replaces one ({cost_one()}).")
         for n, slot in enumerate(slots, 1):
             log(f"{n}. {_title(slot)}")
             for m, line in enumerate(slot.item.lines, 1):
@@ -531,7 +603,9 @@ def reroll_command(args: argparse.Namespace) -> None:
         log(f"No item {args.item}; 'reroll' lists them.")
         return
     slot = slots[args.item - 1]
-    if args.modifier is None:
+    if isinstance(slot.item, legendary.Legend):
+        reroll_legendary(slot.handle)
+    elif args.modifier is None:
         reroll_all(slot.handle)
     elif 1 <= args.modifier <= len(slot.item.lines):
         reroll_one(slot.handle, args.modifier - 1)
@@ -552,7 +626,8 @@ reroll_key = KeybindOption(
     "T",
     description=(
         "While hovering a class mod or enhancement in your backpack: rerolls all its modifiers, or"
-        " the one you picked with the pick key."
+        " the one you picked with the pick key. On a legendary or pearl: rerolls the whole item."
+        " Rerolling all asks first: press it again to confirm."
     ),
 )
 pick_key = KeybindOption(
@@ -591,6 +666,20 @@ cost_one_option = SliderOption(
 )
 
 
+cost_legendary_option = SliderOption(
+    "Legendary / pearl reroll cost",
+    100,
+    0,
+    1000,
+    5,
+    description=(
+        "Eridium to reroll a whole legendary or pearl: a fresh roll of its parts at its level, with"
+        " the game's own odds. In co-op the host's price counts: its copy makes and charges every"
+        " reroll."
+    ),
+)
+
+
 def cost_all() -> int:
     return int(cost_all_option.value)
 
@@ -599,11 +688,16 @@ def cost_one() -> int:
     return int(cost_one_option.value)
 
 
+def cost_legendary() -> int:
+    return int(cost_legendary_option.value)
+
+
 card.S.plan_all = plan_all
 card.S.plan_one = plan_one
+card.S.plan_legendary = plan_legendary
 card.S.apply = apply_async
 card.S.keys = lambda: (reroll_key.value, pick_key.value)
-card.S.costs = lambda: (cost_all(), cost_one())
+card.S.costs = lambda: (cost_all(), cost_one(), cost_legendary())
 card.S.blocked = _blocked
 
 
@@ -624,7 +718,7 @@ def _disable() -> None:
 mod = build_mod(
     # The rest of the options are built from the backpack (_refresh); these are listed here so
     # their saved values load
-    options=[reroll_key, pick_key, cost_all_option, cost_one_option],
+    options=[reroll_key, pick_key, cost_all_option, cost_one_option, cost_legendary_option],
     hooks=[_tick],
     commands=[reroll_command],
     on_enable=_enable,

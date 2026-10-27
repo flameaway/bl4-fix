@@ -7,7 +7,7 @@ import sys
 
 import mods_base.mod_list
 
-SUBMODULES = ("bl4_reroll.serial", "bl4_reroll.pak", "bl4_reroll.reroll", "bl4_reroll.native", "bl4_reroll.game", "bl4_reroll.card")
+SUBMODULES = ("bl4_reroll.serial", "bl4_reroll.serialgen", "bl4_reroll.legendary", "bl4_reroll.pak", "bl4_reroll.reroll", "bl4_reroll.native", "bl4_reroll.game", "bl4_reroll.card")
 
 old = sys.modules.get("bl4_reroll")
 if old is None:
