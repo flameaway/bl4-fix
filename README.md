@@ -418,5 +418,10 @@ two-instance testing, the installer).
 - [Yeti](https://github.com/RedxYeti) for the original mods behind the ports in `ported/`.
 - The BL4 modding community, whose mods and notes pointed the way.
 
+## License
+
+[MIT](LICENSE): use, change and share the code freely, as long as you keep the copyright notice
+and credit. The ports in [`ported/`](ported) are GPL-3.0, like the originals.
+
 BL4 Fix is a fan project, not affiliated with or endorsed by Gearbox Software or 2K. Borderlands
 is a trademark of Gearbox Software. Screenshots are from the game with these mods installed.
