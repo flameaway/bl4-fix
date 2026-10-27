@@ -55,8 +55,10 @@ $hdc = $g.GetHdc()
 [void][ShotNative]::PrintWindow($hwnd, $hdc, 2)
 $g.ReleaseHdc($hdc)
 
-# Downscale so screenshots stay cheap to look at
+# Downscale so screenshots stay cheap to look at (a name ending in .full.png keeps full size,
+# for README pictures)
 $scale = [Math]::Min(1.0, 1280 / $w)
+if ($Out.EndsWith(".full.png")) { $scale = 1.0 }
 $small = New-Object System.Drawing.Bitmap $bmp, ([int]($w * $scale)), ([int]($h * $scale))
 $small.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
 "$w x $h -> $Out"

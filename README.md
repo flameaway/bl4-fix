@@ -235,7 +235,7 @@ route. **N** shows or hides it. It films the map once and pans across that pictu
 about 0.13 ms a frame.
 
 <p align="center">
-  <img src="docs/images/minimap.jpg" alt="Round minimap in the top right corner during a fight" width="88%">
+  <img src="docs/images/minimap.jpg" alt="Square minimap in the top right corner: the ECHO map art with mission, vendor and fast travel icons and a dotted route to the waypoint" width="88%">
 </p>
 
 ### Reroll
@@ -283,7 +283,7 @@ valid. No more full respec to fix one misclick. The menu's button bar shows the 
 Thins out the haze over the world: lower fog density, pushed further away, adjusted live.
 
 <p align="center">
-  <img src="docs/images/less-fog.jpg" alt="Split screen: vanilla fog on the left, Less Fog on the right" width="88%">
+  <img src="docs/images/less-fog.jpg" alt="The same view twice: vanilla fog on the left, Less Fog's Clear preset on the right" width="88%">
 </p>
 
 ### And the rest
