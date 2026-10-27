@@ -1,7 +1,7 @@
 [project]
 name = "BL4 Backpack Size"
-version = "0.1.0"
-description = "Set your backpack's item limit to any number you like."
+version = "0.2.0"
+description = "Set how many items your backpack, bank and Lost Loot hold."
 authors = [{ name = "flame" }]
 
 [tool.sdkmod]
