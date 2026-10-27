@@ -52,12 +52,17 @@ MANIFEST_FORMAT = 1
 USER_AGENT = "BL4-Mod-Menu-Updater"
 TIMEOUT_S = 20
 MAX_MANIFEST = 1 << 20
-MAX_ASSET = 64 << 20
+# Sanity cap per download (each is also checked against the manifest's size and SHA-256). The setup app
+# is ~100 MB since it bundles the Kairosdex pictures: 64 MB refused it, failing any update whose
+# release carried a newer app
+MAX_ASSET = 256 << 20
 CHUNK = 64 << 10
 STAGING = ".bl4_updates"  # in sdk_mods
 APP_DIR = ".bl4_direct"  # in sdk_mods: the setup app's copy (installer core.TOOLS_DIR_REL)
 APP_EXE = "BL4DirectSetup.exe"
 APP_VERSION_FILE = "version.txt"
+# In sdk_mods/settings: the new mods the player was already told about (the badge shows each once)
+SEEN_FILE = "bl4_mod_menu_seen_mods.json"
 RELAUNCH_FLAG = "relaunch"
 STEAM_APP_ID = "1285190"  # bl4_direct.shared.STEAM_APP_ID
 SDK_MARKER_REL = Path("OakGame/Binaries/Win64/Plugins/unrealsdk.toml")
@@ -98,7 +103,8 @@ class U:
     message = ""
     release = ""
     items: list[dict[str, Any]] = []  # mods with an update: id, name, installed, latest, notes, state
-    new: list[dict[str, Any]] = []  # mods in the release that aren't installed: id, name, latest, blurb
+    # mods in the release that aren't installed: id, name, latest, blurb, state, fresh (never had it)
+    new: list[dict[str, Any]] = []
     progress = (0, 0)
     revision = 0
     manifest: dict[str, Any] | None = None
@@ -107,6 +113,10 @@ class U:
     busy = False
     helper_started = False
     checked_at = 0.0
+    # Tell the player about new mods (the "!" and "N new"); BL4 Mod Menu's option
+    announce = True
+    # New mods the player was already shown (SEEN_FILE); None until read
+    seen: set[str] | None = None
 
 
 _lock = threading.Lock()
@@ -124,9 +134,19 @@ def can_restart(game_dir: Path | None) -> bool:
     return game_dir is not None and "steamapps" in str(game_dir).lower()
 
 
+def _fresh() -> list[str]:
+    """New mods to tell the player about: never had, not yet shown, and announcing is on. Under _lock."""
+    if not U.announce:
+        return []
+    seen = U.seen or set()
+    return [i["id"] for i in U.new if i["state"] == "new" and i.get("fresh") and i["id"] not in seen]
+
+
 def snapshot() -> dict[str, Any]:
     """What the page shows. Cheap: built from the state as it is."""
     with _lock:
+        waiting = sum(1 for i in U.items if i["state"] == "update")
+        fresh = _fresh()
         return {
             "rev": U.revision,
             "status": U.status,
@@ -134,8 +154,11 @@ def snapshot() -> dict[str, Any]:
             "release": U.release,
             "items": list(U.items),
             "new": list(U.new),
+            "fresh": fresh,
             "progress": list(U.progress),
-            "count": sum(1 for i in U.items if i["state"] == "update"),
+            # The badge: updates waiting plus new mods not yet shown
+            "count": waiting + len(fresh),
+            "updates": waiting,
             "can_restart": can_restart(U.game_dir),
             "page": releases_page(U.repo),
         }
@@ -179,6 +202,47 @@ def installed_versions(game_dir: Path, ids: list[str]) -> dict[str, str | None]:
             continue
         found[mod_id] = _zip_version(path, mod_id)
     return found
+
+
+def _had_before(game_dir: Path, mod_id: str) -> bool:
+    """The mod has a settings file: it was installed once (uninstalling keeps settings)."""
+    return (sdk_mods(game_dir) / "settings" / f"{mod_id}.json").exists()
+
+
+def _load_seen(game_dir: Path) -> set[str]:
+    try:
+        data = json.loads((sdk_mods(game_dir) / "settings" / SEEN_FILE).read_text(encoding="utf-8"))
+        return {str(i) for i in data.get("seen", [])} if isinstance(data, dict) else set()
+    except (OSError, ValueError):
+        return set()
+
+
+def set_announce(on: bool) -> None:
+    """BL4 Mod Menu's "Tell me about new mods" option."""
+    if U.announce != on:
+        _set(announce=on)
+
+
+def mark_seen(ids: list[str]) -> None:
+    """The player saw these new mods on the Updates page: no badge for them again. Writes the file
+    on a short-lived thread (it happens about once per new mod)."""
+    with _lock:
+        seen = set(U.seen or set())
+        added = {str(i) for i in ids} - seen
+        game_dir = U.game_dir
+        if not added or game_dir is None:
+            return
+        U.seen = seen | added
+        U.revision += 1
+        data = json.dumps({"seen": sorted(U.seen)}, indent=4).encode("utf-8")
+
+    def write() -> None:
+        try:
+            _write(sdk_mods(game_dir) / "settings" / SEEN_FILE, data)
+        except OSError as ex:
+            _log(f"couldn't save the seen new mods: {ex}", error=True)
+
+    threading.Thread(target=write, name="bl4_mod_menu.seen", daemon=True).start()
 
 
 def _present(game_dir: Path, mod_id: str) -> bool:
@@ -259,7 +323,7 @@ def compare(game_dir: Path, manifest: dict[str, Any]) -> tuple[list[dict[str, An
             staged = _zip_version(staged_dir / f"{mod_id}.sdkmod", mod_id) == latest
             new.append({
                 "id": mod_id, "name": name, "latest": latest, "blurb": str(info.get("blurb") or ""),
-                "state": "staged" if staged else "new",
+                "state": "staged" if staged else "new", "fresh": not _had_before(game_dir, mod_id),
             })  # fmt: skip
     items.sort(key=lambda i: i["name"].lower())
     new.sort(key=lambda i: i["name"].lower())
@@ -294,16 +358,29 @@ def check(game_dir: Path, repo: str | None = None) -> None:
     problem = _sdk_problem(game_dir, manifest)
     waiting = [i for i in items if i["state"] == "update"]
     staged = any(i["state"] == "staged" for i in items + new)
+    seen = _load_seen(game_dir) if U.seen is None else U.seen
+    fresh = [i["name"] for i in new if i["state"] == "new" and i["fresh"] and i["id"] not in seen] if U.announce else []
     if problem:
         status, message = "error", problem
-    elif waiting:
-        status, message = "available", f"{len(waiting)} mod update(s) available ({manifest['release']})."
+    elif waiting or fresh:
+        release = manifest["release"]
+        if len(fresh) > 3:
+            news = f"{len(fresh)} new mods"
+        elif fresh:
+            news = f"new mod{'s' if len(fresh) > 1 else ''}: {', '.join(fresh)}"
+        if waiting and fresh:
+            message = f"{len(waiting)} mod update(s) and {news} ({release})."
+        elif waiting:
+            message = f"{len(waiting)} mod update(s) available ({release})."
+        else:
+            message = f"{news[0].upper()}{news[1:]} ({release})."
+        status = "available"
     elif staged:
         status, message = "ready", "Updates are downloaded: they install when the game closes."
     else:
         status, message = "current", "All mods are up to date."
     _set(status=status, message=message, items=items, new=new, release=str(manifest["release"]),
-         manifest=manifest, checked_at=time.monotonic())  # fmt: skip
+         manifest=manifest, checked_at=time.monotonic(), seen=seen)  # fmt: skip
     _log(message)
     if staged:
         start_helper(game_dir)

@@ -468,7 +468,7 @@ def _apply(action: dict[str, Any]) -> None:
     if op == "ext":
         extensions.apply(action)
         return
-    if op in ("updates_check", "updates_apply", "updates_restart"):
+    if op in ("updates_check", "updates_apply", "updates_restart", "updates_seen"):
         _apply_updates(op, action)
         return
     if op == "close_menus":
@@ -505,7 +505,10 @@ def _apply_updates(op: str, action: dict[str, Any]) -> None:
     game_dir = Link.game_dir
     if game_dir is None:
         return
-    if op == "updates_check":
+    if op == "updates_seen":
+        # The Updates page showed these new mods: no badge for them again
+        updates.mark_seen([str(i) for i in action.get("value") or [] if isinstance(i, str)])
+    elif op == "updates_check":
         if not updates.check_async(game_dir):
             say("Already checking or downloading.")
     elif op == "updates_apply":

@@ -91,6 +91,9 @@ def main() -> int:  # noqa: PLR0915
         updates.check(game, repo="")
         check(updates.U.status == "off", "no REPO: no check")
 
+        # Ground Loot was installed once and removed (uninstalling keeps its settings file)
+        (mods_dir / "settings" / "bl4_ground_loot.json").write_text('{"enabled": false}', encoding="utf-8")
+
         # --- check ---
         updates.check(game, repo="test/repo")
         snap = updates.snapshot()
@@ -101,7 +104,34 @@ def main() -> int:  # noqa: PLR0915
         new_ids = {i["id"] for i in snap["new"]}
         check("bl4_dialog_skipper" in new_ids and "bl4_less_fog" not in new_ids, "check: lists mods not installed")
         check("bl4_direct" not in ids and "bl4_direct" not in new_ids, "check: a folder copy is left alone")
-        check(snap["count"] == 1, "check: badge count 1")
+
+        # --- new mods: announced once, never for a mod the player removed ---
+        fresh = set(snap["fresh"])
+        check("bl4_ground_loot" in new_ids and "bl4_ground_loot" not in fresh, "new: a removed mod is listed, not announced")
+        check("bl4_dialog_skipper" in fresh, "new: a never-installed mod is announced")
+        check(fresh == new_ids - {"bl4_ground_loot"}, f"new: every other mod not installed is announced ({len(fresh)})")
+        check(snap["updates"] == 1 and snap["count"] == 1 + len(fresh), f"new: badge = 1 update + {len(fresh)} new ({snap['count']})")
+        check("new mods" in snap["message"], f"new: the message counts them ({snap['message']})")
+        blurbs = {i["id"]: i["blurb"] for i in snap["new"]}
+        check(blurbs["bl4_dialog_skipper"] == manifest["mods"]["bl4_dialog_skipper"]["blurb"] != "", "new: carries the setup app's description")
+        updates.set_announce(False)
+        check(updates.snapshot()["fresh"] == [] and updates.snapshot()["count"] == 1, "new: option off, no badge for new mods")
+        check(len(updates.snapshot()["new"]) == len(new_ids), "new: option off, still listed to install")
+        updates.set_announce(True)
+        updates.mark_seen(sorted(fresh))
+        snap = updates.snapshot()
+        check(snap["fresh"] == [] and snap["count"] == 1, "seen: badge back to the update only")
+        seen_file = mods_dir / "settings" / updates.SEEN_FILE
+        for _ in range(50):
+            if seen_file.is_file():
+                break
+            threading.Event().wait(0.05)
+        check(set(json.loads(seen_file.read_text(encoding="utf-8"))["seen"]) == fresh, "seen: written to settings")
+        updates.U.seen = None  # a new session: read back from the file
+        updates.check(game, repo="test/repo")
+        check(updates.snapshot()["count"] == 1, "seen: remembered across sessions")
+        updates.mark_seen(["bl4_dialog_skipper"])
+        check(updates.snapshot()["count"] == 1, "seen: marking twice changes nothing")
 
         # --- a damaged download stages nothing ---
         good = (site / manifest["release"] / "bl4_mod_menu.sdkmod").read_bytes()

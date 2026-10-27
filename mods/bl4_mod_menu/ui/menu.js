@@ -408,7 +408,7 @@
     // endregion
     // region State
 
-    var view = { open: false, mod: null, nested: [], details: null, dragging: false, installNew: {} };
+    var view = { open: false, mod: null, nested: [], details: null, dragging: false, installNew: {}, newTags: {} };
     var ui = {};
 
     function currentMods() {
@@ -851,9 +851,23 @@
                 "Installed: " + item.installed + ". Latest: " + item.latest + "."), null);  // prettier-ignore
         });
 
+        // New mods the badge counted are on screen now: tell Python (no badge for them again). They keep
+        // their NEW tag for the rest of this page's life
+        var unseen = (u.fresh || []).filter(function (id) {
+            return !view.newTags[id];
+        });
+        if (unseen.length) {
+            unseen.forEach(function (id) {
+                view.newTags[id] = true;
+            });
+            send({ op: "updates_seen", value: unseen });
+        }
+
+        // "updates" counts waiting updates only ("count", the badge, also counts new mods)
+        var waiting = u.updates !== undefined ? u.updates : u.count;
         var actions = el("div", "bl4mm_update_actions");
-        if (!busy && (u.count || picked.length)) {
-            var label = "Update all" + (picked.length ? " + install " + picked.length : "");
+        if (!busy && (waiting || picked.length)) {
+            var label = waiting ? "Update all" + (picked.length ? " + install " + picked.length : "") : "Install " + picked.length;
             actions.appendChild(listButton(label, function () {
                 send({ op: "updates_apply", value: picked });
             }, "bl4mm_update_btn"));
@@ -871,19 +885,25 @@
         if (actions.children.length) ui.options.appendChild(actions);
 
         if (fresh.length) {
+            // Every mod in the release you don't have, new or skipped at install: add any of them here
             addTitle("Not installed");
+            ui.options.appendChild(el("p", "bl4mm_update_msg",
+                "Mods you don't have yet. Pick any to add it: it installs when the game closes."));  // prettier-ignore
             fresh.forEach(function (n) {
                 if (n.state === "staged") {
                     addInfoRow(n.name, n.latest + "   READY", (n.blurb || "") + "\n\nDownloaded: installs when the game closes.", null);
-                    return;
+                } else {
+                    var on = !!view.installNew[n.id];
+                    var b = busy ? null : listButton(on ? "Will install" : "Install", function () {
+                        view.installNew[n.id] = !view.installNew[n.id];
+                        render();
+                    }, "bl4mm_update_btn");
+                    if (b && on) b.classList.add("bl4mm_selected");
+                    addInfoRow(n.name, (view.newTags[n.id] ? "NEW   " : "") + n.latest,
+                        (n.blurb || "") + "\n\nPick it, then press Install.", b);  // prettier-ignore
                 }
-                var on = !!view.installNew[n.id];
-                var b = busy ? null : listButton(on ? "Will install" : "Install", function () {
-                    view.installNew[n.id] = !view.installNew[n.id];
-                    render();
-                }, "bl4mm_update_btn");
-                if (b && on) b.classList.add("bl4mm_selected");
-                addInfoRow(n.name, n.latest, (n.blurb || "") + "\n\nPick it, then press Update all.", b);
+                // The setup app's one-line description (installer/catalog.py), under the row
+                if (n.blurb) ui.options.appendChild(el("p", "bl4mm_new_blurb", n.blurb));
             });
         }
         if (!items.length && !fresh.length && !busy) {
@@ -1392,6 +1412,7 @@
         view.mod = ns.view.mod;
         view.nested = ns.view.nested || [];
         view.installNew = ns.view.installNew || {};
+        view.newTags = ns.view.newTags || {};
     }
     ns.view = view;
 

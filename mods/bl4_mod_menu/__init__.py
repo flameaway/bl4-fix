@@ -57,6 +57,22 @@ update_option = BoolOption(
 )
 
 
+def _announce_changed(_: BoolOption, value: bool) -> None:
+    updates.set_announce(value)
+
+
+announce_option = BoolOption(
+    "Tell me about new mods",
+    True,
+    description=(
+        "When a release adds a mod you've never installed, MODS shows a \"!\" and the Updates page"
+        " marks it NEW, once per mod. Off: no badge for new mods. Either way, every mod you don't have"
+        " is listed on the Updates page with an Install button."
+    ),
+    on_change=_announce_changed,
+)
+
+
 def _check_now(_: ButtonOption) -> None:
     if updates.check_async(GAME_DIR):
         web.say("Checking for updates...")
@@ -88,6 +104,7 @@ def _enable() -> None:
         logging.error(f"[Mod Menu] Couldn't set up MODS on the title screen: {ex}")
     # Network and files only, on worker threads (updates.py)
     try:
+        updates.set_announce(announce_option.value)
         updates.resume(GAME_DIR)
         if update_option.value:
             updates.check_async(GAME_DIR)
@@ -97,7 +114,7 @@ def _enable() -> None:
 
 mod = build_mod(
     cls=Library,
-    options=[open_key, update_option, check_button],
+    options=[open_key, update_option, announce_option, check_button],
     keybinds=[],
     hooks=[],
     commands=[modmenu_command],
