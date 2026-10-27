@@ -673,6 +673,7 @@ PAGE_MODULES: tuple[tuple[str, str, bool], ...] = (
     ("bl4_respec", "skills_page", True),
     ("bl4_instant_tabs", "pages", False),
     ("bl4_weapondex", "celebrate_page", True),
+    ("bl4_damage_meter", "popup_page", True),
 )
 # Loose scripts those pages load at once, which these mods publish from code that only runs in
 # game (it imports the SDK): mod id -> (folder in the .sdkmod, folder under uiresources). Item
