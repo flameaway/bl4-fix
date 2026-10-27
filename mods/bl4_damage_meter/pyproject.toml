@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Carnage Meter"
+version = "0.1.0"
+description = "Every player's damage in co-op: totals, DPS, kills and each player's top 3 damage sources (guns, skills, elements). F9."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

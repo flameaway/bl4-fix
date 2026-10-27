@@ -1,0 +1,309 @@
+/* Carnage Meter boss fight pop-up (HUD page): a results panel at the top of the screen, under
+   where the boss bar was. The game's fonts, art and colours, like the Carnage Report. Gameface lays
+   everything out with flexbox, so every container says its direction. Reloaded live by popup.js. */
+
+.bl4cmp_root {
+    position: absolute;
+    left: 50%;
+    top: 15rem;
+    width: 76rem;
+    margin-left: -38rem;
+    z-index: 50;
+    opacity: 0;
+    transform: translateY(-3rem);
+    transition: opacity 0.45s ease-out, transform 0.45s ease-out;
+    pointer-events: none;
+}
+
+.bl4cmp_root.bl4cmp_in {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.bl4cmp_root.bl4cmp_out {
+    opacity: 0;
+    transform: translateY(-1.5rem);
+    transition: opacity 0.7s ease-in, transform 0.7s ease-in;
+}
+
+.bl4cmp_root p {
+    margin: 0;
+}
+
+.bl4cmp_panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 1.8rem 2.2rem 1.4rem 2.2rem;
+    background-image: linear-gradient(180deg, rgba(20, 14, 6, 0.93) 0%, rgba(6, 14, 22, 0.93) 100%);
+    border: 0.15rem solid rgba(255, 155, 46, 0.85);
+    box-shadow: 0 0 3.6rem rgba(255, 140, 30, 0.4);
+}
+
+.bl4cmp_stripe {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 0.6rem;
+    background-image: linear-gradient(90deg, #ffd27a 0%, #ff9b2e 45%, rgba(255, 82, 36, 0.4) 100%);
+}
+
+/* region Header */
+
+.bl4cmp_head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding-bottom: 1.2rem;
+    margin-bottom: 1rem;
+    border-bottom: 0.15rem solid rgba(255, 155, 46, 0.35);
+}
+
+.bl4cmp_pic {
+    flex: 0 0 8.4rem;
+    width: 8.4rem;
+    height: 8.4rem;
+    margin-right: 1.8rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+}
+
+.bl4cmp_pic_none {
+    opacity: 0.4;
+    background-size: 60% 60%;
+}
+
+.bl4cmp_titles {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4cmp_root .bl4cmp_kicker {
+    font-family: Industry-Bold;
+    font-size: 1.6rem;
+    color: #ffb55c;
+    letter-spacing: 0.45rem;
+}
+
+.bl4cmp_root .bl4cmp_boss {
+    font-family: Industry-Bold;
+    font-size: 4rem;
+    line-height: 4.4rem;
+    color: #ffffff;
+    letter-spacing: 0.25rem;
+    text-shadow: 0 0 2rem rgba(255, 120, 30, 0.6), 0.25rem 0.25rem 0 rgba(0, 0, 0, 0.6);
+}
+
+.bl4cmp_root .bl4cmp_meta {
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+    color: #a0aeb1;
+    letter-spacing: 0.2rem;
+}
+
+/* endregion */
+/* region Players */
+
+.bl4cmp_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 6.6rem;
+    margin-bottom: 0.5rem;
+    padding: 0 1rem 0 0;
+    background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.015) 100%);
+    border-left: 0.35rem solid #00c6ff;
+}
+
+.bl4cmp_mvp {
+    border-left-color: #ff9b2e;
+    background-image: linear-gradient(90deg, rgba(255, 155, 46, 0.2) 0%, rgba(255, 255, 255, 0.015) 100%);
+}
+
+.bl4cmp_rank {
+    flex: 0 0 5rem;
+    width: 5rem;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+}
+
+.bl4cmp_crown {
+    width: 3.6rem;
+    height: 2.9rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+    filter: coh-color-matrix(1.0, 0, 0, 0, 0.25, 0, 0.72, 0, 0, 0.1, 0, 0, 0.18, 0, 0, 0, 0, 0, 1, 0);
+}
+
+.bl4cmp_root .bl4cmp_rank_text {
+    font-family: Industry-Bold;
+    font-size: 2.4rem;
+    color: #5c7a8e;
+}
+
+.bl4cmp_portrait {
+    flex: 0 0 5.2rem;
+    width: 5.2rem;
+    height: 5.2rem;
+    margin-right: 1.4rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+}
+
+.bl4cmp_mid {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.bl4cmp_line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4cmp_root .bl4cmp_name {
+    font-family: Industry-DemiBold;
+    font-size: 2.2rem;
+    line-height: 2.5rem;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4cmp_root .bl4cmp_tag {
+    font-family: Industry-Bold;
+    font-size: 1.2rem;
+    color: #0b1620;
+    background-color: #00c6ff;
+    padding: 0 0.6rem;
+    margin-left: 0.8rem;
+    letter-spacing: 0.15rem;
+}
+
+.bl4cmp_root .bl4cmp_tag_mvp {
+    background-color: #ff9b2e;
+}
+
+.bl4cmp_track {
+    height: 0.6rem;
+    margin: 0.5rem 0 0.4rem 0;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.bl4cmp_fill {
+    height: 100%;
+    width: 0%;
+    background-image: linear-gradient(90deg, rgba(0, 198, 255, 0.5) 0%, #00c6ff 100%);
+    transition: width 1.1s ease-out;
+}
+
+.bl4cmp_mvp .bl4cmp_fill {
+    background-image: linear-gradient(90deg, rgba(255, 155, 46, 0.5) 0%, #ffb55c 100%);
+}
+
+/* Top 3 sources: three equal columns under the bar, "1 JELLY 45%" */
+.bl4cmp_tops {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4cmp_src {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-right: 1.2rem;
+}
+
+.bl4cmp_root .bl4cmp_src_rank {
+    flex: 0 0 auto;
+    font-family: Industry-Bold;
+    font-size: 1.2rem;
+    color: #5c7a8e;
+    margin-right: 0.5rem;
+}
+
+.bl4cmp_root .bl4cmp_src_name {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-family: Industry-DemiBold;
+    font-size: 1.3rem;
+    color: #a0aeb1;
+    letter-spacing: 0.08rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4cmp_root .bl4cmp_src_share {
+    flex: 0 0 auto;
+    font-family: Industry-Medium;
+    font-size: 1.2rem;
+    color: #8193a0;
+    margin-left: 0.5rem;
+}
+
+.bl4cmp_root .bl4cmp_top_common { color: #d8dde0; }
+.bl4cmp_root .bl4cmp_top_uncommon { color: #6fe07f; }
+.bl4cmp_root .bl4cmp_top_rare { color: #66b6ff; }
+.bl4cmp_root .bl4cmp_top_epic { color: #c58aff; }
+.bl4cmp_root .bl4cmp_top_legendary { color: #ffb55c; }
+.bl4cmp_root .bl4cmp_top_pearl { color: #a9fff2; }
+.bl4cmp_root .bl4cmp_top_skill,
+.bl4cmp_root .bl4cmp_top_companion { color: #66dcff; }
+/* Damage over time: the element's colour (the Carnage Report's) */
+.bl4cmp_root .bl4cmp_top_elem_fire { color: #ff7a52; }
+.bl4cmp_root .bl4cmp_top_elem_shock { color: #6f93ff; }
+.bl4cmp_root .bl4cmp_top_elem_corrosive { color: #9cff4a; }
+.bl4cmp_root .bl4cmp_top_elem_cryo { color: #8ffcfc; }
+.bl4cmp_root .bl4cmp_top_elem_radiation { color: #f4ff5c; }
+.bl4cmp_root .bl4cmp_top_elem_normal { color: #ff5c78; }
+.bl4cmp_root .bl4cmp_top_elem_sonic { color: #c58aff; }
+
+.bl4cmp_right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-left: 1.4rem;
+}
+
+.bl4cmp_root .bl4cmp_dmg {
+    font-family: Industry-Bold;
+    font-size: 2.6rem;
+    line-height: 2.8rem;
+    color: #ffffff;
+}
+
+.bl4cmp_mvp .bl4cmp_dmg {
+    color: #ffc070;
+    text-shadow: 0 0 1.6rem rgba(255, 140, 30, 0.6);
+}
+
+.bl4cmp_root .bl4cmp_pct {
+    font-family: Industry-Medium;
+    font-size: 1.4rem;
+    color: #a0aeb1;
+}
+
+.bl4cmp_root .bl4cmp_hint {
+    font-family: Industry-Medium;
+    font-size: 1.3rem;
+    color: #8193a0;
+    letter-spacing: 0.2rem;
+    text-align: right;
+    margin-top: 0.6rem;
+}
+
+/* endregion */

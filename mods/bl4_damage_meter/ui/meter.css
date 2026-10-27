@@ -1,0 +1,884 @@
+/* Carnage Report. The game's fonts, art and colours (rarity, elements), laid out like the Kairosdex
+   and the Mod Menu. Gameface lays everything out with flexbox, so every container says its
+   direction. Sizes in rem like the game's stylesheets. Reloaded live by meter.js. */
+
+.bl4cm_hidden {
+    display: none !important;
+}
+
+.bl4cm_root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000001;
+}
+
+.bl4cm_root p {
+    margin: 0;
+}
+
+.bl4cm_bg,
+.bl4cm_shade,
+.bl4cm_lines {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.bl4cm_shade {
+    background-image: linear-gradient(180deg, rgba(2, 10, 16, 0.9) 0%, rgba(4, 14, 22, 0.86) 55%, rgba(18, 8, 2, 0.88) 100%);
+}
+
+.bl4cm_lines {
+    background-image: url("coui://uiresources/_shared/assets/ui_art_misc_assets/large_diagonal_lines.png");
+    background-repeat: repeat;
+    background-size: 8rem 8rem;
+    opacity: 0.025;
+}
+
+.bl4cm_frame {
+    position: absolute;
+    left: 6rem;
+    right: 6rem;
+    top: 4.5rem;
+    bottom: 6rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4cm_below_tabs .bl4cm_frame {
+    top: 12.5rem;
+}
+
+/* region Header */
+
+.bl4cm_header {
+    flex: 0 0 9.6rem;
+    height: 9.6rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-bottom: 0.2rem solid rgba(255, 155, 46, 0.45);
+    margin-bottom: 1.4rem;
+}
+
+.bl4cm_titles {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4cm_root .bl4cm_title {
+    font-family: Industry-Bold;
+    font-size: 6rem;
+    line-height: 6.4rem;
+    color: #ffffff;
+    letter-spacing: 0.5rem;
+    text-shadow: 0 0 2.4rem rgba(255, 120, 30, 0.55), 0.3rem 0.3rem 0 rgba(0, 0, 0, 0.6);
+}
+
+.bl4cm_subtitle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 0.4rem;
+}
+
+.bl4cm_root .bl4cm_live {
+    font-family: Industry-Bold;
+    font-size: 1.5rem;
+    color: #12151a;
+    background-color: #ff5224;
+    padding: 0.1rem 0.9rem;
+    margin-right: 1.2rem;
+    letter-spacing: 0.2rem;
+    animation-name: bl4cm_pulse;
+    animation-duration: 1.2s;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+}
+
+.bl4cm_root .bl4cm_subtitle_text {
+    font-family: Industry-Medium;
+    font-size: 1.8rem;
+    color: #a0aeb1;
+    letter-spacing: 0.25rem;
+}
+
+.bl4cm_team {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.bl4cm_root .bl4cm_team_total {
+    font-family: Industry-Bold;
+    font-size: 5.2rem;
+    line-height: 5.6rem;
+    color: #ffb55c;
+    text-shadow: 0 0 2rem rgba(255, 155, 46, 0.45);
+}
+
+.bl4cm_root .bl4cm_team_label {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+    letter-spacing: 0.3rem;
+}
+
+/* endregion */
+/* region Tabs */
+
+.bl4cm_bar {
+    flex: 0 0 5.6rem;
+    height: 5.6rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 1.6rem;
+}
+
+.bl4cm_tabs {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4cm_btn.list_btn {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 5.2rem;
+    height: 5.2rem;
+    min-height: 5.2rem;
+    max-height: 5.2rem;
+}
+
+.bl4cm_btn .button_inner {
+    position: relative;
+    z-index: 2;
+    padding: 0 2rem;
+    flex: 1 1;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+}
+
+.bl4cm_btn .button_txt {
+    font-family: Industry-DemiBold;
+    font-size: 2.3rem;
+    text-align: center;
+}
+
+.bl4cm_btn .list_btn_backing_cntr {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* A row's flex basis is the width: each button sets its own (the generic 5.2rem made squares) */
+.bl4cm_tab.list_btn {
+    width: 22rem;
+    flex: 0 0 22rem;
+    margin-right: 1rem;
+}
+
+.bl4cm_tab.bl4cm_active .list_btn_backing_cntr {
+    background-color: rgba(255, 155, 46, 0.18);
+    border-bottom: 0.4rem solid #ff9b2e;
+}
+
+.bl4cm_tab.bl4cm_active .button_txt {
+    color: #ffb55c;
+}
+
+.bl4cm_root .bl4cm_notice {
+    flex: 1 1;
+    font-family: Industry-Medium;
+    font-size: 1.8rem;
+    color: #ffbb00;
+    text-align: right;
+}
+
+/* endregion */
+/* region Player cards */
+
+.bl4cm_players {
+    flex: 1 1;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: stretch;
+    min-height: 0;
+}
+
+.bl4cm_card {
+    position: relative;
+    flex: 1 1 0;
+    max-width: 58rem;
+    margin: 0 1rem;
+    display: flex;
+    flex-direction: column;
+    padding: 2rem 2.2rem 1.6rem 2.2rem;
+    background-image: linear-gradient(180deg, rgba(14, 36, 52, 0.94) 0%, rgba(6, 16, 24, 0.95) 100%);
+    border: 0.15rem solid rgba(63, 118, 157, 0.55);
+    overflow: hidden;
+}
+
+.bl4cm_card:hover {
+    border-color: rgba(120, 190, 235, 0.85);
+}
+
+.bl4cm_card_stripe {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 0.5rem;
+    background-image: linear-gradient(90deg, rgba(0, 198, 255, 0.95) 0%, rgba(0, 198, 255, 0.25) 100%);
+}
+
+.bl4cm_card_glow {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 22rem;
+    background-image: linear-gradient(180deg, rgba(0, 150, 220, 0.14) 0%, rgba(0, 150, 220, 0) 100%);
+}
+
+.bl4cm_mvp {
+    border-color: rgba(255, 155, 46, 0.9);
+    box-shadow: 0 0 3.2rem rgba(255, 140, 30, 0.35);
+    animation-name: bl4cm_mvp_glow;
+    animation-duration: 2.4s;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+}
+
+.bl4cm_mvp .bl4cm_card_stripe {
+    height: 0.7rem;
+    background-image: linear-gradient(90deg, #ffd27a 0%, #ff9b2e 45%, rgba(255, 82, 36, 0.4) 100%);
+}
+
+.bl4cm_mvp .bl4cm_card_glow {
+    background-image: linear-gradient(180deg, rgba(255, 140, 30, 0.22) 0%, rgba(255, 140, 30, 0) 100%);
+}
+
+.bl4cm_away {
+    opacity: 0.55;
+}
+
+.bl4cm_card_head {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 1.2rem;
+}
+
+.bl4cm_portrait {
+    flex: 0 0 7.2rem;
+    width: 7.2rem;
+    height: 7.2rem;
+    margin-right: 1.6rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+}
+
+.bl4cm_portrait_none {
+    opacity: 0.6;
+    background-size: 70% 70%;
+}
+
+.bl4cm_who {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.bl4cm_name_line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4cm_root .bl4cm_name {
+    font-family: Industry-DemiBold;
+    font-size: 3rem;
+    line-height: 3.4rem;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4cm_root .bl4cm_you {
+    font-family: Industry-Bold;
+    font-size: 1.3rem;
+    color: #0b1620;
+    background-color: #00c6ff;
+    padding: 0 0.7rem;
+    margin-left: 1rem;
+    letter-spacing: 0.15rem;
+}
+
+.bl4cm_root .bl4cm_class {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+    letter-spacing: 0.2rem;
+    margin-top: 0.3rem;
+}
+
+.bl4cm_rank {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-left: 1rem;
+}
+
+.bl4cm_crown {
+    width: 4.4rem;
+    height: 3.5rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+    visibility: hidden;
+    /* the game's crown, tinted gold */
+    filter: coh-color-matrix(1.0, 0, 0, 0, 0.25, 0, 0.72, 0, 0, 0.1, 0, 0, 0.18, 0, 0, 0, 0, 0, 1, 0);
+}
+
+.bl4cm_mvp .bl4cm_crown {
+    visibility: visible;
+}
+
+.bl4cm_root .bl4cm_rank_text {
+    font-family: Industry-Bold;
+    font-size: 3.4rem;
+    line-height: 3.6rem;
+    color: #5c7a8e;
+}
+
+.bl4cm_mvp .bl4cm_rank_text {
+    color: #ffb55c;
+}
+
+.bl4cm_root .bl4cm_total {
+    font-family: Industry-Bold;
+    font-size: 6.4rem;
+    line-height: 6.8rem;
+    color: #e4d9ce;
+    text-shadow: 0.25rem 0.25rem 0 rgba(0, 0, 0, 0.55);
+}
+
+.bl4cm_mvp .bl4cm_total {
+    color: #ffc070;
+    text-shadow: 0 0 2.4rem rgba(255, 140, 30, 0.6), 0.25rem 0.25rem 0 rgba(0, 0, 0, 0.55);
+}
+
+.bl4cm_share {
+    display: flex;
+    flex-direction: column;
+    margin: 0.6rem 0 1.4rem 0;
+}
+
+.bl4cm_share_track {
+    height: 0.8rem;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.bl4cm_share_fill {
+    height: 100%;
+    width: 0%;
+    background-image: linear-gradient(90deg, rgba(0, 198, 255, 0.5) 0%, #00c6ff 100%);
+    transition: width 0.6s ease-out;
+}
+
+.bl4cm_mvp .bl4cm_share_fill {
+    background-image: linear-gradient(90deg, rgba(255, 155, 46, 0.5) 0%, #ffb55c 100%);
+}
+
+.bl4cm_root .bl4cm_share_text {
+    font-family: Industry-Medium;
+    font-size: 1.4rem;
+    color: #a0aeb1;
+    letter-spacing: 0.2rem;
+    margin-top: 0.5rem;
+}
+
+.bl4cm_stats {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 1.2rem;
+    padding-bottom: 1.2rem;
+    border-bottom: 0.15rem solid rgba(63, 118, 157, 0.35);
+}
+
+.bl4cm_stat {
+    width: 50%;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 0.9rem;
+}
+
+.bl4cm_stat_icon {
+    flex: 0 0 3.6rem;
+    width: 3.6rem;
+    height: 3.6rem;
+    margin-right: 1rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+    opacity: 0.85;
+}
+
+.bl4cm_stat_col {
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4cm_root .bl4cm_stat_value {
+    font-family: Industry-DemiBold;
+    font-size: 2.6rem;
+    line-height: 2.8rem;
+    color: #ffffff;
+}
+
+.bl4cm_root .bl4cm_stat_label {
+    font-family: Industry-Medium;
+    font-size: 1.2rem;
+    color: #8193a0;
+    letter-spacing: 0.2rem;
+}
+
+/* endregion */
+/* region Damage sources */
+
+.bl4cm_src_head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 0.8rem;
+}
+
+.bl4cm_root .bl4cm_src_title {
+    flex: 1 1;
+    font-family: Industry-DemiBold;
+    font-size: 1.7rem;
+    color: #ffb55c;
+    letter-spacing: 0.35rem;
+}
+
+.bl4cm_root .bl4cm_more {
+    font-family: Industry-Medium;
+    font-size: 1.4rem;
+    color: #00c6ff;
+    letter-spacing: 0.15rem;
+}
+
+.bl4cm_src_list {
+    flex: 0 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: scroll;
+}
+
+.bl4cm_src {
+    flex: 0 0 7rem;
+}
+
+.bl4cm_mix {
+    flex: 0 0 auto;
+}
+
+/* Boss report: the boss's picture beside the title, a gold rule */
+.bl4cm_boss_pic {
+    flex: 0 0 11rem;
+    width: 11rem;
+    height: 11rem;
+    margin-right: 2rem;
+    margin-bottom: -1rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+}
+
+.bl4cm_boss_mode .bl4cm_header {
+    border-bottom-color: rgba(255, 190, 80, 0.85);
+}
+
+.bl4cm_boss_mode .bl4cm_root .bl4cm_title,
+.bl4cm_boss_mode .bl4cm_title {
+    color: #ffd27a;
+}
+
+.bl4cm_tab_boss .button_txt {
+    color: #ffb55c;
+}
+
+.bl4cm_src {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 7rem;
+    margin-bottom: 0.6rem;
+    padding-right: 0.6rem;
+    background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.015) 100%);
+    border-left: 0.35rem solid #e4d9ce;
+}
+
+.bl4cm_src_first {
+    background-image: linear-gradient(90deg, rgba(255, 155, 46, 0.13) 0%, rgba(255, 255, 255, 0.015) 100%);
+}
+
+.bl4cm_root .bl4cm_src_rank {
+    flex: 0 0 3.6rem;
+    width: 3.6rem;
+    text-align: center;
+    font-family: Industry-Bold;
+    font-size: 2.6rem;
+    color: #5c7a8e;
+}
+
+.bl4cm_src_first .bl4cm_src_rank {
+    color: #ffb55c;
+}
+
+.bl4cm_src_icon {
+    flex: 0 0 8.4rem;
+    width: 8.4rem;
+    height: 5.6rem;
+    margin-right: 1.2rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.35);
+}
+
+.bl4cm_src_icon_art {
+    width: 4.4rem;
+    height: 4.4rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+}
+
+.bl4cm_src_icon_art.bl4cm_wide {
+    width: 7.6rem;
+    height: 3.4rem;
+}
+
+.bl4cm_src_mid {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.bl4cm_src_line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4cm_root .bl4cm_src_name {
+    font-family: Industry-DemiBold;
+    font-size: 2.1rem;
+    line-height: 2.5rem;
+    color: #e4d9ce;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4cm_src_elements {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-left: 0.8rem;
+}
+
+.bl4cm_elem_icon {
+    width: 2rem;
+    height: 2rem;
+    margin-right: 0.3rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+}
+
+.bl4cm_root .bl4cm_src_sub {
+    font-family: Industry-Medium;
+    font-size: 1.3rem;
+    color: #8193a0;
+    letter-spacing: 0.1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4cm_src_track {
+    height: 0.45rem;
+    margin-top: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.bl4cm_src_fill {
+    height: 100%;
+    width: 0%;
+    background-color: #e4d9ce;
+    transition: width 0.6s ease-out;
+}
+
+.bl4cm_src_right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-left: 1.2rem;
+}
+
+.bl4cm_root .bl4cm_src_dmg {
+    font-family: Industry-DemiBold;
+    font-size: 2.3rem;
+    line-height: 2.6rem;
+    color: #ffffff;
+}
+
+.bl4cm_root .bl4cm_src_share {
+    font-family: Industry-Medium;
+    font-size: 1.4rem;
+    color: #8193a0;
+}
+
+.bl4cm_root .bl4cm_src_none {
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+    color: #8193a0;
+    margin-top: 0.6rem;
+}
+
+/* Damage mix: a stacked bar of what kind of damage it was, pinned to the card's bottom */
+.bl4cm_mix {
+    margin-top: auto;
+    padding-top: 0.8rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4cm_mix_bar {
+    height: 1.1rem;
+    margin: 0.8rem 0 0.8rem 0;
+    display: flex;
+    flex-direction: row;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.bl4cm_mix_seg {
+    height: 100%;
+    width: 0%;
+    transition: width 0.6s ease-out;
+}
+
+.bl4cm_mix_legend {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.bl4cm_mix_item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-right: 1.2rem;
+    margin-bottom: 0.3rem;
+}
+
+.bl4cm_mix_dot {
+    width: 1rem;
+    height: 1rem;
+    margin-right: 0.6rem;
+}
+
+.bl4cm_root .bl4cm_mix_text {
+    font-family: Industry-Medium;
+    font-size: 1.3rem;
+    color: #a0aeb1;
+    letter-spacing: 0.1rem;
+}
+
+.bl4cm_mix_guns { background-color: #ffb55c; }
+.bl4cm_mix_elemental { background-color: #ff5224; }
+.bl4cm_mix_skills { background-color: #00c6ff; }
+.bl4cm_mix_melee { background-color: #f1ff00; }
+.bl4cm_mix_gear { background-color: #b05cff; }
+.bl4cm_mix_other { background-color: #8193a0; }
+
+/* Rarity: the item's name, the bar and the stripe on its left */
+.bl4cm_rarity_common { border-left-color: #c9c3bb; }
+.bl4cm_rarity_uncommon { border-left-color: #4ccf5e; }
+.bl4cm_rarity_rare { border-left-color: #3fa0ff; }
+.bl4cm_rarity_epic { border-left-color: #b05cff; }
+.bl4cm_rarity_legendary { border-left-color: #ff9b2e; }
+.bl4cm_rarity_pearl { border-left-color: #8ff5e6; }
+
+.bl4cm_rarity_uncommon .bl4cm_src_name { color: #6fe07f; }
+.bl4cm_rarity_rare .bl4cm_src_name { color: #66b6ff; }
+.bl4cm_rarity_epic .bl4cm_src_name { color: #c58aff; }
+.bl4cm_rarity_legendary .bl4cm_src_name { color: #ffb55c; }
+.bl4cm_rarity_pearl .bl4cm_src_name { color: #a9fff2; }
+
+.bl4cm_rarity_uncommon .bl4cm_src_fill { background-color: #4ccf5e; }
+.bl4cm_rarity_rare .bl4cm_src_fill { background-color: #3fa0ff; }
+.bl4cm_rarity_epic .bl4cm_src_fill { background-color: #b05cff; }
+.bl4cm_rarity_legendary .bl4cm_src_fill { background-color: #ff9b2e; }
+.bl4cm_rarity_pearl .bl4cm_src_fill { background-color: #8ff5e6; }
+
+/* Elements (damage over time rows), in the game's element colours */
+.bl4cm_elem_fire { border-left-color: #ff5224; }
+.bl4cm_elem_fire .bl4cm_src_name { color: #ff7a52; }
+.bl4cm_elem_fire .bl4cm_src_fill { background-color: #ff5224; }
+.bl4cm_elem_shock { border-left-color: #2f63f9; }
+.bl4cm_elem_shock .bl4cm_src_name { color: #6f93ff; }
+.bl4cm_elem_shock .bl4cm_src_fill { background-color: #2f63f9; }
+.bl4cm_elem_corrosive { border-left-color: #72f800; }
+.bl4cm_elem_corrosive .bl4cm_src_name { color: #9cff4a; }
+.bl4cm_elem_corrosive .bl4cm_src_fill { background-color: #72f800; }
+.bl4cm_elem_cryo { border-left-color: #53fbfb; }
+.bl4cm_elem_cryo .bl4cm_src_name { color: #8ffcfc; }
+.bl4cm_elem_cryo .bl4cm_src_fill { background-color: #53fbfb; }
+.bl4cm_elem_radiation { border-left-color: #f1ff00; }
+.bl4cm_elem_radiation .bl4cm_src_name { color: #f4ff5c; }
+.bl4cm_elem_radiation .bl4cm_src_fill { background-color: #f1ff00; }
+.bl4cm_elem_normal { border-left-color: #d71e44; }
+.bl4cm_elem_normal .bl4cm_src_name { color: #ff5c78; }
+.bl4cm_elem_normal .bl4cm_src_fill { background-color: #d71e44; }
+
+/* Skills, melee and the rest: the game's blue */
+.bl4cm_kind_skill,
+.bl4cm_kind_companion,
+.bl4cm_kind_melee,
+.bl4cm_kind_slam {
+    border-left-color: #00c6ff;
+}
+
+.bl4cm_kind_skill .bl4cm_src_fill,
+.bl4cm_kind_companion .bl4cm_src_fill,
+.bl4cm_kind_melee .bl4cm_src_fill,
+.bl4cm_kind_slam .bl4cm_src_fill {
+    background-color: #00c6ff;
+}
+
+.bl4cm_kind_skill .bl4cm_src_name,
+.bl4cm_kind_companion .bl4cm_src_name {
+    color: #66dcff;
+}
+
+/* endregion */
+/* region Empty, footer, toast */
+
+.bl4cm_empty {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.bl4cm_empty_icon {
+    width: 12rem;
+    height: 12rem;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+    opacity: 0.35;
+    margin-bottom: 2rem;
+}
+
+.bl4cm_root .bl4cm_empty_title {
+    font-family: Industry-Bold;
+    font-size: 4.4rem;
+    color: #e4d9ce;
+    letter-spacing: 0.4rem;
+}
+
+.bl4cm_root .bl4cm_empty_text {
+    font-family: Industry-Medium;
+    font-size: 2rem;
+    color: #a0aeb1;
+    margin-top: 1rem;
+}
+
+.bl4cm_footer {
+    flex: 0 0 6.4rem;
+    height: 6.4rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 1.6rem;
+}
+
+.bl4cm_close.list_btn,
+.bl4cm_reset.list_btn {
+    width: 22rem;
+    flex: 0 0 22rem;
+    margin-right: 1.4rem;
+}
+
+.bl4cm_root .bl4cm_hint {
+    flex: 1 1;
+    font-family: Industry-Medium;
+    font-size: 1.6rem;
+    color: #8193a0;
+    text-align: right;
+}
+
+.bl4cm_root .bl4cm_toast {
+    position: absolute;
+    left: 50%;
+    bottom: 9rem;
+    width: 80rem;
+    margin-left: -40rem;
+    text-align: center;
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #ffffff;
+    background-color: rgba(8, 22, 32, 0.95);
+    border: 0.15rem solid rgba(255, 155, 46, 0.7);
+    padding: 1.2rem 2rem;
+}
+
+/* endregion */
+
+@keyframes bl4cm_pulse {
+    0% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.55;
+    }
+}
+
+@keyframes bl4cm_mvp_glow {
+    0% {
+        box-shadow: 0 0 2rem rgba(255, 140, 30, 0.22);
+    }
+
+    100% {
+        box-shadow: 0 0 4.4rem rgba(255, 140, 30, 0.5);
+    }
+}
