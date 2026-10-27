@@ -12,6 +12,7 @@
    "x": -21712.3853,
    "y": -71505.404457,
    "z": 210516.93225,
+   "yaw": -106.01,
    "station": "Raid2_P.FT_Raid2_Entrance",
    "station_at": [
     -4740.8,
@@ -31,6 +32,7 @@
    "x": -13419.648383,
    "y": -1675.455107,
    "z": 12302.606146,
+   "yaw": 90.0,
    "station": "Raid1_P.FT_Raid1_Approach",
    "station_at": [
     -82045.5,
@@ -50,6 +52,7 @@
    "x": 162780.505245,
    "y": 219416.237212,
    "z": 6952.395856,
+   "yaw": -75.0,
    "station": "World_P.FT_GRA_Safehouse4",
    "station_at": [
     173338.0,
@@ -69,6 +72,7 @@
    "x": -87898.044338,
    "y": -84342.178499,
    "z": 8873.938094,
+   "yaw": 122.07,
    "station": "World_P.FT_SHA_Silo_01",
    "station_at": [
     -93661.2,
@@ -88,6 +92,7 @@
    "x": 114497.666734,
    "y": -261529.107548,
    "z": 21964.035975,
+   "yaw": 92.24,
    "station": "World_P.FT_MOU_NorthCliffs_Safehouse4",
    "station_at": [
     120316.3,
@@ -107,6 +112,7 @@
    "x": 244884.818516,
    "y": 74827.772185,
    "z": 21788.458911,
+   "yaw": -111.28,
    "station": "World_P.FT_MOU_Silo2_Gorge",
    "station_at": [
     235259.0,
@@ -126,6 +132,7 @@
    "x": -122740.0,
    "y": 112910.00001,
    "z": 9910.0,
+   "yaw": -90.0,
    "station": "World_P.FT_GRA_POI_ZadrasHouse",
    "station_at": [
     -150901.2,
@@ -145,6 +152,7 @@
    "x": -162230.370199,
    "y": -285952.800207,
    "z": 1173.421803,
+   "yaw": -133.96,
    "station": "World_P.FT_SHA_Silo2_EleciPlat",
    "station_at": [
     -106832.0,
@@ -164,6 +172,7 @@
    "x": 215336.210251,
    "y": -51841.185988,
    "z": 16133.394116,
+   "yaw": -76.54,
    "station": "World_P.FT_MOU_Safehouse1_Timberland",
    "station_at": [
     149014.3,
@@ -183,6 +192,7 @@
    "x": 90526.232076,
    "y": 258083.168893,
    "z": 1038.024783,
+   "yaw": -174.37,
    "station": "World_P.FT_GRA_Safehouse4",
    "station_at": [
     173338.0,
@@ -202,6 +212,7 @@
    "x": 232825.604764,
    "y": 143256.511004,
    "z": 20382.373777,
+   "yaw": -71.94,
    "station": "World_P.TS_FFlats_ZadrasLab",
    "station_at": [
     190599.0,
@@ -221,6 +232,7 @@
    "x": 17483.153158,
    "y": 151684.033754,
    "z": 13772.329596,
+   "yaw": 1.35,
    "station": "World_P.FT_GRA_Safehouse3",
    "station_at": [
     83020.4,
@@ -240,6 +252,7 @@
    "x": -23995.377971,
    "y": 25259.578687,
    "z": 11024.000096,
+   "yaw": 158.61,
    "station": "World_P.FT_CITY_GRA_Safehouse3",
    "station_at": [
     -6024.1,
@@ -259,6 +272,7 @@
    "x": 112465.520784,
    "y": -365951.048347,
    "z": 29408.617764,
+   "yaw": -57.0,
    "station": "World_P.FT_MOU_Silo3_NorthValley",
    "station_at": [
     193589.1,

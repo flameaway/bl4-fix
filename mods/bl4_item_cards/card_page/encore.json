@@ -7,6 +7,7 @@
   "x": 9556.600803,
   "y": 2792.368551,
   "z": 28453.319025,
+  "yaw": 169.65,
   "station": "Banjo_P.FT_BanjoEnd"
  },
  {
@@ -17,6 +18,7 @@
   "x": 100025.249748,
   "y": -89481.401509,
   "z": 20850.944635,
+  "yaw": 47.81,
   "station": "Cello_P.FT_Cello_ThirdDrop"
  },
  {
@@ -27,6 +29,7 @@
   "x": 92755.109929,
   "y": -57795.540266,
   "z": 49154.369706,
+  "yaw": 19.88,
   "station": "Cello_P.FT_Cello_ThirdDrop"
  },
  {
@@ -37,6 +40,7 @@
   "x": 149394.949118,
   "y": -81003.994929,
   "z": 34346.434172,
+  "yaw": 59.06,
   "station": "Cello_P.FT_Cello_ThirdDrop"
  },
  {
@@ -47,6 +51,7 @@
   "x": 72718.168553,
   "y": -52725.622995,
   "z": 21548.425679,
+  "yaw": 21.31,
   "station": "Cello_P.FT_Cello_ThirdDrop"
  },
  {
@@ -57,6 +62,7 @@
   "x": 65510.0,
   "y": 42700.0,
   "z": 60315.0,
+  "yaw": 140.62,
   "station": "Cowbell_P.SED_Speakeasy_Maelstrom_Entrance"
  },
  {
@@ -67,6 +73,7 @@
   "x": -59209.437852,
   "y": -95972.620728,
   "z": 45056.792758,
+  "yaw": -16.25,
   "station": "Cowbell_P.FT_CowbellStart"
  },
  {
@@ -77,6 +84,7 @@
   "x": -110400.860325,
   "y": 98395.617987,
   "z": 44281.582351,
+  "yaw": -138.8,
   "station": "Cowbell_P.SED_Speakeasy_GhostShip_Entrance"
  },
  {
@@ -87,6 +95,7 @@
   "x": -57699.275245,
   "y": 92306.461834,
   "z": 56966.572976,
+  "yaw": 26.38,
   "station": "Cowbell_P.SED_Speakeasy_GhostShip_Entrance"
  },
  {
@@ -97,6 +106,7 @@
   "x": -22925.43007,
   "y": 11990.320753,
   "z": 41942.80989,
+  "yaw": 143.44,
   "station": "Cowbell_P.SED_Speakeasy_DahlBlockade_Entrance"
  },
  {
@@ -107,6 +117,7 @@
   "x": 6725.148553,
   "y": -33498.159532,
   "z": 39284.664653,
+  "yaw": -179.67,
   "station": "Cowbell_P.FT_BSH_botanist"
  },
  {
@@ -117,6 +128,7 @@
   "x": -221446.020373,
   "y": -272327.059053,
   "z": -312115.468985,
+  "yaw": 90.14,
   "station": "Elpis_P.fast_travel"
  },
  {
@@ -127,6 +139,7 @@
   "x": -43576.545499,
   "y": -47574.184676,
   "z": 17895.000222,
+  "yaw": 90.0,
   "station": "Fortress_Grasslands_P.FT_GRA_Fortress_Boss"
  },
  {
@@ -137,6 +150,7 @@
   "x": 36700.0,
   "y": -28000.0,
   "z": 2545.0,
+  "yaw": 50.0,
   "station": "Fortress_Mountains_P.FT_Fortress_MOU_Start"
  },
  {
@@ -147,6 +161,7 @@
   "x": -7666.242168,
   "y": -49576.031626,
   "z": 6895.425219,
+  "yaw": 45.0,
   "station": "Fortress_Shatteredlands_P.FT_Fortress_SHA_Start"
  },
  {
@@ -157,6 +172,7 @@
   "x": -53039.0,
   "y": 32376.0,
   "z": 2325.0,
+  "yaw": 180.0,
   "station": "Harmonica_P.FT_Harmonica_Blind"
  },
  {
@@ -167,6 +183,7 @@
   "x": -82903.736802,
   "y": 39760.891533,
   "z": 5222.152031,
+  "yaw": -180.0,
   "station": "Harmonica_P.FT_Harmonica_JungleSafehouse"
  },
  {
@@ -177,6 +194,7 @@
   "x": -189233.307459,
   "y": -122401.810745,
   "z": 23400.426095,
+  "yaw": 55.0,
   "station": "Harmonica_P.HarmMain3Spa_PostMission_SendOnly"
  },
  {
@@ -187,6 +205,7 @@
   "x": -143208.480879,
   "y": 35722.699962,
   "z": 8083.383168,
+  "yaw": -0.0,
   "station": "Harmonica_P.FT_Harmonica_JungleSafehouse"
  },
  {
@@ -197,6 +216,7 @@
   "x": 147998.0,
   "y": 41348.0,
   "z": 19171.197025,
+  "yaw": 0.0,
   "station": "Harmonica_P.FT_Harmonica_LavaBridge"
  },
  {
@@ -207,6 +227,7 @@
   "x": -224245.652814,
   "y": 36148.791375,
   "z": 999.0,
+  "yaw": 155.0,
   "station": "Harmonica_P.FT_Harmonica_JungleSafehouse"
  },
  {
@@ -217,6 +238,7 @@
   "x": 81051.974099,
   "y": 71867.806427,
   "z": 8686.0,
+  "yaw": -138.75,
   "station": "Harmonica_P.FT_Harmonica_LavaSafehouse"
  },
  {
@@ -227,6 +249,7 @@
   "x": 61635.593698,
   "y": -181546.344173,
   "z": 15534.09635,
+  "yaw": -61.01,
   "station": "Harmonica_P.FT_Harmonica_PowerStationEnt"
  },
  {
@@ -237,6 +260,7 @@
   "x": -110159.0,
   "y": 111444.0,
   "z": 5291.000239,
+  "yaw": -90.0,
   "station": "Harmonica_P.FT_Harmonica_JungleSafehouse"
  },
  {
@@ -247,6 +271,7 @@
   "x": 142401.723292,
   "y": -190334.316475,
   "z": -29522.266086,
+  "yaw": 90.0,
   "station": "Harmonica_P.FT_Harmonica_PowerStationEnt"
  },
  {
@@ -257,6 +282,7 @@
   "x": 13953.183298,
   "y": 79041.298956,
   "z": 9995.000299,
+  "yaw": 0.0,
   "station": "Harmonica_P.FT_Harmonica_Blind"
  },
  {
@@ -267,6 +293,7 @@
   "x": 55424.038462,
   "y": -12005.599778,
   "z": 18265.0,
+  "yaw": 90.0,
   "station": "Harmonica_P.FT_Harmonica_LavaBridge"
  },
  {
@@ -277,6 +304,7 @@
   "x": 95979.725612,
   "y": -23908.750973,
   "z": 3454.347632,
+  "yaw": 45.0,
   "station": "Harp_P.FT_HarpFacBoss"
  },
  {
@@ -287,6 +315,7 @@
   "x": -77967.176203,
   "y": -23314.650455,
   "z": -6282.593583,
+  "yaw": 30.0,
   "station": "Harp_P.FT_DLC_Harp_Start"
  },
  {
@@ -297,6 +326,7 @@
   "x": 82932.751545,
   "y": -20437.563697,
   "z": 2407.374287,
+  "yaw": -89.48,
   "station": "Harp_P.FT_HarpFacBoss"
  },
  {
@@ -307,6 +337,7 @@
   "x": 26242.93521,
   "y": 355.354095,
   "z": 3348.337554,
+  "yaw": -29.93,
   "station": "Harp_P.FT_DLC_Harp_Start"
  },
  {
@@ -317,6 +348,7 @@
   "x": -73459.408548,
   "y": -7887.142307,
   "z": 50697.481221,
+  "yaw": 0.0,
   "station": "Mandolin1_P.FT_Mandolin_BossZane"
  },
  {
@@ -327,6 +359,7 @@
   "x": -16855.489951,
   "y": -29831.668796,
   "z": 46659.000037,
+  "yaw": -126.56,
   "station": "Mandolin1_P.FT_Mandolin_P"
  },
  {
@@ -337,6 +370,7 @@
   "x": -44667.074481,
   "y": 62184.53643,
   "z": 61784.04757,
+  "yaw": -101.25,
   "station": "Mandolin1_P.FT_Mandolin_BossZane"
  },
  {
@@ -347,6 +381,7 @@
   "x": -13419.648383,
   "y": -1675.455107,
   "z": 12302.606146,
+  "yaw": 90.0,
   "station": "Raid1_P.FT_Raid1_Approach"
  },
  {
@@ -357,6 +392,7 @@
   "x": -21712.3853,
   "y": -71505.404457,
   "z": 210516.93225,
+  "yaw": -106.01,
   "station": "Raid2_P.FT_Raid2_Entrance"
  },
  {
@@ -367,6 +403,7 @@
   "x": 58977.051812,
   "y": 17820.274168,
   "z": 35411.293108,
+  "yaw": 90.0,
   "station": "UpperCity_P.FT_UpperCity_AfterPod"
  },
  {
@@ -377,6 +414,7 @@
   "x": 1149.975087,
   "y": 310.679331,
   "z": 103838.000002,
+  "yaw": -160.0,
   "station": "UpperCity_P.FT_Entrance"
  },
  {
@@ -387,6 +425,7 @@
   "x": 41782.0,
   "y": -130138.0,
   "z": -1341.0,
+  "yaw": 127.0,
   "station": "Vault_Grasslands_P.fast_travel_vault_start"
  },
  {
@@ -397,6 +436,7 @@
   "x": 60893.073501,
   "y": 18152.053209,
   "z": 16388.0,
+  "yaw": -136.74,
   "station": "Vault_Mountains_P.FT_Vault_Mou_Start"
  },
  {
@@ -407,6 +447,7 @@
   "x": -34464.180734,
   "y": -86316.54802,
   "z": 16926.536253,
+  "yaw": 102.24,
   "station": "Vault_ShatteredLands_P.FT_Vault_Shatteredlands"
  },
  {
@@ -417,6 +458,7 @@
   "x": -26539.877294,
   "y": 180126.563447,
   "z": 23317.219189,
+  "yaw": -16.28,
   "station": "VaultoftheDamned_P.FT_VotD_Bridge"
  },
  {
@@ -427,6 +469,7 @@
   "x": -31117.067525,
   "y": -65474.291495,
   "z": 45289.962296,
+  "yaw": 24.74,
   "station": "Viola_ElpisVile_P.FT_Viola_ElpisVile_Entrance"
  },
  {
@@ -437,6 +480,7 @@
   "x": -52810.771833,
   "y": 469.73929,
   "z": 32601.256947,
+  "yaw": 63.09,
   "station": "Viola_ElpisVile_P.FT_Viola_ElpisVile_Entrance"
  },
  {
@@ -447,6 +491,7 @@
   "x": 2939.944889,
   "y": -14732.926146,
   "z": 20650.0,
+  "yaw": 14.0,
   "station": "Viola_P.FT_Viola_Cove_Rift"
  },
  {
@@ -457,6 +502,7 @@
   "x": 49089.424252,
   "y": 40427.972299,
   "z": 421.041298,
+  "yaw": -50.0,
   "station": "VolcanoFortress_P.FTS_FL4K"
  },
  {
@@ -467,6 +513,7 @@
   "x": 66236.378377,
   "y": 5581.344379,
   "z": 949.805111,
+  "yaw": 0.0,
   "station": "VolcanoFortress_P.FTS_FL4K"
  },
  {
@@ -477,6 +524,7 @@
   "x": 24064.497861,
   "y": -7629.162309,
   "z": -3568.033811,
+  "yaw": -180.0,
   "station": "VolcanoFortress_P.FTS_VolcanoFortress_Start"
  },
  {
@@ -487,6 +535,7 @@
   "x": 81504.0,
   "y": 117065.0,
   "z": 13696.0,
+  "yaw": 87.4,
   "station": "World_P.FT_GRA_Safehouse3"
  },
  {
@@ -497,6 +546,7 @@
   "x": 73399.834829,
   "y": 27198.820274,
   "z": 14524.051049,
+  "yaw": -157.5,
   "station": "World_P.FT_City_MNT_CentralAlley"
  },
  {
@@ -507,6 +557,7 @@
   "x": -63992.983451,
   "y": -47994.599195,
   "z": 5317.465312,
+  "yaw": 155.0,
   "station": "World_P.FTS_City_SHA_Safehouse1"
  },
  {
@@ -517,6 +568,7 @@
   "x": 11019.169675,
   "y": -151036.015077,
   "z": 16145.000024,
+  "yaw": -71.25,
   "station": "World_P.FTS_City_MountainSafehouse2"
  },
  {
@@ -527,6 +579,7 @@
   "x": 75243.835443,
   "y": -49305.00868,
   "z": 9604.0,
+  "yaw": 22.5,
   "station": "World_P.FT_City_MNT_UnderwaterLabExterior"
  },
  {
@@ -537,6 +590,7 @@
   "x": -48928.982984,
   "y": 149370.523633,
   "z": 17967.636786,
+  "yaw": -84.36,
   "station": "World_P.FT_GRA_West_NorthSafehouse2"
  },
  {
@@ -547,6 +601,7 @@
   "x": -122740.0,
   "y": 112910.00001,
   "z": 9910.0,
+  "yaw": -90.0,
   "station": "World_P.FT_GRA_POI_ZadrasHouse"
  },
  {
@@ -557,6 +612,7 @@
   "x": -26843.946413,
   "y": -134702.827195,
   "z": 5880.811353,
+  "yaw": 90.14,
   "station": "World_P.FT_SHA_Silo_01"
  },
  {
@@ -567,6 +623,7 @@
   "x": 162780.505245,
   "y": 219416.237212,
   "z": 6952.395856,
+  "yaw": -75.0,
   "station": "World_P.FT_GRA_Safehouse4"
  },
  {
@@ -577,6 +634,7 @@
   "x": 216933.789338,
   "y": 171395.129625,
   "z": 9500.433755,
+  "yaw": -11.0,
   "station": "World_P.TS_FFlats_ZadrasLab"
  },
  {
@@ -587,6 +645,7 @@
   "x": 112465.520784,
   "y": -365951.048347,
   "z": 29408.617764,
+  "yaw": -57.0,
   "station": "World_P.FT_MOU_Silo3_NorthValley"
  },
  {
@@ -597,6 +656,7 @@
   "x": -155156.946095,
   "y": 277138.249131,
   "z": 3766.544194,
+  "yaw": -25.98,
   "station": "World_P.FT_GRA_Silo_01"
  },
  {
@@ -607,6 +667,7 @@
   "x": -162230.370199,
   "y": -285952.800207,
   "z": 1173.421803,
+  "yaw": -133.96,
   "station": "World_P.FT_SHA_Silo2_EleciPlat"
  },
  {
@@ -617,6 +678,7 @@
   "x": 114497.666734,
   "y": -261529.107548,
   "z": 21964.035975,
+  "yaw": 92.24,
   "station": "World_P.FT_MOU_NorthCliffs_Safehouse4"
  },
  {
@@ -627,6 +689,7 @@
   "x": 215336.210251,
   "y": -51841.185988,
   "z": 16133.394116,
+  "yaw": -76.54,
   "station": "World_P.FT_MOU_Safehouse1_Timberland"
  },
  {
@@ -637,6 +700,7 @@
   "x": -87898.044338,
   "y": -84342.178499,
   "z": 8873.938094,
+  "yaw": 122.07,
   "station": "World_P.FT_SHA_Silo_01"
  },
  {
@@ -647,6 +711,7 @@
   "x": 17483.153158,
   "y": 151684.033754,
   "z": 13772.329596,
+  "yaw": 1.35,
   "station": "World_P.FT_GRA_Safehouse3"
  },
  {
@@ -657,6 +722,7 @@
   "x": 232825.604764,
   "y": 143256.511004,
   "z": 20382.373777,
+  "yaw": -71.94,
   "station": "World_P.TS_FFlats_ZadrasLab"
  },
  {
@@ -667,6 +733,7 @@
   "x": -151369.657531,
   "y": -27195.229423,
   "z": 7100.0,
+  "yaw": 20.0,
   "station": "World_P.FT_SHA_Safehouse2_OrderPlateau"
  },
  {
@@ -677,6 +744,7 @@
   "x": -23995.377971,
   "y": 25259.578687,
   "z": 11024.000096,
+  "yaw": 158.61,
   "station": "World_P.FT_CITY_GRA_Safehouse3"
  },
  {
@@ -687,6 +755,7 @@
   "x": 367218.590617,
   "y": -93157.179683,
   "z": 37817.338278,
+  "yaw": -157.5,
   "station": "World_P.FT_MOU_Safehouse2_Highlands"
  },
  {
@@ -697,6 +766,7 @@
   "x": 204520.285124,
   "y": 245842.996205,
   "z": 12310.004664,
+  "yaw": -135.0,
   "station": "World_P.FT_GRA_Safehouse4"
  },
  {
@@ -707,6 +777,7 @@
   "x": 263427.725419,
   "y": -26889.31962,
   "z": 25450.0001,
+  "yaw": 165.0,
   "station": "World_P.FT_MOU_Silo2_Gorge"
  },
  {
@@ -717,6 +788,7 @@
   "x": 304721.846146,
   "y": -175028.960445,
   "z": 33811.24854,
+  "yaw": 55.0,
   "station": "World_P.FT_MOU_Safehouse3_Valley"
  },
  {
@@ -727,6 +799,7 @@
   "x": -113294.33442,
   "y": -320067.440241,
   "z": 10422.20246,
+  "yaw": 130.0,
   "station": "World_P.FT_SHA_Silo2_EleciPlat"
  },
  {
@@ -737,6 +810,7 @@
   "x": 90526.232076,
   "y": 258083.168893,
   "z": 1038.024783,
+  "yaw": -174.37,
   "station": "World_P.FT_GRA_Safehouse4"
  },
  {
@@ -747,6 +821,7 @@
   "x": 244884.818516,
   "y": 74827.772185,
   "z": 21788.458911,
+  "yaw": -111.28,
   "station": "World_P.FT_MOU_Silo2_Gorge"
  },
  {
@@ -757,6 +832,7 @@
   "x": -107087.376769,
   "y": -67482.853785,
   "z": 10172.989123,
+  "yaw": 153.73,
   "station": "World_P.FTS_City_Meteor_Transition"
  },
  {
@@ -767,6 +843,7 @@
   "x": 215442.171573,
   "y": -215456.573584,
   "z": 35287.758789,
+  "yaw": 110.0,
   "station": "World_P.RS_MOU_FortressExterior"
  },
  {
@@ -777,6 +854,7 @@
   "x": -138083.0,
   "y": 323152.0,
   "z": 2205.956002,
+  "yaw": -25.0,
   "station": "World_P.FT_GRA_Silo_01"
  },
  {
@@ -787,6 +865,7 @@
   "x": -212095.325758,
   "y": -110838.521136,
   "z": 3955.000031,
+  "yaw": 50.0,
   "station": "World_P.FT_SHA_Safehouse2_OrderPlateau"
  }
 ]

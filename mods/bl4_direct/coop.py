@@ -38,7 +38,6 @@ module again (hot reload) replaces them.
 from __future__ import annotations
 
 import json
-import math
 import time
 from collections.abc import Callable
 from typing import Any
@@ -48,6 +47,8 @@ from mods_base import ENGINE, get_pc
 from unrealsdk import logging
 from unrealsdk.hooks import Block, Type, add_hook, remove_hook
 from unrealsdk.unreal import UObject, WeakPointer
+
+from . import stand
 
 PREFIX = "~bl4m~"
 VERSION = 1
@@ -533,6 +534,7 @@ def _client_housekeeping(now: float) -> None:
 
 def _tick_hook(*_: Any) -> None:
     try:
+        stand.tick()
         if _State.queue:
             queue, _State.queue = _State.queue, []
             for req, fn in queue:
@@ -561,37 +563,26 @@ TELEPORT = "coop.teleport"
 
 def _teleport_near(req: Request) -> dict[str, Any]:
     """
-    Puts the asking player beside a spot, facing it: rings of `radii` around (x, y, z), `height`
-    above it, the first spot the game lets them stand in. The host's teleport moves anyone; a
-    client's own would be undone by the host.
+    Puts the asking player in front of a Big Encore machine at (x, y, z), facing it, never in a
+    wall (stand.py: the machine's `yaw` and its marker name `location` find its front; without
+    them, spots all around it). The host's teleport moves anyone; a client's own would be undone
+    by the host.
     """
-    pawn = req.pc.Pawn
-    if pawn is None:
-        return {"ok": False, "error": "no character"}
     d = req.data
-    mx, my, mz = float(d["x"]), float(d["y"]), float(d["z"])
-    radii = [float(r) for r in d.get("radii", (300, 450, 600))][:6]
-    height = float(d.get("height", 120))
-    for radius in radii:
-        for step in range(8):
-            angle = step * math.pi / 4
-            x, y = mx + radius * math.cos(angle), my + radius * math.sin(angle)
-            where = unrealsdk.make_struct("Vector", X=x, Y=y, Z=mz + height)
-            yaw = math.degrees(math.atan2(my - y, mx - x))
-            facing = unrealsdk.make_struct("Rotator", Pitch=0, Yaw=yaw, Roll=0)
-            if pawn.K2_TeleportTo(where, facing):
-                return {"ok": True}
-    return {"ok": False, "error": "no room"}
+    target = {"x": float(d["x"]), "y": float(d["y"]), "z": float(d["z"]),
+              "yaw": None if d.get("yaw") is None else float(d["yaw"]), "location": str(d.get("location") or "")}  # fmt: skip
+    return stand.place(req.pc, target)
 
 
 def teleport_near(x: float, y: float, z: float, on_done: Callable[[dict[str, Any]], None], *,
-                  radii: tuple[float, ...] = (300, 450, 600), height: float = 120) -> bool:  # fmt: skip
+                  yaw: float | None = None, location: str | None = None, **_old: Any) -> bool:  # fmt: skip
     """
-    Teleports the local player beside (x, y, z): at once in solo or as host, through the host's
-    mod as a client. on_done gets {"ok": True} or {"ok": False, "error": ...}. False if we're a
-    client and the host doesn't run our mods (then nothing happens).
+    Teleports the local player in front of the Big Encore machine at (x, y, z) (`yaw` = its facing,
+    `location` = its marker name): at once in solo or as host, through the host's mod as a client.
+    on_done gets {"ok": True} or {"ok": False, "error": ...}. False if we're a client and the host
+    doesn't run our mods (then nothing happens). `radii` / `height` from older callers are ignored.
     """
-    return run(TELEPORT, {"x": x, "y": y, "z": z, "radii": list(radii), "height": height}, on_done,
+    return run(TELEPORT, {"x": x, "y": y, "z": z, "yaw": yaw, "location": location}, on_done,
                feature_name=TELEPORT)  # fmt: skip
 
 

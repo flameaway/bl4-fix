@@ -135,6 +135,7 @@ def build(load: Loader) -> dict[str, Any]:
             "x": x,
             "y": y,
             "z": z,
+            "yaw": gen_drops.machine_yaw(marker),
         }
         here = [s for s in stations if s[2].lower() == world.lower()]
         if here:

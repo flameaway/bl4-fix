@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Direct Connect"
-version = "0.5.0"
+version = "0.5.1"
 description = "Direct IP co-op for Borderlands 4, without SHiFT or Steam matchmaking. Press F6 (in game or at the title screen) to host, join and add friends."
 authors = [{ name = "flame" }]
 

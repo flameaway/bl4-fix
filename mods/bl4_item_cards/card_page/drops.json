@@ -136,6 +136,8 @@
     {
      "boss": "Brain Zane",
      "encore": 0.3,
+     "encore_id": 33,
+     "encore_map": "Mandolin 1",
      "uvh0": 0.09,
      "uvh5": 0.19
     }
@@ -466,6 +468,8 @@
     {
      "boss": "Brain Zane",
      "encore": 0.3,
+     "encore_id": 33,
+     "encore_map": "Mandolin 1",
      "uvh0": 0.09,
      "uvh5": 0.19
     }
@@ -496,7 +500,7 @@
     {
      "boss": "Chiselbella",
      "encore": 0.3,
-     "encore_id": 4,
+     "encore_id": 2,
      "encore_map": "The Demon's Domain",
      "uvh0": 0.09,
      "uvh5": 0.19
@@ -1077,7 +1081,7 @@
     {
      "boss": "Bore-Tex",
      "encore": 0.3,
-     "encore_id": 4,
+     "encore_id": 3,
      "encore_map": "The Demon's Domain",
      "uvh0": 0.09,
      "uvh5": 0.19
@@ -2843,7 +2847,7 @@
     {
      "boss": "Chiselbella",
      "encore": 0.3,
-     "encore_id": 4,
+     "encore_id": 2,
      "encore_map": "The Demon's Domain",
      "uvh0": 0.09,
      "uvh5": 0.19
@@ -3435,6 +3439,8 @@
     {
      "boss": "Brain Zane",
      "encore": 0.09,
+     "encore_id": 33,
+     "encore_map": "Mandolin 1",
      "uvh0": 0.0,
      "uvh5": 0.0025
     }
@@ -3599,7 +3605,7 @@
     {
      "boss": "Bore-Tex",
      "encore": 0.3,
-     "encore_id": 4,
+     "encore_id": 3,
      "encore_map": "The Demon's Domain",
      "uvh0": 0.09,
      "uvh5": 0.19

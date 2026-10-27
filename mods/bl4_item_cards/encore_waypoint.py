@@ -48,6 +48,11 @@ try:
     from bl4_direct import coop
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: no travel as a co-op client
     coop = None
+try:
+    # In front of the machine, never in a wall (an older BL4 Direct lacks it: the rings below)
+    from bl4_direct import stand
+except Exception:  # noqa: BLE001
+    stand = None
 
 HOTKEY_PATH = "bl4direct/hotkey.json"
 # Sound events we carry messages on: one the inventory page has, one the HUD page has
@@ -61,7 +66,7 @@ OP_PIN_MACHINE, OP_TRAVEL = 1, 2
 
 PIN_CUSTOM_WAYPOINT, PIN_LOCATION = 1, 2
 STATION_TYPE = 24576  # def handle type of travel stations (RequestTeleportToStation's argument)
-# Where to stand: rings around the machine, tried until a spot is free
+# Where to stand without BL4 Direct's stand.py (older copies): rings around the machine
 STAND_RADII = (300, 450, 600)
 STAND_HEIGHT = 120
 # After a map loads, give it a moment before teleporting within it
@@ -241,8 +246,17 @@ def _is_client() -> bool:
     return bool(driver and driver.ServerConnection)
 
 
+def _stand_args(target: dict[str, Any]) -> dict[str, Any]:
+    """teleport_near's arguments for where to stand: the machine's facing, or the old rings."""
+    if stand is not None:
+        return {"yaw": target.get("yaw"), "location": target.get("location")}
+    return {"radii": STAND_RADII, "height": STAND_HEIGHT}
+
+
 def _teleport_next_to(machine: dict) -> bool:
     """Puts the player beside the machine, facing it. False if no spot around it was free."""
+    if stand is not None:
+        return bool(stand.place(get_pc(), machine).get("ok"))
     pawn = get_pc().Pawn
     mx, my, mz = machine["x"], machine["y"], machine["z"]
     for radius in STAND_RADII:
@@ -329,8 +343,7 @@ def _hop_as_client(game_dir: Path, machine: dict, index: int, seq: int) -> None:
         state = "arrived" if reply.get("ok") else ("blocked" if reply.get("error") == "no room" else "host_only")
         _set_travel(game_dir, machine, index, state, seq)
 
-    if coop is None or not coop.teleport_near(machine["x"], machine["y"], machine["z"], done,
-                                              radii=STAND_RADII, height=STAND_HEIGHT):  # fmt: skip
+    if coop is None or not coop.teleport_near(machine["x"], machine["y"], machine["z"], done, **_stand_args(machine)):  # fmt: skip
         _set_travel(game_dir, machine, index, "host_only", seq)
 
 

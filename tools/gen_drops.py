@@ -30,6 +30,7 @@ belong to several items):
 from __future__ import annotations
 
 import ast
+import math
 import operator
 import re
 from collections import defaultdict
@@ -52,6 +53,19 @@ _OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, as
 def _quoted(value: Any) -> str | None:
     match = _QUOTED.search(value) if isinstance(value, str) else None
     return match.group(1) if match else None
+
+
+def machine_yaw(record: dict) -> float | None:
+    """
+    Which way a marker's actor faces, in degrees (its `actorworldtransform` rotation, a quaternion).
+    A Big Encore machine's front (its name label, where players stand to use it) is its +X axis.
+    """
+    rotation = (record.get("actorworldtransform") or {}).get("rotation") or {}
+    try:
+        x, y, z, w = (float(rotation[axis]) for axis in "xyzw")
+    except (KeyError, TypeError, ValueError):
+        return None
+    return round(math.degrees(math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))), 2)
 
 
 def _walk_strings(value: Any) -> Iterator[str]:
@@ -312,6 +326,7 @@ def build_drops(load: Loader) -> tuple[dict[str, list[dict]], list[dict], dict[s
             "x": float(where.get("x", 0)),
             "y": float(where.get("y", 0)),
             "z": float(where.get("z", 0)),
+            "yaw": machine_yaw(record),
         })
 
     # The fast travel station to arrive at before walking (teleporting) to each machine: the
