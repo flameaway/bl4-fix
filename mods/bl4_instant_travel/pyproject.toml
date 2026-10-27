@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Instant Fast Travel"
+version = "0.1.1"
+description = "Fast travel on the same map without the travel portal: you're put on the station at once. Other maps still load as normal."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

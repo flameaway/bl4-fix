@@ -59,6 +59,7 @@ MODS: tuple[ModInfo, ...] = (
     ModInfo("bl4_weapondex", "Kairosdex", "A dex of the bosses you've beaten and their legendaries (F8).", paks=(_pak(4248),), ui_dirs=("bl4weapondex",), assets=("bl4weapondex/bosses", "bl4weapondex/items")),
     ModInfo("bl4_damage_meter", "Carnage Meter", "Every player's damage and top damage sources (F9), and a pop-up when a boss dies.", paks=(_pak(4249),), ui_dirs=("bl4carnage",)),
     ModInfo("bl4_uvh_teleport", "UVH Boss Teleport", "Hover a UVH boss challenge and press T to go there.", ui_dirs=("bl4uvhtp",)),
+    ModInfo("bl4_instant_travel", "Instant Fast Travel", "Fast travel on the same map without the portal."),
     ModInfo("bl4_minimap", "Minimap", "A minimap with the ECHO map's art, fog, icons and route (N)."),
     ModInfo("bl4_third_person", "Third Person", "H: over-the-shoulder camera with aiming."),
     ModInfo("bl4_vehicles_anywhere", "Vehicles Anywhere", "Summon and drive where vehicles aren't allowed."),
