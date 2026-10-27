@@ -5,13 +5,15 @@ Which bosses each character has beaten, saved in the SDK's settings folder
     {"<character id>": {"defeated": {"<boss id>": <unix time first beaten>}}}
 
 Kept apart from the game's save, which doesn't record per-boss kills (savegame.py reads what it
-does record). The dex shows every character's wins together (defeated_anywhere).
+does record). The dex shows every character's wins together (defeated_anywhere), or, with
+"Per-character Kairosdex" on, only the loaded character's (scope).
 """
 
 from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,11 @@ from unrealsdk import logging
 FILE: Path = SETTINGS_DIR / "weapondex_progress.json"
 
 _all: dict[str, Any] | None = None
+
+
+class Mode:
+    # Set by __init__: whether the "Per-character Kairosdex" option is on (read from any thread)
+    per_char: Callable[[], bool] = lambda: False  # noqa: E731
 
 
 def _load() -> dict[str, Any]:
@@ -66,6 +73,14 @@ def character() -> str | None:
     if not any(parts):
         return None
     return "".join(f"{p & 0xFFFFFFFF:08x}" for p in parts)
+
+
+def scope() -> str | None:
+    """
+    The character whose own dex shows ("Per-character Kairosdex" on and a character loaded), or
+    None: the account's. Game thread.
+    """
+    return character() if Mode.per_char() else None
 
 
 def defeated(char: str | None = None) -> dict[str, float]:

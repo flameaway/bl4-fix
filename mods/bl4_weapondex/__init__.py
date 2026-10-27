@@ -15,7 +15,9 @@ by region, item type or manufacturer, and sort by name, number, area, type or ch
 The dex is account-wide: a boss beaten by any character counts (kills are kept per character in
 progress.py). A boss counts when you're in the fight as it dies (tracker.py). Bosses beaten
 before the mod come from the game's own saves (savegame.py: activities finished on the profile,
-every character's finished missions). The dex itself is made from the game's own data (tools/gen_weapondex.py ->
+every character's finished missions). "Per-character Kairosdex" (off by default) gives each
+character its own dex instead: its own kills and missions, and the legendaries it has had since
+it started (owned.py), with "Reset this character's legendaries". The dex itself is made from the game's own data (tools/gen_weapondex.py ->
 dex.json); if a game patch changes that data the screen says so, and the dex needs rebuilding.
 
 The first time a boss is beaten or a legendary or pearl is obtained, the game's own big HUD
@@ -48,7 +50,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import bake, celebrate, data, progress, savegame, screen, thumbs, tracker
+from . import bake, celebrate, data, owned, progress, savegame, screen, thumbs, tracker
 
 __version__ = "0.2.0"
 __version_info__ = (0, 2, 0)
@@ -92,10 +94,43 @@ obtained_option = BoolOption(
     True,
     description=(
         "Shows an item in the dex only once you've had one (in a backpack, equipped or in the bank, on any"
-        " character); the rest read \"???\", even in a beaten boss's drop list. Off: every drop of a beaten"
-        " boss shows."
+        " character, or with Per-character Kairosdex on, on this one); the rest read \"???\", even in a"
+        " beaten boss's drop list. Off: every drop of a beaten boss shows."
     ),
     on_change=_changed,
+)
+
+per_char_option = BoolOption(
+    "Per-character Kairosdex",
+    False,
+    description=(
+        "Each character keeps its own dex: the bosses it has beaten and the legendaries it has had. A"
+        " character starts with what it carries (backpack and equipped, not the shared bank). Off: one dex"
+        " for the whole account. Each character's own dex is kept while this is off."
+    ),
+    on_change=_changed,
+)
+
+
+def _reset_char(_: ButtonOption) -> None:
+    char = progress.character()
+    if char is None:
+        screen.say("Load a character first.")
+        return
+    if not per_char_option.value:
+        screen.say("Turn on Per-character Kairosdex first.")
+        return
+    owned.reset_char(char)
+    screen.say("This character's legendaries start over from what it carries.")
+
+
+reset_char_button = ButtonOption(
+    "Reset this character's legendaries",
+    description=(
+        "Per-character Kairosdex: starts this character's legendaries over from what it carries now"
+        " (backpack and equipped). Its beaten bosses stay."
+    ),
+    on_press=_reset_char,
 )
 
 list_hover_option = BoolOption(
@@ -113,7 +148,7 @@ celebrate_option = BoolOption(
     True,
     description=(
         "The game's big banner, with the boss's or item's picture, the first time you beat a boss or get a"
-        " legendary or pearl (on any character). Turning this on or off applies from the next game start."
+        " legendary or pearl (on any character, or with Per-character Kairosdex on, on this one). Turning this on or off applies from the next game start."
     ),
     on_change_while_enabled=lambda _, value: celebrate.sync(bool(value)),
 )
@@ -179,6 +214,7 @@ dev_options = NestedOption(
 screen.S.unlocked = lambda: bool(unlock_option.value)
 screen.S.obtained = lambda: bool(obtained_option.value)
 screen.S.list_hover = lambda: bool(list_hover_option.value)
+progress.Mode.per_char = lambda: bool(per_char_option.value)
 
 
 # endregion
@@ -357,7 +393,16 @@ def _disable() -> None:
 # endregion
 
 mod = build_mod(
-    options=[open_button, open_key, obtained_option, list_hover_option, celebrate_option, dev_options],
+    options=[
+        open_button,
+        open_key,
+        obtained_option,
+        per_char_option,
+        reset_char_button,
+        list_hover_option,
+        celebrate_option,
+        dev_options,
+    ],
     keybinds=[],
     hooks=[tick, boss_died],
     commands=[dex_command],

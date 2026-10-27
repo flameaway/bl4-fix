@@ -58,7 +58,8 @@ def build(load: Loader) -> dict[str, Any]:
         if not where or not world:
             continue
         x, y, z = (float(where.get(axis, 0)) for axis in "xyz")
-        entry: dict[str, Any] = {"map": world, "location": fight, "x": x, "y": y, "z": z}
+        entry: dict[str, Any] = {"map": world, "location": fight, "x": x, "y": y, "z": z,
+                                 "yaw": gen_drops.machine_yaw(marker)}
         here = [s for s in stations if s[2].lower() == world.lower()]
         if here:
             best = min(here, key=lambda s: (s[0], (s[3] - x) ** 2 + (s[4] - y) ** 2 + (s[5] - z) ** 2))

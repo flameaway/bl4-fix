@@ -168,7 +168,11 @@
         var node = build(w, e);
         w.querySelector(".celeb_notif_wrapper").appendChild(node);
         var hold = Math.max(ANIM_MS * 2, e.hold_ms || HOLD_MS);
-        current = { node: node, widget: w, event: e, shownAt: Date.now() };
+        // The game keeps the widget "inactive" (display: none) except while it shows a banner of
+        // its own (Activate / Deactivate), so ours has to reveal it, and hide it again after
+        var revealed = w.classList.contains("inactive");
+        if (revealed) w.classList.remove("inactive");
+        current = { node: node, widget: w, event: e, shownAt: Date.now(), revealed: revealed };
         w.PlayAnimation(ANIM, { root: node });
         if (e.sound) {
             try {
@@ -198,6 +202,8 @@
             // the widget's own stop may have got there first
         }
         if (shown.node.parentNode) shown.node.parentNode.removeChild(shown.node);
+        // Unless the game activated it for a banner of its own meanwhile
+        if (shown.revealed && !shown.widget.IsActivated) shown.widget.classList.add("inactive");
         later(pump, 400);
     }
 

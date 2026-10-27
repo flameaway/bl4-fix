@@ -114,8 +114,15 @@ def _changed() -> None:
 # region Page link
 
 
+def _defeated(char: str | None) -> dict[str, float]:
+    """The account's wins, or `char`'s own ("Per-character Kairosdex")."""
+    kills = progress.defeated(char) if char is not None else progress.defeated_anywhere()
+    return {**dict.fromkeys(savegame.beaten(char), SAVE_ONLY), **kills}
+
+
 def state() -> dict[str, Any]:
     web = _menu_module("web")
+    char = progress.scope()  # None: the account's dex
     return {
         "open": {**S.open_request, "fresh": _open_pending()},
         "close": S.close_request,
@@ -123,7 +130,7 @@ def state() -> dict[str, Any]:
         # the moment they're closed, but sees this change when it wakes
         "menus_closed": getattr(getattr(web, "Link", None), "menus_closed", 0),
         # Wins seen by the mod carry their time; ones only the game's save shows are SAVE_ONLY
-        "defeated": {**dict.fromkeys(savegame.beaten(), SAVE_ONLY), **progress.defeated_anywhere()},
+        "defeated": _defeated(char),
         "character": progress.character() is not None,
         "unlock": S.unlocked(),
         "search": S.search,
@@ -139,8 +146,9 @@ def state() -> dict[str, Any]:
         "hover": roll.hover_state(S.hover),
         # Legendaries the player has had (owned.py): the "Obtained items only" option shows only these
         "obtained": S.obtained(),
-        "owned": sorted(owned.items()),
-        "owned_v": owned.S.version,
+        "owned": sorted(owned.items(char)),
+        # The page rebuilds its set when this changes: switching account <-> character must too
+        "owned_v": f"{owned.S.version}/{char or ''}",
         # "Item card on hover in the item list" option (off: only a boss's drop rows show a hover card)
         "list_hover": S.list_hover(),
         # The drop chances shown are at this UVH level

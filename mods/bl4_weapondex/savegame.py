@@ -19,6 +19,8 @@ tools/gen_weapondex_missions.py, says which missions and unlockables are which b
   and activities.
 Not the Big Encore machines in profile.sav's discovery list (`gbx_discovery_pg_shared`): those
 are only places seen (a whole DLC base was "discovered" without its boss beaten).
+"Per-character Kairosdex" uses only the character's own finished missions (beaten(char): each
+save's `char_guid` is PlayerState.ActiveCharGuid), not the profile's shared activities.
 
 Runs on a worker thread; the game thread only reads the result (beaten()) and calls tick(), which
 starts a new read when a save file changes (the game saves often).
@@ -52,19 +54,22 @@ SCAN_ALIGN = 16
 
 _LIST_ITEM = re.compile(r"^\s*- ([\w.]+)\s*$", re.MULTILINE)
 _KEY_LINE = re.compile(r"^( *)(\w+): *(.*?)\s*$")
+_CHAR_GUID = re.compile(r"^\s*char_guid:\s*'?([0-9A-Fa-f]{32})'?\s*$", re.MULTILINE)
 
 
 class S:
     beaten: frozenset[str] = frozenset()  # boss ids, from the last read
+    # Per character id (progress.character()'s form): its own finished missions' bosses
+    by_char: dict[str, frozenset[str]] = {}  # noqa: RUF012 - replaced whole by the worker
     stamp: Any = None  # the save files' names, sizes and dates when last read
     checked_at = 0.0
     worker: threading.Thread | None = None
     changed = False  # set by the worker: the dex page needs an update
 
 
-def beaten() -> frozenset[str]:
-    """Boss ids the game's saves show some character on the profile has beaten."""
-    return S.beaten
+def beaten(char: str | None = None) -> frozenset[str]:
+    """Boss ids the game's saves show some character on the profile (or `char` itself) has beaten."""
+    return S.beaten if char is None else S.by_char.get(char, frozenset())
 
 
 def tick(on_change: Any) -> None:
@@ -96,14 +101,29 @@ def _read(folder: Path, stamp: Any) -> None:
         shared = _decrypt(key, profile)
         found = _unlockables_beaten(shared)
         held = owned.from_save_text(shared)  # the shared bank
+        by_char: dict[str, frozenset[str]] = {}
+        carried: list[tuple[str, list[str], float]] = []
         for path in folder.glob("*.sav"):
             if path.stem.isdigit():  # a character
+                saved_at = path.stat().st_mtime
                 text = _decrypt(key, path.read_bytes())
-                found |= _missions_beaten(text)
-                held += owned.from_save_text(text)  # backpack and equipped (not lost loot)
+                missions = _missions_beaten(text)
+                found |= missions
+                serials = owned.from_save_text(text)  # backpack and equipped (not lost loot)
+                held += serials
+                if guid := _CHAR_GUID.search(text):
+                    char = guid.group(1).lower()
+                    by_char[char] = frozenset(missions)
+                    carried.append((char, serials, saved_at))
         if owned.rebuild(held):
             S.changed = True
         if owned.add_serials(held):
+            S.changed = True
+        for char, serials, saved_at in carried:
+            if owned.add_from_save(char, serials, saved_at):
+                S.changed = True
+        if by_char != S.by_char:
+            S.by_char = by_char
             S.changed = True
         if found != S.beaten:
             S.beaten = frozenset(found)

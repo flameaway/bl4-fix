@@ -36,10 +36,15 @@ try:
     from bl4_direct import coop
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: no trips as a co-op client
     coop = None
+try:
+    # In front of the machine, never in a wall (an older BL4 Direct lacks it: the rings below)
+    from bl4_direct import stand
+except Exception:  # noqa: BLE001
+    stand = None
 
 PIN_CUSTOM_WAYPOINT, PIN_LOCATION = 1, 2
 STATION_TYPE = 24576  # def handle type of travel stations (RequestTeleportToStation's argument)
-# Where to stand: rings around the machine, tried until a spot is free
+# Where to stand without BL4 Direct's stand.py (older copies): rings around the machine
 STAND_RADII = (300, 450, 600)
 STAND_HEIGHT = 120
 # After a map loads, give it a moment before teleporting within it
@@ -118,7 +123,7 @@ def _hop_as_client(target: dict[str, Any]) -> None:
     def done(reply: dict[str, Any]) -> None:
         hop[1] = reply
 
-    if not coop.teleport_near(target["x"], target["y"], target["z"], done, radii=STAND_RADII, height=STAND_HEIGHT):
+    if not coop.teleport_near(target["x"], target["y"], target["z"], done, **_stand_args(target)):
         hop[1] = {"ok": False, "error": "host"}
 
 
@@ -178,8 +183,17 @@ def elsewhere(target: dict[str, Any]) -> bool:
 # region Trips
 
 
+def _stand_args(target: dict[str, Any]) -> dict[str, Any]:
+    """teleport_near's arguments for where to stand: the machine's facing, or the old rings."""
+    if stand is not None:
+        return {"yaw": target.get("yaw"), "location": target.get("location")}
+    return {"radii": STAND_RADII, "height": STAND_HEIGHT}
+
+
 def _teleport_next_to(target: dict[str, Any]) -> bool:
     """Puts the player beside the machine, facing it. False if no spot around it was free."""
+    if stand is not None:
+        return bool(stand.place(get_pc(), target).get("ok"))
     pawn = get_pc().Pawn
     mx, my, mz = target["x"], target["y"], target["z"]
     for radius in STAND_RADII:

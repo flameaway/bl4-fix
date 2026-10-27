@@ -1,6 +1,7 @@
 """
 Celebrations: the game's own big HUD banner (celebrate_page/ draws it) when a boss is beaten for
-the first time on this account, or a legendary or pearl is obtained for the first time.
+the first time on this account, or a legendary or pearl is obtained for the first time (with
+"Per-character Kairosdex" on: the first time for the character being played).
 
 - Bosses: __init__.beaten() asks first_kill() before it records the win, then calls boss().
 - Items: the backpack is checked twice a second for items that weren't in it before. One raw read
@@ -114,9 +115,18 @@ def _post(event: dict[str, Any]) -> None:
         logging.error(f"[Kairosdex] Celebrations: couldn't write the banner: {ex!r}")
 
 
+def _beaten(char: str | None) -> set[str]:
+    """Bosses beaten on the account, or by `char` alone ("Per-character Kairosdex")."""
+    kills = progress.defeated(char) if char is not None else progress.defeated_anywhere()
+    return set(kills) | set(savegame.beaten(char))
+
+
 def first_kill(boss_id: str) -> bool:
-    """Whether no character on this account has beaten this boss yet (as far as the dex knows)."""
-    return boss_id not in progress.defeated_anywhere() and boss_id not in savegame.beaten()
+    """
+    Whether no character on this account (or, per character, this one) has beaten this boss yet,
+    as far as the dex knows.
+    """
+    return boss_id not in _beaten(progress.scope())
 
 
 def boss(boss_id: str) -> None:
@@ -124,7 +134,7 @@ def boss(boss_id: str) -> None:
         return
     bosses = data.dex()["bosses"]
     record = next((b for b in bosses if b["id"] == boss_id), {})
-    beaten = (set(progress.defeated_anywhere()) | set(savegame.beaten())) & {b["id"] for b in bosses}
+    beaten = _beaten(progress.scope()) & {b["id"] for b in bosses}
     _post({
         "kind": "boss",
         "verb": "FIRST KILL",
@@ -153,7 +163,7 @@ def item(key: str) -> None:
         "name": record.get("name") or key,
         "sub": sub,
         "label": LABEL,
-        "amount": f"{len(owned.S.items & items.keys())} / {len(items)}",
+        "amount": f"{len(owned.items(progress.scope()) & items.keys())} / {len(items)}",
         "picture": _picture("items", key),
         "icon": ICON_PEARL if pearl else ICON_ITEM,
     })
@@ -259,8 +269,12 @@ def _check() -> None:
     first = slots[0]._get_address()  # noqa: SLF001
     layout = (state._get_address(), first, count)  # noqa: SLF001
     if layout != S.layout:
-        # A new world, character, or the array moved: learn it again and take a new baseline
-        S.layout, S.handles = layout, None
+        # A new world or character: a new baseline. The same PlayerState with the array grown or
+        # moved is a pickup into a full backpack (the array has no empty slots then): keep the
+        # handles, or the baseline would swallow the new item
+        if S.layout is None or S.layout[0] != layout[0]:
+            S.handles = None
+        S.layout = layout
         _learn(slots, count, first)
     handles = _handles(slots, count, first)
     if handles is None:
@@ -286,7 +300,8 @@ def _new_item(slot: Any, handle: int) -> None:
     serial = owned.serial_of(item_)
     if not serial:
         return
-    for key in owned.add_serials([serial]):
+    # Per character: new to this character's record (none while it hasn't started)
+    for key in owned.add_serials([serial], progress.scope()):
         logging.info(f"[Kairosdex] First time: {(data.dex()['items'].get(key) or {}).get('name', key)}")
         item(key)
 

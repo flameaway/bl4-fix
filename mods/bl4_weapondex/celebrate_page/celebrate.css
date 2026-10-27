@@ -23,6 +23,11 @@
     opacity: 0;
 }
 
+/* Lower than the game's banner (top: 17rem): our picture above the text reached the compass and the area name */
+.bl4kdx_celeb.celeb_special_notif_cntr {
+    top: 27rem;
+}
+
 .bl4kdx_celeb .celeb_sn_notif_verb_description_bkgd {
     transform: scaleX(0) scaleY(0.1);
 }
