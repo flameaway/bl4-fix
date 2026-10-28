@@ -404,9 +404,25 @@ game.
 | [`mods/`](mods) | One folder per mod |
 | [`ported/`](ported) | GPL-3.0 rewrites of Yeti's mods |
 | [`installer/`](installer) | The setup app: `python installer/build.py` produces `dist/BL4FixSetup.exe`; `catalog.py` lists the mods |
+| [`assets/`](assets) | Kairosdex's boss and item pictures (rendered in game), shipped by the setup app |
 | [`tools/`](tools) | Generators for game-derived data (`gen_*.py`), NCS parser, desktop agent, bridge client, live UI editing, `release.py` |
 | [`dev/`](dev) | The bridge mod (run Python on the game thread from outside), hot-reload scripts, reverse-engineering and profiling tools |
 | [`docs/`](docs) | Write-ups: co-op fast travel, network performance, game hitches |
+
+### Building the setup app
+
+You need Windows, Python 3.11+ and Borderlands 4 installed. Then run:
+
+```
+python installer/build.py
+```
+
+It downloads the pinned SDK, packs every mod and builds `dist/BL4FixSetup.exe` with PyInstaller (in
+`installer/.venv`). The setup window uses the game's own fonts, menus and art. Those aren't in git, so
+the first build reads them out of your game's paks and decompresses them with
+[pyooz](https://pypi.org/project/pyooz/) (`tools/gen_setup_ui.py`). Use `BL4_GAME_DIR` if the game
+isn't in the default Steam folder. Kairosdex's boss and item pictures are rendered in game, which
+takes a long time, so they're kept ready-made in [`assets/`](assets).
 
 Start with [`BL4_MODDING_GUIDE.md`](BL4_MODDING_GUIDE.md) (the long-form history: networking, runtime UMG,
 two-instance testing, the installer).

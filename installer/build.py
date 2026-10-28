@@ -4,12 +4,14 @@ Builds dist/BL4FixSetup.exe (the BL4 Fix setup app).
     python installer/build.py
 
 Steps: fetch + verify the pinned SDK release, pack every mod in catalog.py (mods/ and ported/) into
-.sdkmod files, zip the mods' pictures (catalog `assets`, e.g. Weapondex's boss and item pictures,
-taken from this machine's game folder: BL4_GAME_DIR overrides it), then bundle everything with
-PyInstaller (installed into installer/.venv on first run). The setup window's page (installer/ui/)
-uses the game's own menus, fonts and art: tools/gen_setup_ui.py copies them into installer/ui/game/
-first (dev machine only, not in git). The ported mods are GPL-3.0: each of
-their .sdkmod files carries ported/LICENSE.
+.sdkmod files, zip the mods' pictures (catalog `assets`, e.g. Kairosdex's boss and item pictures,
+from assets/ in the repo: they're baked in game, tools/sync_pictures.py copies a new bake in),
+then bundle everything with PyInstaller (installed into installer/.venv on first run). The setup
+window's page (installer/ui/) uses the game's own menus, fonts and art, which aren't in git: when
+installer/ui/game/ is missing, tools/gen_setup_ui.py takes them out of the installed game's paks
+(in the venv, with pyooz for the Oodle compression; BL4_GAME_DIR overrides the game folder). So a
+clone plus an installed game is enough to build.
+The ported mods are GPL-3.0: each of their .sdkmod files carries ported/LICENSE.
 """
 
 from __future__ import annotations
@@ -37,7 +39,9 @@ PAYLOAD = BUILD / "payload"
 CACHE = BUILD / "cache"
 VENV = HERE / ".venv"
 ICON = HERE / "ui" / "game" / "_setup"
-# Where the mods' pictures are taken from (catalog `assets`): the dev's own install
+# The mods' pictures (catalog `assets`), laid out like uiresources/
+ASSETS = REPO / "assets"
+# The installed game: the setup window's UI files come out of its paks
 GAME_DIR = Path(os.environ.get("BL4_GAME_DIR", r"C:\Program Files (x86)\Steam\steamapps\common\Borderlands 4"))
 
 SDK_URL = "https://github.com/bl-sdk/oak2-mod-manager/releases/download/v0.3/oak2-sdk.zip"
@@ -45,6 +49,9 @@ SDK_SHA256 = "602675446abed184169fa158be3c8bc81777a71203581e4a248eca8a3d00b5c7"
 PYINSTALLER = "pyinstaller==6.11.1"
 # The setup window: an HTML page on Edge WebView2 (gui.py, Tkinter, is the fallback)
 PYWEBVIEW = "pywebview==5.4"
+# Only for tools/gen_setup_ui.py (the exe doesn't import them): Pillow + numpy for the icon and
+# Claptrap, pyooz (ooz, an open-source Oodle decoder, GPL-3.0) to read the game's paks
+SETUP_UI_TOOLS = ("pillow", "numpy", "pyooz==0.0.8")
 
 
 def fetch_sdk() -> Path:
@@ -92,11 +99,11 @@ def build_sdkmod(src: Path, out: Path, extra: dict[str, Path] | None = None) -> 
 
 def build_assets(info: catalog.ModInfo, out: Path) -> int:
     """
-    Zips a mod's loose pictures from this machine's game folder (they're made in game: Weapondex's
-    `dex bake all` / `dex bake items`). Each folder and its small/ copies: index.json plus the
-    pictures it lists, nothing else (raw/ and trials/ are bake scratch). Returns the picture count.
+    Zips a mod's pictures from assets/ (made in game: Kairosdex's `dex bake all` / `dex bake
+    items`, copied in by tools/sync_pictures.py). Each folder and its small/ copies: index.json plus
+    the pictures it lists. Returns the picture count.
     """
-    ui = GAME_DIR / "OakGame/Content/uiresources"
+    ui = ASSETS
     count = 0
     with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as zf:  # PNGs don't compress further
         for rel in info.assets:
@@ -118,6 +125,21 @@ def build_assets(info: catalog.ModInfo, out: Path) -> int:
     return count
 
 
+def warn_unsynced_pictures() -> None:
+    """A bake in this machine's game folder that assets/ doesn't have yet (the dev forgot to sync)."""
+    sys.path.insert(0, str(REPO / "tools"))
+    import sync_pictures  # noqa: PLC0415
+
+    try:
+        changes = sync_pictures.sync(GAME_DIR, check=True)
+    except SystemExit as ex:
+        changes = [str(ex)]
+    if changes:
+        print(f"warning: the pictures in {GAME_DIR} differ from assets/ (run tools/sync_pictures.py):")
+        for line in changes:
+            print(f"  {line}")
+
+
 def ensure_pyinstaller() -> Path:
     python = VENV / "Scripts" / "python.exe"
     if not python.exists():
@@ -128,9 +150,12 @@ def ensure_pyinstaller() -> Path:
 
 def main() -> None:
     version = check_versions()
+    python = ensure_pyinstaller()
     # The setup window's game UI files (fonts, menus, Claptrap), taken from this machine's install
     if not all((ICON / name).is_file() for name in ("claptrap.png", "icon.ico", "icon.png")):
-        raise SystemExit("installer/ui/game/ is missing: run python tools/gen_setup_ui.py --oodle <oo2core_*_win64.dll>")
+        print(f"installer/ui/game/ is missing: taking the game's UI files from {GAME_DIR}")
+        subprocess.run([str(python), "-m", "pip", "install", "-q", *SETUP_UI_TOOLS], check=True)
+        subprocess.run([str(python), str(REPO / "tools" / "gen_setup_ui.py"), "--game", str(GAME_DIR)], check=True)
     shutil.rmtree(PAYLOAD, ignore_errors=True)
     PAYLOAD.mkdir(parents=True)
     shutil.copyfile(fetch_sdk(), PAYLOAD / "oak2-sdk.zip")
@@ -141,13 +166,13 @@ def main() -> None:
         extra = {"LICENSE": REPO / "ported" / "LICENSE"} if info.source == "ported" else None
         build_sdkmod(src, PAYLOAD / f"{info.id}.sdkmod", extra)
         if info.assets:
-            print(f"{info.id}: {build_assets(info, PAYLOAD / f'{info.id}.assets.zip')} pictures from {GAME_DIR}")
+            print(f"{info.id}: {build_assets(info, PAYLOAD / f'{info.id}.assets.zip')} pictures from assets/")
+    warn_unsynced_pictures()
     shutil.copyfile(MOD_SRC / "shared.py", PAYLOAD / "shared.py")
     # The installer moves the logo movies itself too (its Skip intro switch)
     shutil.copyfile(SKIP_INTRO_SRC / "movies.py", PAYLOAD / "movies.py")
     print(f"payload ready (BL4 Fix {version}, {len(catalog.MODS)} mods)")
 
-    python = ensure_pyinstaller()
     subprocess.run(
         [
             str(python), "-m", "PyInstaller",

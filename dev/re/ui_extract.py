@@ -1,7 +1,9 @@
 """
 Dumps the game's UI files (every path under a `uiresources/` folder) out of its paks, to browse.
 
-    python dev/re/ui_extract.py --oodle <oo2core_*_win64.dll> [--out dev/re/ui_dump] [--filter text]
+    python dev/re/ui_extract.py [--oodle <oo2core_*_win64.dll>] [--out dev/re/ui_dump] [--filter text]
+
+Without --oodle it decompresses with pyooz (`pip install pyooz`).
 
 For each path the pak with the highest patch number wins (like the game), our own ~mods paks are
 skipped. Writes `<out>/<path under uiresources>` plus `<out>/_index.json` (path -> pak, size).
@@ -101,7 +103,7 @@ def list_entries(pak_path: Path) -> dict[str, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--oodle", type=Path, required=True)
+    parser.add_argument("--oodle", type=Path, help="an oo2core_*_win64.dll (default: pyooz)")
     parser.add_argument("--game", type=Path, default=DEFAULT_GAME)
     parser.add_argument("--out", type=Path, default=REPO / "dev" / "re" / "ui_dump")
     parser.add_argument("--filter", default="", help="only paths containing this text")

@@ -24,8 +24,8 @@ the page lives in a pak, which only loads at startup, while our item_cards.js an
 are loose files the mod keeps up to date and the script reloads without a restart.
 
 Pak data is Oodle-compressed and Oodle is linked into the game exe, not shipped as a DLL, so this
-needs an oo2core DLL from somewhere else (other games ship one). The mod itself never decompresses
-anything; it only compares the stored SHA1.
+needs an oo2core DLL from somewhere else (other games ship one); `extract` also takes no DLL and
+then uses pyooz. The mod itself never decompresses anything; it only compares the stored SHA1.
 
 Edits find their anchors by pattern and fail loudly if one is missing or ambiguous, so a changed
 page gets noticed here instead of producing a broken card.
@@ -62,7 +62,20 @@ import ncs_parse  # noqa: E402
 # region Extraction
 
 
-def oodle_decompress(oodle_dll: Path, data: bytes, size: int) -> bytes:
+def oodle_decompress(oodle_dll: Path | None, data: bytes, size: int) -> bytes:
+    """
+    With no DLL: ooz (`pip install pyooz`, GPL-3.0, a build-time tool only), an open-source decoder
+    for the Kraken and Leviathan blocks BL4's paks use.
+    """
+    if oodle_dll is None:
+        try:
+            import ooz  # noqa: PLC0415
+        except ImportError:
+            raise SystemExit("no Oodle decompressor: pip install pyooz, or pass --oodle <oo2core_*_win64.dll>") from None
+        got = ooz.decompress(data, size)
+        if len(got) != size:
+            raise SystemExit(f"ooz failed (got {len(got)} of {size} bytes)")
+        return got
     oodle = ctypes.WinDLL(str(oodle_dll))
     buffer = ctypes.create_string_buffer(size)
     got = oodle.OodleLZ_Decompress(data, len(data), buffer, size, 0, 0, 0, None, 0, None, None, None, 0, 3)
@@ -71,7 +84,7 @@ def oodle_decompress(oodle_dll: Path, data: bytes, size: int) -> bytes:
     return buffer.raw
 
 
-def extract(entry: pak.PakEntryInfo, oodle_dll: Path) -> bytes:
+def extract(entry: pak.PakEntryInfo, oodle_dll: Path | None) -> bytes:
     with entry.pak.open("rb") as file:
         file.seek(entry.offset)
         _offset, size, usize, method = struct.unpack("<QQQI", file.read(28))

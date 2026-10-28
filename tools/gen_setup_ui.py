@@ -1,30 +1,37 @@
 """
-Copies the game UI files the setup app's page uses into installer/ui/game/ (dev only, gitignored).
+Copies the game UI files the setup app's page uses into installer/ui/game/ (gitignored: they're
+the game's files, taken from the builder's own install).
 
-    python tools/gen_setup_ui.py [--oodle <oo2core_*_win64.dll>] [--dump dev/re/ui_dump]
+    python tools/gen_setup_ui.py [--game <Borderlands 4 folder>] [--oodle <oo2core_*_win64.dll>]
+    python tools/gen_setup_ui.py --dump dev/re/ui_dump
 
 The page (installer/ui/) is built from the game's own menus: its stylesheets, fonts, component
 templates (Options rows, toggle, list button, main menu button) and art (title screen, ECHO
-portraits, Claptrap). This takes them from a dump of the game's paks (dev/re/ui_extract.py, run
-first when --oodle is given), follows every url() the stylesheets reference, and rewrites the
-game's coui://uiresources/ links into relative paths so the page loads them from game/.
-installer/build.py bundles the folder into the exe.
+portraits, Claptrap). This reads them straight out of the game's paks (the highest patch wins,
+like the game; or out of a dev/re/ui_extract.py dump with --dump), follows every url() the
+stylesheets reference, and rewrites the game's coui://uiresources/ links into relative paths so
+the page loads them from game/. installer/build.py runs it when the folder is missing and bundles
+the folder into the exe.
+
+Pak data is Oodle-compressed: without --oodle it decompresses with pyooz (`pip install pyooz`),
+so nothing but the game is needed. Also needs Pillow and numpy (the icon and Claptrap).
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import posixpath
 import re
 import shutil
-import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "installer" / "ui" / "game"
-DUMP = REPO / "dev" / "re" / "ui_dump"
+DEFAULT_GAME = Path(os.environ.get("BL4_GAME_DIR", r"C:\Program Files (x86)\Steam\steamapps\common\Borderlands 4"))
 
 # Stylesheets the page links (game/<path>), in this order
 CSS = [
@@ -96,24 +103,59 @@ COUI = re.compile(r"coui://uiresources/([^\"')\s]+)", re.I)
 URL = re.compile(r"url\(\s*[\"']?([^\"')]+)[\"']?\s*\)", re.I)
 
 
-def _find(rel: str) -> Path | None:
-    """Paths in the game's CSS don't always match the files' case."""
-    path = DUMP / rel
-    if path.is_file():
-        return path
-    parent = DUMP
-    for part in PurePosixPath(rel).parts:
-        try:
-            match = next((c for c in parent.iterdir() if c.name.lower() == part.lower()), None)
-        except OSError:
-            return None
-        if match is None:
-            return None
-        parent = match
-    return parent if parent.is_file() else None
+Reader = Callable[[str], "bytes | None"]  # path under uiresources -> the file, None if absent
 
 
-def make_claptrap(src: Path, dst: Path) -> None:
+def pak_reader(game: Path, oodle: Path | None) -> Reader:
+    """The game's own uiresources files, out of its paks (our ~mods paks and DLC folders skipped)."""
+    sys.path.insert(0, str(REPO / "mods" / "bl4_item_cards"))
+    sys.path.insert(0, str(REPO / "tools"))
+    sys.path.insert(0, str(REPO / "dev" / "re"))
+    import pak  # noqa: PLC0415
+    from gen_item_cards import extract  # noqa: PLC0415
+    from ui_extract import list_entries  # noqa: PLC0415
+
+    paks = [p for p in (game / "OakGame/Content/Paks").rglob("*.pak") if "~mods" not in p.parts]
+    if not paks:
+        raise SystemExit(f"no game paks under {game}: pass --game <Borderlands 4 folder> (or set BL4_GAME_DIR)")
+    files: dict[str, tuple[Path, int]] = {}
+    for pak_path in sorted(paks, key=pak.patch_number):  # later (higher patch) paks override earlier ones
+        for path, offset in list_entries(pak_path).items():
+            low = path.lower()
+            if "/uiresources/" in low and "/dlc/" not in low:
+                files[low.split("/uiresources/", 1)[1]] = (pak_path, offset)
+
+    def read(rel: str) -> bytes | None:
+        hit = files.get(rel.lower())  # paths in the game's CSS don't always match the files' case
+        if hit is None or hit[1] < 0:  # -1: deleted by a later patch
+            return None
+        return extract(pak.PakEntryInfo(hit[0], False, "", hit[1]), oodle)
+
+    return read
+
+
+def dump_reader(dump: Path) -> Reader:
+    """Files from a dev/re/ui_extract.py dump."""
+
+    def read(rel: str) -> bytes | None:
+        path = dump / rel
+        if path.is_file():
+            return path.read_bytes()
+        parent = dump
+        for part in PurePosixPath(rel).parts:  # paths in the game's CSS don't always match the files' case
+            try:
+                match = next((c for c in parent.iterdir() if c.name.lower() == part.lower()), None)
+            except OSError:
+                return None
+            if match is None:
+                return None
+            parent = match
+        return parent.read_bytes() if parent.is_file() else None
+
+    return read
+
+
+def make_claptrap(src: bytes, dst: Path) -> None:
     """
     Claptrap cut out of the news art (he's drawn on flat red): the red reached from the picture's
     edges goes, then enclosed pockets of the same pure red (between his wheel struts) unless
@@ -124,7 +166,7 @@ def make_claptrap(src: Path, dst: Path) -> None:
     import numpy as np  # noqa: PLC0415
     from PIL import Image, ImageFilter  # noqa: PLC0415
 
-    im = Image.open(src).convert("RGB")
+    im = Image.open(io.BytesIO(src)).convert("RGB")
     a = np.asarray(im).astype(int)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     red = (r > 140) & (r - g > 70) & (r - b > 90)  # the background and its orange glow
@@ -190,11 +232,11 @@ def _write_filters(path: Path) -> None:
                     encoding="utf-8")  # fmt: skip
 
 
-def make_icon(src: Path, out_dir: Path) -> None:
+def make_icon(src: bytes, out_dir: Path) -> None:
     """The app's icon: the lit vault symbol from the title screen's menu panel."""
     from PIL import Image  # noqa: PLC0415
 
-    im = Image.open(src).convert("RGBA")
+    im = Image.open(io.BytesIO(src)).convert("RGBA")
     im = im.crop(im.getchannel("A").getbbox())
     side = max(im.size)
     square = Image.new("RGBA", (side, side))
@@ -205,19 +247,27 @@ def make_icon(src: Path, out_dir: Path) -> None:
     big.save(out_dir / "icon.ico", sizes=[(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)])
 
 
+def _text(data: bytes) -> str:
+    """As read_text() reads it (universal newlines): write_text() puts the line ends back."""
+    return data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _relative(target: str, from_file: str) -> str:
     return os.path.relpath(target, os.path.dirname(from_file) or ".").replace(os.sep, "/")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--oodle", type=Path, help="refresh the dump first (dev/re/ui_extract.py)")
-    parser.add_argument("--dump", type=Path, default=DUMP)
+    parser.add_argument("--game", type=Path, default=DEFAULT_GAME, help="the Borderlands 4 folder")
+    parser.add_argument("--oodle", type=Path, help="an oo2core_*_win64.dll (default: pyooz)")
+    parser.add_argument("--dump", type=Path, help="read a dev/re/ui_extract.py dump instead of the paks")
     args = parser.parse_args()
-    globals()["DUMP"] = args.dump
-    if args.oodle:
-        subprocess.run([sys.executable, str(REPO / "dev" / "re" / "ui_extract.py"), "--oodle", str(args.oodle),
-                        "--out", str(args.dump)], check=True)  # fmt: skip
+    read = dump_reader(args.dump) if args.dump else pak_reader(args.game, args.oodle)
+
+    def need(rel: str) -> bytes:
+        if (data := read(rel)) is None:
+            raise SystemExit(f"{rel} isn't in the game's files")
+        return data
 
     shutil.rmtree(OUT, ignore_errors=True)
     done: set[str] = set()
@@ -229,14 +279,15 @@ def main() -> None:
         if key in done or SKIP.search(key):
             continue
         done.add(key)
-        src = _find(rel)
-        if src is None:
+        data = read(rel)
+        if data is None:
             missing.append(rel)
             continue
         dst = OUT / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if src.suffix.lower() == ".css":
-            text = src.read_text(encoding="utf-8", errors="replace")
+        suffix = PurePosixPath(rel).suffix.lower()
+        if suffix == ".css":
+            text = _text(data)
             refs = [m.group(1) for m in COUI.finditer(text)]
             # Relative url()s inside the game's CSS, resolved against the stylesheet
             for m in URL.finditer(text):
@@ -248,19 +299,19 @@ def main() -> None:
             text = COH_MATRIX.sub(lambda m: f"url(#{_matrix_id(m.group(1))})", text)
             text = TEXT_STROKE.sub("-webkit-text-stroke:", text)
             dst.write_text(text, encoding="utf-8")
-        elif src.suffix.lower() == ".html":
-            text = src.read_text(encoding="utf-8", errors="replace")
+        elif suffix == ".html":
+            text = _text(data)
             queue.extend(r for r in (m.group(1) for m in COUI.finditer(text)) if not r.endswith((".js", ".data", ".css")))
             dst.write_text(COUI.sub(lambda m: "game/" + m.group(1), text), encoding="utf-8")
         else:
-            shutil.copyfile(src, dst)
+            dst.write_bytes(data)
     _write_filters(OUT / "_setup/filters.svg")
-    make_icon(DUMP / "menu_main/assets/ui_art_asset/menu_panel_logo.png", OUT / "_setup")
-    make_claptrap(DUMP / "menu_news/assets/image_large/BL4_News_Claptrap_Full_1920x1080.png", OUT / "_setup/claptrap.png")
+    make_icon(need("menu_main/assets/ui_art_asset/menu_panel_logo.png"), OUT / "_setup")
+    make_claptrap(need("menu_news/assets/image_large/BL4_News_Claptrap_Full_1920x1080.png"), OUT / "_setup/claptrap.png")
     size = sum(f.stat().st_size for f in OUT.rglob("*") if f.is_file())
     print(f"{len(done) - len(missing)} files, {size / 1e6:.1f} MB -> {OUT}")
     if missing:
-        print(f"{len(missing)} referenced files not in the dump (fine for unused states): {', '.join(sorted(missing)[:8])}...")
+        print(f"{len(missing)} referenced files not in the game's files (fine for unused states): {', '.join(sorted(missing)[:8])}...")
 
 
 if __name__ == "__main__":
