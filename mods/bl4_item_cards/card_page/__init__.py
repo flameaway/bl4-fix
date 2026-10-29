@@ -2,25 +2,25 @@
 Detailed item cards: skill names, ranks, numbers and descriptions on class mods, names on
 secondary stats, and properly rendered banner/flavour text.
 
-BL4's menus are HTML pages (Coherent Gameface) stored in the game's paks, and a pak in
-`Paks/~mods/` can replace any of them. Our pak holds one page, item_card.html, made from the game's
-own copy by tools/gen_item_cards.py with a few small additions. Everything else we draw comes from
-item_cards.js and item_cards.css, which we keep as loose files in uiresources/bl4direct/: the UI
-reads those from disk, and the script reloads itself and the styles when they change, so updating
-them needs no restart (only the page in the pak does).
+BL4's menus are HTML pages (Coherent Gameface). Everything we draw comes from item_cards.js and
+item_cards.css, loose files in uiresources/bl4direct/. Since 0.2.0 the BL4 UI Link (../uilink,
+shared by our mods) runs the script in every game page; the script adds to the game's own card at
+runtime what our copy of item_card.html used to add (a box for the skill list, the stat names,
+markup rendering). That copy lived in a pak (pakchunk0-Windows_4242_P.pak), which clashed with any
+other mod replacing the item card; it's removed now.
 
 Paks are only read at startup: the game keeps each pak's index from then on and reads file data
-at those offsets, but doesn't hold the file open the whole time. A pak replaced while the game runs
-can therefore go through and then be read at the old offsets, which shows garbage (verified). So
-this never touches an existing pak while the game runs: changes are staged next to it
-(`<pak>.next` to replace it, `<pak>.remove` to delete it) and a small hidden helper applies them
-once the game has closed. Creating the pak when there's none yet is safe straight away.
+at those offsets, so a pak changed or deleted while the game runs can show garbage (verified).
+So the old pak is never touched while the game runs: a `.remove` marker next to it and a small
+hidden helper delete it once the game has closed. Until then (that one session) the old page
+still loads the script too; it runs as one copy either way.
 
-To never undo a game update, the pak is only installed while the game's own item_card.html is
-still exactly the copy ours was made from (vanilla.json). If a patch changes it, or another mod
-also replaces the item card, the pak goes away and the feature stays off until the mod is updated.
+To never draw over a game update, the script only runs while the game's own item_card.html is
+still exactly the copy it was written against (vanilla.json, `page_current`). If a patch changes
+it, the feature stays off ("Needs update") until the mod is updated.
 
-Plain Python only (file I/O, no unreal calls), so this is safe to run from any thread.
+Plain Python only (file I/O, no unreal calls), so this is safe to run from any thread. The setup
+app imports it too (installer/core.py PAGE_MODULES), so keep it plain Python 3.11.
 """
 
 from __future__ import annotations
@@ -36,30 +36,30 @@ ASSETS = resources.files(__name__)
 # True when running from a source folder (a dev junction) rather than a packed .sdkmod, whose
 # files can't change while the game runs
 FROM_SOURCE = isinstance(ASSETS, Path)
-# A high patch number so it wins over the game's paks
+# The old page pak (until 0.1.x), removed after the game exits
 PAK_NAME = "pakchunk0-Windows_4242_P.pak"
 UI_PREFIX = "OakGame/Content/uiresources/"
 CARD_PAGE = "item_card/item_card.html"
 # Our own files, kept as loose files: (path in the game's uiresources folder, asset name). They
-# must not also be in a pak, since a pak copy would win over the loose one.
+# must not also be in a pak, since a pak copy would win over the loose one. The link runs the
+# script (SCRIPT_URL).
 LOOSE_FILES = [("bl4direct/item_cards.css", "item_cards.css"), ("bl4direct/item_cards.js", "item_cards.js")]
 # Generated game data the cards read, published only while the game data it came from is unchanged:
 # (path, asset, key of its source fingerprints in vanilla.json)
 LOOSE_DATA = [("bl4direct/drops.json", "drops.json", "drop_data")]
 # The player's card options (size, fit to screen), which the script polls
 SETTINGS_PATH = "bl4direct/settings.json"
+SCRIPT_URL = "coui://uiresources/bl4direct/item_cards.js"
 
 _helper_started = False
 _data_ok: dict[str, bool] = {}
+# Whether the game's own item card is the one the script was written against: None until sync()
+# checked (read by the shared health package's probe, through the status line)
+page_current: bool | None = None
 
 
 def _vanilla() -> dict:
     return json.loads((ASSETS / "vanilla.json").read_text(encoding="utf-8"))
-
-
-def build_pak() -> bytes:
-    files = {CARD_PAGE: (ASSETS / "item_card.html").read_bytes()}
-    return pak.build_pak("../../../" + UI_PREFIX, files, PAK_NAME)
 
 
 def pak_path(game_dir: Path) -> Path:
@@ -143,68 +143,44 @@ def apply_after_exit(target: Path) -> None:
     _helper_started = True
 
 
-def _install(target: Path, data: bytes) -> str:
-    replacement, removal = _staged(target)
-    removal.unlink(missing_ok=True)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if not target.exists():
-        replacement.unlink(missing_ok=True)
-        tmp = target.with_name(target.name + ".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(target)
-        return "Detailed item cards installed: restart the game to see them."
-    if target.read_bytes() == data:
-        replacement.unlink(missing_ok=True)
-        return "Detailed item cards are on."
-    # Never touch a pak the game may have loaded: swap it after the game closes
-    replacement.write_bytes(data)
-    apply_after_exit(target)
-    return "Detailed item cards updated: restart the game to see the changes."
-
-
-def _remove(target: Path, reason: str) -> str:
+def _retire(target: Path) -> str:
+    """Removes the old page pak (after the game exits if it's there). Returns a note for the status line."""
     replacement, removal = _staged(target)
     replacement.unlink(missing_ok=True)
+    target.with_name(target.name + ".tmp").unlink(missing_ok=True)
     if not target.exists():
         removal.unlink(missing_ok=True)
-        return reason
+        return ""
     removal.write_bytes(b"")
     apply_after_exit(target)
-    # The running game keeps what it loaded at startup either way
-    return f"{reason} The game's normal cards come back the next time it starts."
+    return f" The old item card page ({target.name}) goes when the game exits."
 
 
 def sync(game_dir: Path, enabled: bool) -> str:
-    """Installs or removes our pak to match `enabled` and the installed game. Returns a status line."""
-    ours = pak_path(game_dir)
+    """
+    Publishes (or removes) our loose files, checks the game's item card and retires the old pak.
+    Returns a status line; `page_current` says whether the script may run.
+    """
+    global page_current
+    retired = _retire(pak_path(game_dir))
     if enabled:
         check_data(game_dir)
     publish_files(game_dir, enabled)
     if not enabled:
-        return _remove(ours, "Detailed item cards are off.")
+        page_current = None
+        return "Detailed item cards are off." + retired
 
-    paks_dir = ours.parent.parent
+    # The game's own copy (Paks/*.pak, not ~mods): another mod replacing the item card is fine,
+    # the script draws into whatever card the page has
+    paks_dir = game_dir / "OakGame" / "Content" / "Paks"
     game_copy = pak.winning_entry(sorted(paks_dir.glob("*.pak")), UI_PREFIX + CARD_PAGE)
-    if game_copy is None or game_copy.sha1 != _vanilla()["sha1"]:
-        return _remove(
-            ours,
+    page_current = game_copy is not None and game_copy.sha1 == _vanilla()["sha1"]
+    if not page_current:
+        return (
             "Detailed item cards paused: this game version changed the item card, so they need a"
-            " mod update.",
+            " mod update." + retired
         )
-
-    others = [
-        other.name
-        for other in sorted(ours.parent.glob("*.pak"))
-        if other.name.lower() != ours.name.lower()
-        and pak.winning_entry([other], UI_PREFIX + CARD_PAGE) is not None
-    ]
-    if others:
-        return _remove(
-            ours,
-            f"Detailed item cards paused: {', '.join(others)} in Paks/~mods also changes item cards.",
-        )
-
-    return _install(ours, build_pak())
+    return "Detailed item cards are on." + retired
 
 
 def check_data(game_dir: Path) -> None:

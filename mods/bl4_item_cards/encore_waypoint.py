@@ -5,7 +5,9 @@ Moxxi's Big Encore from item cards: hover a legendary that a boss drops and pres
   map pin go to the Big Encore machine for that boss;
 - the travel key: the same, then you're taken there. On the same map that's a short teleport next
   to the machine; on another map we use the game's fast travel to the nearest station on that map,
-  then teleport to the machine once it has loaded. A co-op client's position belongs to the host,
+  then teleport to the machine once the game has put the player on the station (a few seconds
+  after the map loads; a hop made before that was undone; how the wait works:
+  bl4_weapondex/travel.py, the same code). A co-op client's position belongs to the host,
   so a client's teleport is done by the host's copy of our mods (BL4 Direct's co-op channel); with
   an unmodded host a client gets the waypoint only.
 
@@ -39,7 +41,7 @@ from typing import Any
 import unrealsdk
 from mods_base import ENGINE, get_pc
 from unrealsdk import logging
-from unrealsdk.hooks import Block
+from unrealsdk.hooks import Block, Type, add_hook, remove_hook
 from unrealsdk.unreal import FGameDataHandle, WrappedStruct
 
 from . import card_page
@@ -69,13 +71,22 @@ STATION_TYPE = 24576  # def handle type of travel stations (RequestTeleportToSta
 # Where to stand without BL4 Direct's stand.py (older copies): rings around the machine
 STAND_RADII = (300, 450, 600)
 STAND_HEIGHT = 120
-# After a map loads, give it a moment before teleporting within it
-ARRIVAL_SETTLE = 3.0
+# Cross-map trips: the game's "putting you somewhere" call, fired on arrival and when it puts the
+# player on the station (a client RPC, so it reaches a co-op client's hook too)
+NOTIFY_FUNC = "/Script/OakGame.OakPlayerController:ClientNotifyTeleporting"
+NOTIFY_HOOK = "bl4_item_cards_trip_notify"
+PLACE_DELAY = 1.0  # after the game's last move, before ours
+LATE_NOTIFY = 0.5  # a notify this long after the pawn appeared is the move onto the station
+PLACED_MOVE = 1000.0  # the pawn moved this far from where it appeared: the game has placed it
+PLACE_FALLBACK = 10.0  # neither sign this long after arriving: hop anyway (the guard still watches)
+GUARD_S = 15.0  # after our hop, a game move within this long gets our hop again
+MAX_HOPS = 3
 TRAVEL_TIMEOUT = 180.0
 
 # ctypes.windll, not PyDLL: these calls must let go of the GIL (GetAsyncKeyState can take ~100 ms,
 # e.g. while the desktop is streamed). Keys go through BL4 Mod Menu's key thread when it's loaded.
 _user32 = ctypes.windll.user32
+_statics = unrealsdk.find_class("GameplayStatics").ClassDefaultObject
 _kernel32 = ctypes.windll.kernel32
 
 
@@ -93,7 +104,9 @@ _pinned: dict[str, Any] | None = None
 _travel: dict[str, Any] | None = None
 _last_seq: dict[int, int] = {}
 _our_location_pin: str | None = None
-# A cross-map trip in progress: {"index", "started", "arrived_at"}
+# A cross-map trip in progress: {"index", "seq", "arrived_at", "first_spot", "notified_at", "hops",
+# "hopped_at"} (see _continue_trip); its times are on "clock", the trip's unpaused seconds
+# ("ticked" = monotonic time of the last tick)
 _pending: dict[str, Any] | None = None
 
 
@@ -305,35 +318,114 @@ def travel_to_machine(game_dir: Path, index: int, seq: int) -> None:
     args.bForRespawn = False
     args.bLocalOnly = False
     fn(args)
-    _pending = {"index": index, "seq": seq, "started": time.monotonic(), "arrived_at": None}
+    _pending = {"index": index, "seq": seq, "clock": 0.0, "ticked": time.monotonic(), "arrived_at": None,
+                "first_spot": None, "notified_at": 0.0, "hops": 0, "hopped_at": None}  # fmt: skip
+    _watch_notify(True)
     _set_travel(game_dir, machine, index, "travelling", seq)
     logging.info(f"[Item Cards] Travelling to {machine['station']} for the Big Encore machine of {machine['boss']}")
 
 
-def _continue_trip(game_dir: Path) -> None:
+def _on_notify(_obj: Any, _args: Any, _ret: Any, _func: Any) -> None:
+    """The game is moving the player (arrival in the map, then onto the station)."""
+    try:
+        if _pending is not None:
+            _pending["notified_at"] = _pending["clock"]
+    except Exception as ex:  # noqa: BLE001
+        logging.error(f"[Item Cards] trip notify: {ex!r}")
+
+
+def _watch_notify(on: bool) -> None:
+    """The notify hook, only while a cross-map trip is on (fixed id: a reload replaces it)."""
+    try:
+        if on:
+            add_hook(NOTIFY_FUNC, Type.POST, NOTIFY_HOOK, _on_notify)
+        else:
+            remove_hook(NOTIFY_FUNC, Type.POST, NOTIFY_HOOK)
+    except Exception as ex:  # noqa: BLE001 - a renamed function: the position check still works
+        logging.error(f"[Item Cards] trip notify hook: {ex!r}")
+
+
+def _end_trip(game_dir: Path | None = None, machine: dict | None = None, state: str | None = None) -> None:
     global _pending
+    pending, _pending = _pending, None
+    _watch_notify(False)
+    if game_dir is not None and machine is not None and state is not None and pending is not None:
+        _set_travel(game_dir, machine, pending["index"], state, pending["seq"])
+
+
+def cancel_trip() -> None:
+    """Drops a cross-map trip in progress (the mod is going off)."""
+    _end_trip()
+
+
+def _placed_by_game(pending: dict[str, Any], pawn: Any, now: float) -> bool:
+    """Whether the game has put the player on the station (and had a moment since)."""
+    if now - max(pending["arrived_at"], pending["notified_at"]) < PLACE_DELAY:
+        return False
+    if pending["notified_at"] - pending["arrived_at"] >= LATE_NOTIFY or now - pending["arrived_at"] >= PLACE_FALLBACK:
+        return True
+    where = pawn.K2_GetActorLocation()
+    fx, fy, fz = pending["first_spot"]
+    return math.dist((where.X, where.Y, where.Z), (fx, fy, fz)) > PLACED_MOVE
+
+
+def _hop(game_dir: Path, machine: dict, pending: dict[str, Any], now: float) -> None:
+    """Our move to the machine at the end of a cross-map trip (again if the game moved them)."""
+    pending["hops"] += 1
+    pending["hopped_at"] = now
+    if _is_client():
+        _hop_as_client(game_dir, machine, pending["index"], pending["seq"])
+        return
+    if not _teleport_next_to(machine):
+        _end_trip(game_dir, machine, "blocked")
+        return
+    if pending["hops"] == 1:
+        _set_travel(game_dir, machine, pending["index"], "arrived", pending["seq"])
+    else:
+        logging.info(f"[Item Cards] The game moved you after the trip: back at {machine['boss']}.")
+
+
+def _continue_trip(game_dir: Path) -> None:
+    """
+    Finishes a cross-map trip: once the map has loaded and the game has put the player on the
+    station, the hop to the machine; then GUARD_S of watching for the game moving them again (a
+    notify after our hop), which gets the hop again.
+    """
     pending = _pending
     machine = _machine(pending["index"])
-    now = time.monotonic()
-    if machine is None or now - pending["started"] > TRAVEL_TIMEOUT:
-        _pending = None
-        if machine:
-            _set_travel(game_dir, machine, pending["index"], "failed", pending["seq"])
+    real = time.monotonic()
+    world = ENGINE.GameViewport.World if ENGINE.GameViewport else None
+    if world is not None and _statics.IsGamePaused(world):
+        pending["ticked"] = real
+        return
+    pending["clock"] += real - pending["ticked"]
+    pending["ticked"] = real
+    now = pending["clock"]
+    if machine is None or now > TRAVEL_TIMEOUT:
+        _end_trip(game_dir, machine, "failed")
         return
     pc = get_pc(possibly_loading=True)
     if pc is None or pc.Pawn is None or _current_map().lower() != machine["map"].lower():
         return
     if pending["arrived_at"] is None:
+        where = pc.Pawn.K2_GetActorLocation()
         pending["arrived_at"] = now
+        pending["first_spot"] = (where.X, where.Y, where.Z)
         return
-    if now - pending["arrived_at"] < ARRIVAL_SETTLE:
+    hopped_at = pending["hopped_at"]
+    if hopped_at is None:
+        if _placed_by_game(pending, pc.Pawn, now):
+            _hop(game_dir, machine, pending, now)
         return
-    _pending = None
-    if _is_client():
-        _hop_as_client(game_dir, machine, pending["index"], pending["seq"])
+    if pending["notified_at"] > hopped_at:  # the game moved the player after our hop
+        if pending["hops"] >= MAX_HOPS:
+            logging.error(f"[Item Cards] The game keeps moving you away from {machine['boss']}; follow the waypoint.")
+            _end_trip()
+        elif now - pending["notified_at"] >= PLACE_DELAY:
+            _hop(game_dir, machine, pending, now)
         return
-    ok = _teleport_next_to(machine)
-    _set_travel(game_dir, machine, pending["index"], "arrived" if ok else "blocked", pending["seq"])
+    if now - hopped_at >= GUARD_S:
+        _end_trip()
 
 
 def _hop_as_client(game_dir: Path, machine: dict, index: int, seq: int) -> None:

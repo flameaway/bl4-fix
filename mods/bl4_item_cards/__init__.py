@@ -11,15 +11,16 @@ Detailed item cards for Borderlands 4.
 
 How it fits together:
 
-- card_page/: our pak with the game's item card page plus a script and stylesheet (loose files,
-  reloaded by the page when they change), and the generated game data the cards read.
+- card_page/: our script and stylesheet (loose files) and the generated game data the cards
+  read. The BL4 UI Link (uilink/, shared by our mods) runs the script in the game's pages; it
+  hooks the game's own card (no replaced page, so it works next to other mods' pages).
 - skill_stats.py: works out every skill's numbers for your character (a little each frame, a pass
   a second in menus) and leaves them in a loose file the card reads.
 - encore_waypoint.py: the Big Encore keys, and the messages the card sends back through UI sounds.
 - Card size and "fit to screen" go to the script in a loose settings file. A card taller than the
   screen scrolls with the mouse wheel (the script handles that on its own).
 
-Turning the mod off removes the pak, and the game's normal cards come back the next time it starts.
+Turning the mod off stops the script and takes everything it drew off the cards at once.
 """
 
 from __future__ import annotations
@@ -32,10 +33,13 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import card_page, encore_waypoint, skill_stats
+from . import card_page, encore_waypoint, health, skill_stats, uilink
 
-__version__ = "0.1.1"
-__version_info__ = (0, 1, 1)
+__version__ = "0.2.0"
+__version_info__ = (0, 2, 0)
+
+# The page script's key in the BL4 UI Link
+LINK_KEY = "itemcards"
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 
@@ -62,6 +66,14 @@ def sync_page(enabled: bool) -> None:
     except Exception as ex:  # noqa: BLE001 - never let a file problem break the mod
         _status = f"Detailed item cards: couldn't update ({ex})."
     log(_status)
+    # The script runs in every game page with an item card (HUD ground loot, menus, vendors...)
+    # while the game's card is the one it was written for. Nothing to poll: it reads loose files
+    if enabled and card_page.page_current:
+        uilink.register(
+            LINK_KEY, card_page.SCRIPT_URL, dict, lambda _action: None, views=(uilink.ANY,), mod=__name__
+        )
+    else:
+        uilink.unregister(LINK_KEY)
 
 
 # The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
@@ -81,6 +93,8 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
     _ticked_at = started
     # Every frame: the Big Encore keys and trips in progress (cheap, see encore_waypoint.py)
     try:
+        health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
+        uilink.tick()  # the BL4 UI Link's server (once a frame overall, whichever of our mods calls it)
         encore_waypoint.poll_keys(GAME_DIR, waypoint_key.value, travel_key.value)
     except Exception as ex:  # noqa: BLE001 - never let this break the game's tick
         _report_error(ex)
@@ -176,5 +190,5 @@ mod = build_mod(
     options=[scale_option, fit_option, firmware_option, waypoint_key, travel_key, status_button],
     hooks=[tick, encore_waypoint_from_inventory, encore_waypoint_from_hud],
     on_enable=lambda: (sync_page(True), publish_settings(card_settings())),
-    on_disable=lambda: (sync_page(False), publish_settings(None)),
+    on_disable=lambda: (sync_page(False), publish_settings(None), encore_waypoint.cancel_trip()),
 )

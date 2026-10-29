@@ -4,13 +4,13 @@ Regenerates the detailed item card files shipped in mods/bl4_item_cards/card_pag
     python tools/gen_item_cards.py --oodle <path to an oo2core_*_win64.dll>
 
 BL4's UI is HTML (Coherent Gameface). The item card's markup is item_card/item_card.html inside the
-game's paks. This takes the copy the installed game currently uses, makes our edits to it, and
-writes:
+game's paks. Since 0.2.0 the mod no longer ships an edited copy of it in a pak: item_cards.js adds
+what it needs to the card at runtime (it runs through the BL4 UI Link). This writes:
 
-- card_page/item_card.html   the edited page, which the mod packs into its own pak
-- card_page/vanilla.json     the SHA1 Unreal stores for the game's copy. The mod only installs its
-                             pak while the game still ships exactly that copy, so a game patch that
-                             touches the item card pauses the feature instead of undoing the patch.
+- card_page/vanilla.json     the SHA1 Unreal stores for the game's copy of the item card, which the
+                             script was written against. The mod only runs the script while the
+                             game still ships exactly that copy, so a game patch that touches the
+                             item card pauses the feature ("Needs update") instead of misdrawing.
 
 - card_page/skills.json      every skill tree node's name, max rank and tooltip lines, from the
                              game's NCS data (needs tools/ncs_parse.py). The mod evaluates the
@@ -19,16 +19,10 @@ writes:
 - card_page/firmware.json    every firmware's three bonus tiers (pieces needed, text, the
                              attribute behind each number), evaluated in game the same way.
 
-The edits to the page are deliberately small (a container, a stylesheet link and a script tag):
-the page lives in a pak, which only loads at startup, while our item_cards.js and item_cards.css
-are loose files the mod keeps up to date and the script reloads without a restart.
-
 Pak data is Oodle-compressed and Oodle is linked into the game exe, not shipped as a DLL, so this
 needs an oo2core DLL from somewhere else (other games ship one); `extract` also takes no DLL and
 then uses pyooz. The mod itself never decompresses anything; it only compares the stored SHA1.
 
-Edits find their anchors by pattern and fail loudly if one is missing or ambiguous, so a changed
-page gets noticed here instead of producing a broken card.
 """
 
 from __future__ import annotations
@@ -46,9 +40,6 @@ MOD_DIR = REPO / "mods" / "bl4_item_cards"
 OUT_DIR = MOD_DIR / "card_page"
 DEFAULT_GAME = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Borderlands 4")
 CARD_PATH = "OakGame/Content/uiresources/item_card/item_card.html"
-CSS_URL = "coui://uiresources/bl4direct/item_cards.css"
-# Draws the class mod skill list (a loose file, see card_page/__init__.py)
-JS_URL = "coui://uiresources/bl4direct/item_cards.js"
 
 sys.path.insert(0, str(MOD_DIR))
 sys.path.insert(0, str(REPO / "mods" / "bl4_direct"))
@@ -132,67 +123,6 @@ def extract_ncs(entry: pak.PakEntryInfo, oodle_dll: Path) -> bytes:
 
 
 # endregion
-# region Edits
-
-# Where item_cards.js draws the class mod's skills (name, rank, description, numbers). It stays
-# empty until the script draws into it, and the script hides the game's compact icon row only
-# then, so the card falls back to the game's own look if our files are missing. Kept this small on
-# purpose: the page lives in a pak, which only loads at startup, while the script and stylesheet
-# are loose files that update without a restart.
-CLASS_MOD_DETAILS = """
-<div name="BL4D class mod skills"
-     class="bl4d_cm_skills"></div>
-"""
-
-# The stat's name (loc_text, e.g. "Splash Radius") in front of each compact secondary stat value
-TERTIARY_LABEL = """<p data-bind-value="{{entry.loc_text}}"
-   class="bl4d_stat_label"></p>
-"""
-
-
-def find_one(pattern: str, text: str, what: str, start: int = 0, end: int | None = None) -> re.Match[str]:
-    matches = list(re.compile(pattern).finditer(text, start, len(text) if end is None else end))
-    if len(matches) != 1:
-        raise SystemExit(f"expected exactly one {what}, found {len(matches)} - the game's page changed")
-    return matches[0]
-
-
-def element_end(html: str, start: int) -> int:
-    """End index of the <div> element that opens at `start` (matching nested divs)."""
-    depth = 0
-    for tag in re.compile(r"<(/?)div\b[^>]*>").finditer(html, start):
-        depth += -1 if tag.group(1) else 1
-        if depth == 0:
-            return tag.end()
-    raise SystemExit("unbalanced <div> in the game's page")
-
-
-def edit(html: str) -> str:
-    # Banner ("Currently Equipped" etc.) and red flavour text can carry markup tags; render them
-    for field in ("bannertext", "redtext"):
-        m = find_one(rf'data-bind-value="\{{\{{\$data\.{field}\}}\}}"', html, f"{field} binding")
-        html = html[: m.start()] + f'data-bind-markup="{{{{$data.{field}}}}}"' + html[m.end() :]
-
-    # Secondary stats: add each stat's name before its value
-    block = find_one(r'<div\s+name="Tertiary stats"', html, "tertiary stats block")
-    block_end = element_end(html, block.start())
-    value = find_one(r'<p\s+name="Text"', html, "tertiary stat value", block.start(), block_end)
-    html = html[: value.start()] + TERTIARY_LABEL + html[value.start() :]
-
-    # Class mods: room for our skill list right after the game's compact icon row
-    row = find_one(r'<div\s+name="Container"\s+class="item_card_class_mod_stat"', html, "class mod row")
-    row_end = element_end(html, row.start())
-    html = html[:row_end] + CLASS_MOD_DETAILS + html[row_end:]
-
-    # Our stylesheet and script, loaded the same way the page loads its own
-    end = find_one(r"</widget-item-card>", html, "end of the card widget")
-    ours = f'\n<link href="{CSS_URL}"\n      type="text/css"\n      rel="stylesheet" />\n<script src="{JS_URL}"></script>'
-    return html[: end.end()] + ours + html[end.end() :]
-
-
-# endregion
-
-
 # region Skill data
 
 NCS_PATH = "Engine/Content/_NCS/Nexus-Data-{name}{chunk}.ncs"
@@ -372,11 +302,10 @@ def main() -> None:
     if entry is None:
         raise SystemExit(f"{CARD_PATH} not found in {args.game}")
 
-    vanilla = extract(entry, args.oodle).decode("utf-8")
-    edited = edit(vanilla)
-
     OUT_DIR.mkdir(exist_ok=True)
-    (OUT_DIR / "item_card.html").write_text(edited, encoding="utf-8", newline="")
+    # Only the page's fingerprint is kept (vanilla.json below); an edited copy from before 0.2.0
+    # goes
+    (OUT_DIR / "item_card.html").unlink(missing_ok=True)
     skills, skill_prints = build_skills(paks, args.oodle)
     (OUT_DIR / "skills.json").write_text(json.dumps(skills, indent=1) + "\n", encoding="utf-8")
     print(f"skills: {sum(1 for nodes in skills.values() for n in nodes if n)} in {len(skills)} graphs")
@@ -407,7 +336,7 @@ def main() -> None:
         "firmware_data": firmware_prints,
     }
     (OUT_DIR / "vanilla.json").write_text(json.dumps(fingerprint, indent=4) + "\n", encoding="utf-8")
-    print(f"built from {entry.pak.name} ({entry.sha1}), {len(vanilla)} -> {len(edited)} bytes")
+    print(f"item card page: {entry.pak.name} ({entry.sha1})")
 
 
 if __name__ == "__main__":

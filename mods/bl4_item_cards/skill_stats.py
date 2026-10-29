@@ -22,7 +22,7 @@ Firmware works the same way: card_page/firmware.json has each firmware's three t
 equipped pieces unlock it, its text, the attribute behind each number), and the live file gets
 them under "$firmware" with the numbers filled in for your character.
 
-Cost (see the mod's CLAUDE.md, "Performance"): a full pass is a few hundred attribute
+Cost: a full pass is a few hundred attribute
 evaluations, too much for one frame. So a pass is a job done in slices of under a millisecond, at
 most one slice per frame: read the skill graphs, evaluate the attributes, and only if any input
 differs from the last pass, render the changed skills, serialize, and hand the text to a writer

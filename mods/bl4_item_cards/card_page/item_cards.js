@@ -18,14 +18,19 @@
 // Cards can be scaled (the mod's "Card size" option), and one taller than the screen scrolls with
 // the mouse wheel.
 //
-// This file and item_cards.css are loose files (OakGame/Content/uiresources/bl4direct/), not in
-// the mod's pak, so they can change while the game runs: every couple of seconds this checks both
-// and reloads itself or the styles if they changed. Running this file again replaces the drawing
-// code and redraws open cards; the hook into the game's card class is only installed once.
+// This file and item_cards.css are loose files (OakGame/Content/uiresources/bl4direct/). Since
+// 0.2.0 the BL4 UI Link (../uilink, key "itemcards") runs this file in every game page (it's no
+// longer loaded by a replaced item_card.html in a pak), and runs it again when it changes in dev
+// builds. Running it again replaces the drawing code and redraws open cards; the hook into the
+// game's card class is only installed once. The link tears it down when the mod is turned off
+// (teardown below). What the old page added to the card's markup, this adds itself (decorate):
+// the box our skill list goes in, each secondary stat's name, rendered markup in the banner and
+// red text. In dev builds it also reloads the styles and drop data when they change.
 
 (function () {
+    var link = (typeof bl4linkNs !== "undefined" && bl4linkNs) || null;
+    var LINK_KEY = "itemcards";
     var BASE = "coui://uiresources/bl4direct/";
-    var SELF_URL = BASE + "item_cards.js";
     var CSS_URL = BASE + "item_cards.css";
     var LIVE_URL = BASE + "skills_live.json";
     var DROPS_URL = BASE + "drops.json";
@@ -61,6 +66,13 @@
     var LIVE_MAX_AGE_MS = 1000;
     var RELOAD_CHECK_MS = 2000;
     var MAX_TRACKED_CARDS = 8;
+    // Waiting for the game's card class: this often for a minute, then this often (a page may
+    // load the card widget later, or never)
+    var INSTALL_FAST_MS = 100;
+    var INSTALL_FAST_TRIES = 600;
+    var INSTALL_SLOW_MS = 2000;
+    // Banner / red text with markup tags ("[secondary]...[/secondary]") we render ourselves
+    var MARKUP_TAG = /\[\/?\w+[^\]]*\]/;
 
     // Survives reloads of this file
     var ns = window.bl4dItemCards;
@@ -68,6 +80,11 @@
         ns = window.bl4dItemCards = { live: null, loadedAt: 0, loading: false, waiting: [], cards: [], generation: 0 };
     }
     var generation = ++ns.generation;
+    ns.off = false;
+
+    function current() {
+        return ns.generation === generation && !ns.off;
+    }
 
     function get(url, done) {
         var xhr = new XMLHttpRequest();
@@ -171,6 +188,135 @@
         if (info && info.lines.length) row.appendChild(statLines(info, points(entry)));
         return row;
     }
+
+    // region What the old page added to the card's markup
+    //
+    // Added once and never moved (moving our nodes next to the game's data-bound ones made it
+    // insert its red text again), only refilled; marked data-bl4d so teardown finds them. The old
+    // pak's page (until its removal takes effect at the next start) already has a host, bound
+    // labels and markup bindings: those are left alone, nothing is added twice.
+
+    function ours(el) {
+        el.setAttribute("data-bl4d", "1");
+        return el;
+    }
+
+    // True when it made a new box. data-bind-if takes the card's sections out of the page while
+    // they don't apply (seen in game: a hidden card has no class mod row), and ours with them
+    function ensureHost(card) {
+        if (card.querySelector(".bl4d_cm_skills")) return false;  // ours, or the old page's
+        var row = card.querySelector(".item_card_class_mod_stat");
+        if (!row || !row.parentNode) return false;
+        var host = ours(element("div", "bl4d_cm_skills"));
+        host.setAttribute("name", "BL4D class mod skills");
+        row.parentNode.insertBefore(host, row.nextSibling);
+        return true;
+    }
+
+    // The stat's name (loc_text, e.g. "Splash Radius") in front of each compact secondary stat
+    function statLabels(card, data) {
+        var wrapper = card.querySelector(".item_card_tertiary_stat_wrapper");
+        if (!wrapper) return;
+        var entries = data && data.tertiary_stat_entries;
+        var rows = wrapper.querySelectorAll(".item_card_tertiary_stat_group");
+        for (var i = 0; i < rows.length; i++) {
+            var value = rows[i].querySelector(".item_card_secondary_stat_value");
+            if (!value) continue;
+            var label = rows[i].querySelector(".bl4d_stat_label");
+            if (label && !label.hasAttribute("data-bl4d")) continue;  // the old page's bound one
+            var entry = entries && i < entries.length ? entries[i] : null;
+            var text = entry && entry.loc_text ? String(entry.loc_text) : "";
+            if (!text) {
+                if (label) label.parentNode.removeChild(label);
+                continue;
+            }
+            if (!label) {
+                label = ours(element("p", "bl4d_stat_label"));
+                value.parentNode.insertBefore(label, value);
+            }
+            if (label.textContent !== text) label.textContent = text;
+        }
+    }
+
+    // The game's element bound to `$data.<field>` (bindings point at the instance's model)
+    function boundTo(card, field) {
+        var cache = card.bl4dBound || (card.bl4dBound = {});
+        var el = cache[field];
+        if (el && card.contains(el)) return el;
+        el = null;
+        var suffix = "." + field + "}}";
+        var all = card.querySelectorAll("[data-bind-value]");
+        for (var i = 0; i < all.length; i++) {
+            var value = all[i].getAttribute("data-bind-value") || "";
+            if (value.length >= suffix.length && value.slice(-suffix.length) === suffix) {
+                el = all[i];
+                break;
+            }
+        }
+        cache[field] = el;
+        return el;
+    }
+
+    // Banner ("Currently Equipped" ...) and red flavour text can carry markup tags, which the
+    // game's plain value binding shows as text: while they do, our rendered copy shows instead
+    function markupField(card, data, field) {
+        var source = boundTo(card, field);
+        if (!source || !source.parentNode) return;
+        var copy = source.bl4dCopy;
+        if (copy && copy.parentNode !== source.parentNode) copy = source.bl4dCopy = null;
+        var text = data && data[field] ? String(data[field]) : "";
+        if (!text || !MARKUP_TAG.test(text)) {
+            if (copy && copy.style.display !== "none") copy.style.display = "none";
+            if (source.classList.contains("bl4d_markup_hidden")) source.classList.remove("bl4d_markup_hidden");
+            return;
+        }
+        if (!copy) {
+            copy = source.bl4dCopy = ours(document.createElement("div"));
+            source.parentNode.insertBefore(copy, source.nextSibling);
+        }
+        // Look like the game's element (its bound classes change with the banner type)
+        var classes = source.className.replace(/\s*\bbl4d_markup_hidden\b/g, "") + " bl4d_markup";
+        if (copy.className !== classes) copy.className = classes;
+        if (copy.bl4dText !== text) {
+            copy.bl4dText = text;
+            copy.innerHTML = markup(text);
+        }
+        if (copy.style.display) copy.style.display = "";
+        if (!source.classList.contains("bl4d_markup_hidden")) source.classList.add("bl4d_markup_hidden");
+    }
+
+    function decorate(card) {
+        var data = card.DataModel;
+        try {
+            // A new box after the card's update (the layout loop, the next frame): fill it now
+            if (ensureHost(card) && ns.live) render(card);
+        } catch (err) {}
+        try {
+            statLabels(card, data);
+        } catch (err) {}
+        try {
+            markupField(card, data, "bannertext");
+            markupField(card, data, "redtext");
+        } catch (err) {}
+    }
+
+    // Takes back everything this script added to a card
+    function undecorate(card) {
+        var added = card.querySelectorAll("[data-bl4d], .bl4d_drops, .bl4d_glyph, .bl4d_glyph_travel, .bl4d_fw");
+        for (var i = 0; i < added.length; i++) {
+            if (added[i].parentNode) added[i].parentNode.removeChild(added[i]);
+        }
+        var oldHost = card.querySelector(".bl4d_cm_skills");  // the old page's: empty it
+        if (oldHost) oldHost.innerHTML = "";
+        var hidden = card.querySelectorAll(".bl4d_markup_hidden");
+        for (var j = 0; j < hidden.length; j++) hidden[j].classList.remove("bl4d_markup_hidden");
+        card.classList.remove("bl4d_active");
+        card.bl4dBound = null;
+        var target = card.querySelector(".item_card");
+        if (target && target.bl4dTransform) setTransform(target, "");
+    }
+
+    // endregion
 
     function render(card) {
         var host = card.querySelector(".bl4d_cm_skills");
@@ -464,9 +610,9 @@
     }
 
     function pollHotkey() {
-        if (ns.hotkeyGeneration !== generation) return;  // a newer copy of this file took over
+        if (ns.hotkeyGeneration !== generation || !current()) return;  // a newer copy took over, or off
         get(HOTKEY_URL, function (text) {
-            if (ns.hotkeyGeneration !== generation) return;
+            if (ns.hotkeyGeneration !== generation || !current()) return;
             if (text && text === ns.hotkeyText) {
                 // Unchanged (most polls): everything below follows from the text alone
                 setTimeout(pollHotkey, HOTKEY_POLL_MS);
@@ -663,9 +809,9 @@
     // (wheel events do reach menu pages; on the HUD there's no wheel, so it stays at the top).
 
     function loadSettings() {
-        if (ns.settingsGeneration !== generation) return;  // a newer copy of this file took over
+        if (ns.settingsGeneration !== generation || !current()) return;  // a newer copy took over, or off
         get(SETTINGS_URL, function (text) {
-            if (ns.settingsGeneration !== generation) return;
+            if (ns.settingsGeneration !== generation || !current()) return;
             var settings = null;
             try {
                 settings = text ? JSON.parse(text) : null;
@@ -768,7 +914,7 @@
     }
 
     function layoutAll() {
-        if (ns.layoutGeneration !== generation) return;
+        if (ns.layoutGeneration !== generation || !current()) return;
         for (var i = 0; i < ns.cards.length; i++) {
             try {
                 layout(ns.cards[i]);
@@ -781,6 +927,8 @@
             try {
                 renderPrompt(shown, firstMachine(shown.DataModel));
             } catch (err) {}
+            // Same for rows data-bind-for made after the card's update (labels, markup)
+            decorate(shown);
         }
         setTimeout(layoutAll, LAYOUT_MS);
     }
@@ -811,9 +959,18 @@
     }
 
     ns.refresh = function (card) {
+        if (!current()) return;
         track(card);
+        decorate(card);
+        // data-bind-for may make the card's rows after this update: look again next frame
+        if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(function () {
+                if (current()) decorate(card);
+            });
+        }
         loadLive(function () {
             loadDrops(function () {
+                if (!current()) return;
                 // never break the game's own card
                 try {
                     render(card);
@@ -828,63 +985,84 @@
         });
     };
 
-    // region Reloading
+    // region Styles and reloading
 
     function applyCss(css) {
+        if (!document.head) return;
+        // The old page linked the stylesheet itself; take that over so a change replaces its rules
+        var links = document.querySelectorAll('link[href*="bl4direct/item_cards.css"]');
+        for (var i = 0; i < links.length; i++) links[i].parentNode.removeChild(links[i]);
         var style = document.getElementById("bl4d_item_cards_css");
         if (!style) {
             style = document.createElement("style");
             style.id = "bl4d_item_cards_css";
             document.head.appendChild(style);
         }
-        style.textContent = css;
+        if (style.textContent !== css) style.textContent = css;
     }
 
+    function loadCss() {
+        get(CSS_URL, function (css) {
+            if (!current() || !css) return;
+            ns.css = css;
+            applyCss(css);
+        });
+    }
+
+    // Dev builds only (settings.json "dev"): the styles and the drop data, when they change on
+    // disk. The link re-runs this file itself when it changes.
     function checkForChanges() {
-        if (generation !== ns.generation) return;  // a newer copy of this file took over
-        if (ns.settings && ns.settings.dev === false) {
+        if (!current()) return;  // a newer copy of this file took over, or the mod was turned off
+        if (!ns.settings || ns.settings.dev !== true) {
             // A release: our files can't change while the game runs, don't re-read them
             setTimeout(checkForChanges, RELOAD_CHECK_MS);
             return;
         }
-        get(SELF_URL, function (source) {
-            if (generation !== ns.generation) return;
-            if (source && ns.source !== undefined && source !== ns.source) {
-                ns.source = source;
-                try {
-                    new Function(source)();
-                    return;  // the new copy redraws and keeps checking
-                } catch (err) {
-                    // broken edit: keep running this copy
-                }
+        get(CSS_URL, function (css) {
+            if (!current()) return;
+            if (css && css !== ns.css) {
+                ns.css = css;
+                applyCss(css);
             }
-            if (source) ns.source = source;
-            get(CSS_URL, function (css) {
-                if (css && ns.css !== undefined && css !== ns.css) applyCss(css);
-                if (css) ns.css = css;
-                // The drop data changes when the mod is updated; pick that up too
-                get(DROPS_URL, function (drops) {
-                    if (drops && drops !== ns.dropsText) {
-                        try {
-                            ns.drops = JSON.parse(drops);
-                            ns.dropsText = drops;
-                            for (var i = 0; i < ns.cards.length; i++) ns.refresh(ns.cards[i]);
-                        } catch (err) {}
-                    }
-                    setTimeout(checkForChanges, RELOAD_CHECK_MS);
-                });
+            // The drop data changes when the mod is updated; pick that up too
+            get(DROPS_URL, function (drops) {
+                if (!current()) return;
+                if (drops && drops !== ns.dropsText) {
+                    try {
+                        ns.drops = JSON.parse(drops);
+                        ns.dropsText = drops;
+                        for (var i = 0; i < ns.cards.length; i++) ns.refresh(ns.cards[i]);
+                    } catch (err) {}
+                }
+                setTimeout(checkForChanges, RELOAD_CHECK_MS);
             });
         });
     }
 
     // endregion
 
+    // Everything else waits for the game's card class: a page without item cards costs nothing
+    // but this wait
+    function start() {
+        ns.hotkeyGeneration = generation;
+        pollHotkey();
+        ns.settingsGeneration = generation;
+        loadSettings();
+        ns.layoutGeneration = generation;
+        layoutAll();
+        if (ns.wheel) document.removeEventListener("wheel", ns.wheel, true);
+        ns.wheel = onWheel;
+        document.addEventListener("wheel", onWheel, true);
+        setTimeout(checkForChanges, RELOAD_CHECK_MS);
+        loadCss();
+    }
+
     // Hook the game's card class once; the hook calls whichever copy of this file is current
     var tries = 0;
     function install() {
+        if (!current()) return;
         if (typeof Widget_ItemCard === "undefined") {
-            // The game's item_card.js loads in parallel with this file
-            if (tries++ < 600) setTimeout(install, 100);
+            setTimeout(install, tries++ < INSTALL_FAST_TRIES ? INSTALL_FAST_MS : INSTALL_SLOW_MS);
             return;
         }
         var proto = Widget_ItemCard.prototype;
@@ -893,22 +1071,42 @@
             var original = proto.Event_DataUpdated;
             proto.Event_DataUpdated = function () {
                 original.apply(this, arguments);
-                if (window.bl4dItemCards) window.bl4dItemCards.refresh(this);
+                var page = window.bl4dItemCards;
+                if (page && !page.off && page.refresh) page.refresh(this);
             };
         }
+        start();
         for (var i = 0; i < ns.cards.length; i++) ns.refresh(ns.cards[i]);
     }
 
-    install();
-    setTimeout(checkForChanges, RELOAD_CHECK_MS);
-    ns.hotkeyGeneration = generation;
-    pollHotkey();
-    ns.settingsGeneration = generation;
-    loadSettings();
-    ns.layoutGeneration = generation;
-    layoutAll();
-    if (ns.wheel) document.removeEventListener("wheel", ns.wheel, true);
-    ns.wheel = onWheel;
-    document.addEventListener("wheel", onWheel, true);
+    // The mod was turned off (the link stops this script): undo everything on the page. A hook
+    // an older copy installed calls ns.refresh, so that becomes a no-op too.
+    function teardown() {
+        if (ns.generation !== generation) return;  // a newer copy runs: it's that one's job
+        ns.off = true;
+        ns.generation++;
+        ns.refresh = function () {};
+        if (ns.wheel) document.removeEventListener("wheel", ns.wheel, true);
+        ns.wheel = null;
+        clearTimeout(ns.popupTimer);
+        var remove = [document.getElementById("bl4d_item_cards_css"), document.getElementById("bl4d_popup")];
+        for (var i = 0; i < remove.length; i++) {
+            if (remove[i] && remove[i].parentNode) remove[i].parentNode.removeChild(remove[i]);
+        }
+        var cards = Array.prototype.slice.call(document.querySelectorAll("widget-item-card"));
+        for (var j = 0; j < ns.cards.length; j++) if (cards.indexOf(ns.cards[j]) < 0) cards.push(ns.cards[j]);
+        for (var k = 0; k < cards.length; k++) {
+            try {
+                undecorate(cards[k]);
+            } catch (err) {}
+        }
+        ns.cards = [];
+        ns.css = undefined;
+    }
 
+    if (link && link.ext) {
+        link.ext.teardowns = link.ext.teardowns || {};
+        link.ext.teardowns[LINK_KEY] = teardown;
+    }
+    install();
 })();

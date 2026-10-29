@@ -1,8 +1,14 @@
 /*
- * BL4 Direct detailed item cards. Loaded only by the mod's item_card.html, as a loose file the
- * card's script reloads when it changes (no game restart needed).
+ * BL4 Direct detailed item cards. A loose file item_cards.js puts into the page itself (and
+ * reloads when it changes in dev builds; no game restart needed).
  * Fonts, text colours and skill tree tints match the game's own item card styles.
  */
+
+/* Banner / red text with markup tags: the game's element (plain text) gives way to our rendered
+   copy of it, which carries the same classes (item_cards.js markupField) */
+.bl4d_markup_hidden {
+    display: none !important;
+}
 
 /* Name in front of each compact secondary stat ("Splash Radius 35cm") */
 .bl4d_stat_label {
