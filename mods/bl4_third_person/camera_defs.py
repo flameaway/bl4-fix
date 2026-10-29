@@ -262,8 +262,12 @@ class Finder:
     _thread: threading.Thread | None = None
     _urgent = False  # the player is waiting: no rests
     _failed_at = 0.0
+    _failures = 0
     _checked_at = 0.0
     RETRY_AFTER = 60.0
+    # A scan costs 35-70 s of background work that slows every mod's hooks. After this many finding
+    # nothing, it's this game build (a patch moved the data), not timing: stop for the session.
+    MAX_FAILURES = 3
     # get() runs every frame while third person is on; ModeDef.set checks before every write anyway
     CHECK_S = 1.0
 
@@ -288,6 +292,8 @@ class Finder:
             return
         if cls.defs is not None or time.monotonic() - cls._failed_at < cls.RETRY_AFTER:
             return
+        if cls.gave_up():
+            return
         cls._urgent = urgent
         cls._thread = threading.Thread(target=cls._work, name="bl4_third_person scan", daemon=True)
         cls._thread.start()
@@ -301,3 +307,13 @@ class Finder:
             cls.defs = None
         if cls.defs is None:
             cls._failed_at = time.monotonic()
+            cls._failures += 1
+            if cls.gave_up():
+                log("Third person doesn't work on this game version (its camera data wasn't found "
+                    f"{cls._failures} times; a game patch?): H does nothing until the mod is updated.")
+        else:
+            cls._failures = 0
+
+    @classmethod
+    def gave_up(cls) -> bool:
+        return cls._failures >= cls.MAX_FAILURES

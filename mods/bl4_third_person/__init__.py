@@ -32,7 +32,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
-from . import camera_defs
+from . import camera_defs, health
 from .crosshair import Crosshair
 
 __version__ = "0.1.0"
@@ -342,6 +342,7 @@ def on_frame(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunctio
         return
     _ticked_at = started
     try:
+        health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
         pc = get_pc(possibly_loading=True)
         pawn = pc.Pawn if pc else None
         if pawn is None or not pawn.Class._inherits(_character_class):
