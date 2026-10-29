@@ -29,7 +29,7 @@ PACKAGES = {
                "mods/bl4_uvh_teleport", "mods/bl4_damage_meter", "mods/bl4_weapondex",
                "mods/bl4_backpack_size", "mods/bl4_direct", "mods/bl4_echo_anywhere", "mods/bl4_instant_travel",
                "mods/bl4_item_cards", "mods/bl4_minimap", "mods/bl4_third_person", "mods/bl4_unstuck",
-               "mods/bl4_respec", "mods/bl4_instant_tabs"],
+               "mods/bl4_respec", "mods/bl4_instant_tabs", "mods/bl4_sprint_toggle"],
 }
 SKIP = {"__pycache__"}
 

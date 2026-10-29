@@ -70,6 +70,7 @@ MODS: tuple[ModInfo, ...] = (
     ModInfo("bl4_unstuck", "Unstuck", "Frees a character stuck floating and puts it on the nearest respawn station."),
     ModInfo("bl4_minimap", "Minimap", "A minimap with the ECHO map's art, fog, icons and route (N)."),
     ModInfo("bl4_third_person", "Third Person", "H: over-the-shoulder camera with aiming."),
+    ModInfo("bl4_sprint_toggle", "Sprint Toggle", "Press sprint once to keep sprinting, again to walk."),
     ModInfo("bl4_vehicles_anywhere", "Vehicles Anywhere", "Summon and drive where vehicles aren't allowed."),
     ModInfo("bl4_backpack_size", "Backpack Size", "Set the backpack, bank and Lost Loot limits."),
     ModInfo("bl4_shoot_open", "Shoot to Open", "Shoot a container or chest to open it."),

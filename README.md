@@ -308,6 +308,7 @@ Thins out the haze over the world: lower fog density, pushed further away, adjus
 | **Skip Intro** | No 2K / Gearbox logo movies at launch. Switching it off puts them back. |
 | **Instant Menu Tabs** | The ECHO menu opens and switches pages (inventory, skills, map...) at once, without the pause. |
 | **ECHO Anywhere** | Open the ECHO menu when the game normally refuses (falling, mid-air...). |
+| **Sprint Toggle** | Press once to sprint, again to walk. Unlike the game's own toggle, the sprint picks itself back up after you stop, shoot, aim, slide or jump. Pick any key or controller button (or your sprint key), or turn on Always sprint. |
 | **UVH Boss Teleport** | Hover an Ultimate Vault Hunter boss challenge and press **T** to go to its Big Encore machine. |
 | **Vehicles Anywhere** | Summon and drive your vehicle where the game says vehicles aren't allowed. |
 | **Backpack Size** | Set how many items your backpack, bank and Lost Loot hold. |
@@ -336,7 +337,7 @@ table says so.
 
 | Mod | In co-op |
 |---|---|
-| Mod Menu, Skip Intro, Less Fog, Instant Menu Tabs, ECHO Anywhere, Third Person, Minimap, Item Cards (cards), Performance Fixes, Tidy Pause Menu, Crisp Damage Numbers | Local: works for whoever runs it, host or friend. |
+| Mod Menu, Skip Intro, Less Fog, Instant Menu Tabs, ECHO Anywhere, Third Person, Minimap, Item Cards (cards), Performance Fixes, Tidy Pause Menu, Crisp Damage Numbers, Sprint Toggle | Local: works for whoever runs it, host or friend. |
 | Kairosdex | Local; friends' kills are tracked through the boss health bar. |
 | Carnage Meter | The host's copy counts every player's damage; a friend's screen shows the host's board (both need it). |
 | Easy Respec | Works for a friend on its own; the host needs nothing. |
