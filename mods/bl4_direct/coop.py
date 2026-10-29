@@ -199,6 +199,7 @@ class _State:
     pending: dict[int, tuple[Callable[[dict[str, Any]], None], float]] = {}
     queue: list[tuple[Request, Callable[..., Any]]] = []
     housekeeping_at = 0.0
+    unreadable: set[str] = set()  # RPC parameters that couldn't be read (logged once each)
 
 
 def host_has(name: str) -> bool:
@@ -452,11 +453,25 @@ def _name(pc: UObject) -> str:
     return str(ps.PlayerNamePrivate or ps.Name) if ps is not None else str(pc.Name)
 
 
-def _chat_hook(obj: UObject, args: Any, _ret: Any, _func: Any) -> Any:
+def _rpc_text(args: Any, name: str) -> str | None:
+    """
+    The RPC's text parameter, or None if it can't be read (a game patch renamed it). Then the hooks let
+    every call through: blocking on an error would swallow all of the players' real chat.
+    """
     try:
-        text = str(args.Text)
-        if not text.startswith(PREFIX + "|"):
-            return None
+        return str(getattr(args, name))
+    except Exception as ex:  # noqa: BLE001
+        if name not in _State.unreadable:
+            _State.unreadable.add(name)
+            logging.error(f"[Co-op] can't read the RPC's {name} parameter (a game patch?): co-op messages are off: {ex!r}")
+        return None
+
+
+def _chat_hook(obj: UObject, args: Any, _ret: Any, _func: Any) -> Any:
+    text = _rpc_text(args, "Text")
+    if text is None or not text.startswith(PREFIX + "|"):
+        return None
+    try:
         if not is_server() or obj.IsLocalController():
             return None  # our own outgoing request (as a client): let it go out
         _on_host_message(obj, text[len(PREFIX) + 1 :])
@@ -466,10 +481,10 @@ def _chat_hook(obj: UObject, args: Any, _ret: Any, _func: Any) -> Any:
 
 
 def _message_hook(obj: UObject, args: Any, _ret: Any, _func: Any) -> Any:
+    text = _rpc_text(args, "S")
+    if text is None or not text.startswith(PREFIX + "|"):
+        return None
     try:
-        text = str(args.S)
-        if not text.startswith(PREFIX + "|"):
-            return None
         if not obj.IsLocalController():
             return None  # the host sending to a client: let it go out
         if is_client():

@@ -12,14 +12,16 @@ in around the player. So:
    rotation; its front, with the name label, is its +X axis), checked like step 2 if the area is
    already loaded.
 2. Then, a few times a second for up to SETTLE_S (retrying while more of the area streams in):
-   once the machine actor (found by the UAID in its marker name) has streamed in, check where the
-   player stands with the pawn's collision: a clear line from the machine, a walkable floor under
-   them, room for their capsule. If that fails, try spots around the front (then the sides, the
-   back, further out) and move them to the first good one. Until the area loads, a player who
-   falls more than FALL_RESET below the spot is put back on it.
+   once the area has loaded, check where the player stands with the pawn's collision: a clear
+   line from the machine, a walkable floor under them, room for their capsule. If that fails, try
+   spots around the front (then the sides, the back, further out) and move them to the first
+   good one. Until then, a player who falls more than FALL_RESET below the spot is put back on it.
 
-The machine actor is the "loaded" signal, not a floor trace: 49 km from a machine the terrain
-under it already collides while the rocks around it don't exist yet (measured 2026-10-27).
+"Loaded" takes both the machine actor (found by the UAID in its marker name) and something solid
+under it. A floor trace alone isn't enough: 49 km from a machine the terrain under it already
+collides while the rocks around it don't exist yet (2026-10-27). The actor alone isn't either: it
+streams in ~1 km out, before any ground around it (2026-10-28; that made trips from there fail
+with "no room", or drop the player through the world while settling).
 A check costs ~0.23 ms per spot tried (3 traces); the front spot usually passes, all 56 failing
 would be ~13 ms once, at the moment of a teleport.
 """
@@ -160,7 +162,7 @@ def _face(pc: UObject, pawn: UObject, x: float, y: float, z: float, mx: float, m
         return False
     try:
         if pc.IsLocalController():
-            pc.SetControlRotation(facing)
+            pc.SetControlRotation(facing, False)
         else:
             pc.ClientSetRotation(facing, True)
     except Exception as ex:  # noqa: BLE001 - facing is a nicety
@@ -182,6 +184,27 @@ def _place_checked(pc: UObject, pawn: UObject, target: dict[str, Any], machine: 
     return False
 
 
+def _area_loaded(target: dict[str, Any], machine: UObject | None) -> bool:
+    """
+    Whether the machine's surroundings have streamed in: its actor, and something solid under it.
+    The actor alone isn't enough: it streams in ~1 km out, well before the ground around it
+    (Bio-Bulkhead at 1.1 km, 2026-10-28: the actor, and no collision for 400 m under it).
+    """
+    if machine is None:
+        return False
+    mx, my, mz, _ = _facing(target, machine)
+    return _line(_vec(mx, my, mz + FLOOR_UP), _vec(mx, my, mz - FLOOR_DOWN), [machine]) is not None
+
+
+def _hold(pc: UObject, pawn: UObject, job: _Settle) -> None:
+    """Until the area loads: a player who fell through it goes back on the spot we put them on."""
+    x, y, z = job.spot
+    if pawn.K2_GetActorLocation().Z < z - FALL_RESET:
+        pawn.CharacterMovement.StopMovementImmediately()
+        mx, my, _, _ = _facing(job.target, None)
+        _face(pc, pawn, x, y, z, mx, my)
+
+
 def _standing_well(pawn: UObject, target: dict[str, Any], machine: UObject | None) -> bool:
     now = pawn.K2_GetActorLocation()
     ignore = [pawn] + ([machine] if machine is not None else [])
@@ -201,10 +224,10 @@ def place(pc: UObject, target: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "no character"}
     S.settling = [s for s in S.settling if s.pawn() is not None and s.pawn() != pawn]
     machine = _machine(target)
-    if machine is not None:
+    if _area_loaded(target, machine):
         return {"ok": True} if _place_checked(pc, pawn, target, machine) else {"ok": False, "error": "no room"}
 
-    # Nothing loaded there yet: the front spot by the data, checked again once the area streams in
+    # Not loaded there yet: the front spot by the data, checked again once the area streams in
     mx, my, mz, yaw = _facing(target, None)
     x, y = _candidates(mx, my, yaw)[0]
     z = mz + pawn.CapsuleComponent.GetScaledCapsuleHalfHeight() + 20
@@ -229,13 +252,9 @@ def tick() -> None:
             continue
         try:
             machine = _machine(job.target)
-            if machine is None:
+            if not _area_loaded(job.target, machine):
                 if now < job.until:
-                    x, y, z = job.spot
-                    if pawn.K2_GetActorLocation().Z < z - FALL_RESET:
-                        pawn.CharacterMovement.StopMovementImmediately()
-                        mx, my, _, _ = _facing(job.target, None)
-                        _face(pc, pawn, x, y, z, mx, my)
+                    _hold(pc, pawn, job)
                     keep.append(job)
                 else:
                     logging.warning(f"[Stand] {job.target.get('location')} never loaded: left at its front")
@@ -243,6 +262,7 @@ def tick() -> None:
             if _standing_well(pawn, job.target, machine) or _place_checked(pc, pawn, job.target, machine):
                 continue
             if now < job.until:
+                _hold(pc, pawn, job)
                 keep.append(job)  # more of the area may still be streaming in
             else:
                 logging.warning(f"[Stand] no good spot found by {job.target.get('location')}")

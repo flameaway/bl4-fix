@@ -503,7 +503,10 @@ def _draw() -> None:
         p.button("STOP HOSTING", x0 + 24, y, 300, 56, lambda: _run_after_close(api.stop_hosting),
                  fill=(0.50, 0.10, 0.06, 0.98), size=0.6)
         if S.firewall_drawn:
-            host_hint = "Firewall up to date: only friends below can get in"
+            host_hint = (
+                "Firewall up to date: only friends below can get in" if _firewall_on()
+                else "Firewall rule off (BL4 Fix Setup): anyone who can reach the port can try to join"
+            )
         else:
             p.button("UPDATE FIREWALL", x0 + PANEL_W - 284, y + 8, 260, 40, _update_firewall_now,
                      fill=(0.55, 0.35, 0.02, 0.98), size=0.48)
@@ -636,12 +639,22 @@ def _after_friends_changed(done: str) -> None:
     Only a host needs friends in its firewall (joining is an outgoing connection), so the
     firewall is normally updated when you press Host. If you're already hosting, do it now.
     """
-    if session()[0] != "hosting":
+    if api.firewall_up_to_date():  # also when the rule is turned off
+        _say(done)
+    elif session()[0] != "hosting":
         _say(f"{done} If you host, Windows will ask once to let your friends through your firewall.")
     elif error := api.update_firewall():
         _say(f"{done} But: {error}", error=True)
     else:
         _say(f"{done} Windows will ask permission to update your firewall.")
+
+
+def _firewall_on() -> bool:
+    """False when the player turned the firewall rule off in the setup app (older mods: always on)."""
+    try:
+        return api.config().firewall
+    except Exception:  # noqa: BLE001
+        return True
 
 
 def _update_firewall_now() -> None:
@@ -861,37 +874,80 @@ def uninstall() -> None:
 # endregion
 
 
+class _ShellExecuteInfo(ctypes.Structure):
+    _fields_ = (
+        ("cbSize", ctypes.c_ulong), ("fMask", ctypes.c_ulong), ("hwnd", ctypes.c_void_p),
+        ("lpVerb", ctypes.c_wchar_p), ("lpFile", ctypes.c_wchar_p), ("lpParameters", ctypes.c_wchar_p),
+        ("lpDirectory", ctypes.c_wchar_p), ("nShow", ctypes.c_int), ("hInstApp", ctypes.c_void_p),
+        ("lpIDList", ctypes.c_void_p), ("lpClass", ctypes.c_wchar_p), ("hkeyClass", ctypes.c_void_p),
+        ("dwHotKey", ctypes.c_ulong), ("hIconOrMonitor", ctypes.c_void_p), ("hProcess", ctypes.c_void_p),
+    )  # fmt: skip
+
+
 class Elevated:
     """
-    Starts a program with a UAC prompt on a background thread. ShellExecute("runas") doesn't
-    return until the prompt is answered, and on the game thread that stops a hosted server from
-    ticking, so connected friends time out. The tick reports a refusal (see _report_elevated).
+    Runs a program with a UAC prompt on a background thread and waits for it there.
+    ShellExecute("runas") doesn't return until the prompt is answered, and on the game thread that
+    stops a hosted server from ticking, so connected friends time out. The tick reports the outcome
+    (see _report_elevated): a refusal or failure as an error, success by calling `on_success`.
     """
 
     busy = False
-    refused: str | None = None  # set by the worker when the program didn't start; read by the tick
+    refused: str | None = None  # set by the worker when the program didn't run or failed; read by the tick
+    succeeded: Callable[[], None] | None = None  # set by the worker; the tick calls it
 
     @classmethod
-    def start(cls, exe: str, args: str, refused_msg: str) -> bool:
+    def start(
+        cls, exe: str, args: str, refused_msg: str, on_success: Callable[[], None] | None = None,
+        failed_msg: str | None = None,
+    ) -> bool:  # fmt: skip
         """False if a prompt is already up."""
         if cls.busy:
             return False
         cls.busy = True
         threading.Thread(
-            target=cls._worker, args=(exe, args, refused_msg), name="bl4_direct.elevate", daemon=True,
-        ).start()
+            target=cls._worker, args=(exe, args, refused_msg, on_success, failed_msg or refused_msg),
+            name="bl4_direct.elevate", daemon=True,
+        ).start()  # fmt: skip
         return True
 
     @classmethod
-    def _worker(cls, exe: str, args: str, refused_msg: str) -> None:
-        # Win32 only, no unreal calls. ShellExecute wants COM on its thread.
+    def _worker(
+        cls, exe: str, args: str, refused_msg: str, on_success: Callable[[], None] | None, failed_msg: str,
+    ) -> None:  # fmt: skip
+        # Win32 only, no unreal calls. ShellExecute wants COM on its thread. Own WinDLL instances, so
+        # these prototypes don't change the shared ctypes.windll ones
+        shell32, kernel32 = ctypes.WinDLL("shell32"), ctypes.WinDLL("kernel32")
+        shell32.ShellExecuteExW.argtypes = (ctypes.POINTER(_ShellExecuteInfo),)
+        shell32.ShellExecuteExW.restype = ctypes.c_int
+        kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_ulong)
+        kernel32.WaitForSingleObject.restype = ctypes.c_ulong
+        kernel32.GetExitCodeProcess.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong))
+        kernel32.GetExitCodeProcess.restype = ctypes.c_int
+        kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
         com = False
         try:
             # Apartment threaded, no OLE1 DDE; S_OK or S_FALSE both need a matching uninit
             com = ctypes.windll.ole32.CoInitializeEx(None, 0x2 | 0x4) in (0, 1)
-            result = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, args, None, 0)
-            if int(result) <= 32:
+            info = _ShellExecuteInfo()
+            info.cbSize = ctypes.sizeof(info)
+            info.fMask = 0x40 | 0x100  # SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
+            info.lpVerb, info.lpFile, info.lpParameters, info.nShow = "runas", exe, args, 0  # SW_HIDE
+            if not shell32.ShellExecuteExW(ctypes.byref(info)) or not info.hProcess:
                 cls.refused = refused_msg
+                return
+            code = ctypes.c_ulong(1)
+            try:
+                # Long sleeps between checks: each Win32 call hands the GIL to the game thread's waiters
+                while kernel32.WaitForSingleObject(info.hProcess, 500) == 0x102:  # WAIT_TIMEOUT
+                    pass
+                kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code))
+            finally:
+                kernel32.CloseHandle(info.hProcess)
+            if code.value != 0:
+                cls.refused = failed_msg
+            elif on_success is not None:
+                cls.succeeded = on_success
         except Exception:  # noqa: BLE001
             cls.refused = refused_msg
         finally:
@@ -900,12 +956,20 @@ class Elevated:
             cls.busy = False
 
 
-def run_elevated(exe: str, args: str, refused_msg: str) -> bool:
-    """Starts a program with a UAC prompt without waiting. False if a prompt is already up."""
-    return Elevated.start(exe, args, refused_msg)
+def run_elevated(
+    exe: str, args: str, refused_msg: str, on_success: Callable[[], None] | None = None, failed_msg: str | None = None,
+) -> bool:  # fmt: skip
+    """Runs a program with a UAC prompt without waiting. False if a prompt is already up."""
+    return Elevated.start(exe, args, refused_msg, on_success, failed_msg)
 
 
 def _report_elevated() -> None:
+    if (done := Elevated.succeeded) is not None:
+        Elevated.succeeded = None
+        try:
+            done()
+        except Exception as ex:  # noqa: BLE001
+            logging.error(f"[BL4 Direct] after the admin step: {ex!r}")
     if (msg := Elevated.refused) is None:
         return
     Elevated.refused = None

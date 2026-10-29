@@ -205,6 +205,8 @@
         } else {
             var hostDesc = !s.in_game
                 ? "Load into your game first (Continue), then host."
+                : s.firewall_off
+                ? "Reloads your current map as a co-op host on UDP port " + s.port + "."
                 : "Reloads your current map as a co-op host on UDP port " + s.port + ". Only friends in your list (and your local network) can get in." +
                   (s.firewall ? "" : " Windows asks once to let your friends through the firewall.");  // prettier-ignore
             api.row("Host a game", hostDesc, [
@@ -236,7 +238,13 @@
             api.row(ipName, ipDesc, [value(api, "Looking it up...")]);
         }
 
-        if (hosting || !s.firewall) {
+        if (s.firewall_off) {
+            if (hosting) {
+                api.row("Firewall", "No firewall rule: anyone who can reach UDP " + s.port + " (port scanners, anyone with your IP) " +
+                    "can try to connect. Recommended: turn on \"Firewall rule for hosting\" in BL4 Fix Setup (Co-op page) " +
+                    "so only your friends get through.", [value(api, "Off: recommended on", "bl4dc_warn")]);  // prettier-ignore
+            }
+        } else if (hosting || !s.firewall) {
             var fwParts = [value(api, s.firewall ? "Up to date" : s.asking ? "Waiting for Windows" : "Needs updating",
                 s.firewall ? "bl4dc_on" : "bl4dc_warn")];  // prettier-ignore
             if (!s.firewall) {

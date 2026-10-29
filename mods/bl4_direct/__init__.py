@@ -11,23 +11,27 @@ ID, so we swap the game net driver to that and use the stock `open` travel comma
 The swap only affects net drivers created afterwards, and is undone with `bl4direct off` (or by
 disabling the mod), which puts normal SHiFT online play back.
 
-Friends and the host port live in a JSON file shared with the BL4 Direct companion app, which also
-manages the firewall rule that limits who can reach a hosted game.
+Friends and the host port live in a JSON file shared with the setup app. The firewall rule that
+limits who can reach a hosted game is made by the setup app, and updated from here (UAC) when the
+friends change.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 import re
 import socket
 import time
+from pathlib import Path
 from typing import Any
 
 import unrealsdk
 from mods_base import (
     ENGINE,
     SETTINGS_DIR,
+    BoolOption,
     ButtonOption,
     DropdownOption,
     KeybindOption,
@@ -41,7 +45,7 @@ from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
 # coop loads here too, so a host running only BL4 Direct still answers friends
-from . import arrival, coop, page, ui  # noqa: F401
+from . import arrival, buddies, coop, health, page, smooth, ui  # noqa: F401
 from .shared import (
     DEFAULT_PORT,
     FRIENDS_FILE_NAME,
@@ -49,6 +53,7 @@ from .shared import (
     Config,
     Friend,
     compat_code,
+    firewall_command,
     is_ipv4,
     normalize_ipv4,
 )
@@ -61,8 +66,8 @@ DIRECT_DRIVER = "/Script/OnlineSubsystemSteam.SteamNetDriver"
 FRIENDS_FILE = SETTINGS_DIR / FRIENDS_FILE_NAME
 GAME_DIR = SETTINGS_DIR.parent.parent
 NO_FRIENDS = "(no friends added - use the BL4 Direct app)"
-# The installer drops a copy of itself here so the game can ask it to update the firewall
-SETUP_EXE = GAME_DIR / "sdk_mods" / ".bl4_direct" / "BL4DirectSetup.exe"
+# Runs the firewall update elevated (shared.firewall_command). The full path: never one found on PATH
+POWERSHELL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
 
 # The driver class the game had configured before we swapped it, or None if not swapped
 _original_driver: str | None = None
@@ -338,10 +343,20 @@ def hosting_watchdog(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: Boun
         return
     _last_tick = now
     try:
+        health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
         _client_tick()
         _watchdog_tick()
     except Exception as ex:  # noqa: BLE001 - never let the watchdog break the game's tick
         log_error(f"hosting watchdog: {ex!r}")
+    try:
+        smooth.tick(smooth_option.value)
+    except Exception as ex:  # noqa: BLE001
+        log_error(f"smoother enemies: {ex!r}")
+    try:
+        buddies.tick()
+    except Exception as ex:  # noqa: BLE001
+        log_error(f"teammate panel: {ex!r} - stopped for this session")
+        buddies.S.verified = False  # once, not every second
 
 
 # endregion
@@ -495,13 +510,27 @@ class PanelApi:
     @staticmethod
     def update_firewall() -> str | None:
         """
-        Asks the setup app (via UAC) to rewrite the firewall rule. Returns an error, if any. The
-        prompt runs in the background; the panel reports it if the player says no.
+        Rewrites the firewall rule (PowerShell, via UAC) to match the friends file. Returns an error,
+        if any. The prompt runs in the background; the panel reports it if the player says no.
+        Used to run the setup app's copy in the game folder, which is gone (2026-10-28).
         """
-        if not SETUP_EXE.exists():
-            return "Couldn't find BL4DirectSetup.exe - re-run the installer, or click Save in the app."
+        config = Config.load(FRIENDS_FILE)
+        signature = config.firewall_signature()
+        try:
+            args = firewall_command(config.firewall_spec())
+        except ValueError as ex:
+            return f"Couldn't update the firewall: {ex}."
+
+        def applied() -> None:
+            # Load again: friends may have changed while Windows asked
+            latest = Config.load(FRIENDS_FILE)
+            latest.firewall_applied = signature
+            latest.save(FRIENDS_FILE)
+            log(f"Firewall rule updated ({signature}).")
+
         refused = "Firewall update cancelled - they can't join your game until you allow it."
-        if not ui.run_elevated(str(SETUP_EXE), f'--apply-firewall --game "{GAME_DIR}"', refused):
+        failed = "The firewall update failed - try Update again, or re-run BL4 Fix Setup."
+        if not ui.run_elevated(str(POWERSHELL), args, refused, applied, failed):
             return "Windows is already asking about the firewall - answer that prompt first."
         return None
 
@@ -602,6 +631,18 @@ offline_button = ButtonOption(
     "Back to normal online play",
     description="Switches networking back to SHiFT for regular matchmaking and invites.",
     on_press=lambda _: (disable_direct(), show_status()),
+)
+
+smooth_option = BoolOption(
+    "Smoother enemies for friends",
+    False,
+    description=(
+        "While you host with friends connected, your game sends enemy positions as often as it can"
+        " (the game's default is 4 times a second) and spends a little more time per frame sending"
+        " them, so enemies jump around much less on your friends' screens. Only the host needs this;"
+        " your friends change nothing. More upload (about 17 KB/s per friend instead of 9 in testing)"
+        " and no frame rate cost seen. Solo and when you join someone it does nothing."
+    ),
 )
 
 
@@ -747,6 +788,7 @@ mod = build_mod(
         reload_button,
         status_button,
         offline_button,
+        smooth_option,
     ],
     hooks=[
         on_network_error,
@@ -758,5 +800,5 @@ mod = build_mod(
     ],
     commands=[bl4host, bl4join, bl4direct, bl4ui],
     on_enable=lambda: (refresh_friends(), ui.install(), arrival.start_scan()),
-    on_disable=lambda: (ui.uninstall(), disable_direct()),
+    on_disable=lambda: (ui.uninstall(), disable_direct(), smooth.cleanup()),
 )

@@ -116,6 +116,8 @@ def state() -> dict[str, Any]:
         "in_game": api.in_gameplay(),
         "ip": {"state": ui.PublicIp.state, "ip": ui.PublicIp.ip or ""},
         "firewall": config.firewall_up_to_date() if config is not None else api.firewall_up_to_date(),
+        # Turned off in the setup app: no rule, and hosting doesn't ask Windows for anything
+        "firewall_off": config is not None and not config.firewall,
         "asking": ui.Elevated.busy,
         "friends": [{"name": f.name, "address": f.address, "port": f.port} for f in friends],
         "compat": _compat(),
@@ -220,11 +222,10 @@ def _after_friends_changed(done: str) -> None:
     Only a host needs friends in its firewall (joining is an outgoing connection), so the firewall
     is normally updated when you press Host. If you're already hosting, do it now.
     """
-    if ui.session()[0] != "hosting":
-        if ui.api.firewall_up_to_date():
-            say(done)
-        else:
-            say(f"{done} When you host, Windows will ask once to let your friends through your firewall.")
+    if ui.api.firewall_up_to_date():  # also when the rule is turned off
+        say(done)
+    elif ui.session()[0] != "hosting":
+        say(f"{done} When you host, Windows will ask once to let your friends through your firewall.")
     elif error := ui.api.update_firewall():
         say(f"{done} But: {error}", error=True)
     else:
