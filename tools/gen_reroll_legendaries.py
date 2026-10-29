@@ -6,7 +6,7 @@ and pearl, so Reroll can roll one again the way a drop would.
     python tools/gen_reroll_legendaries.py --inv-json <inv entries dump>    (dev: a cached dump)
 
 The rules are Kairosdex's (tools/gen_weapondex_rolls.py, checked against 393 real legendary drops,
-see mods/bl4_weapondex/CLAUDE.md "Rolling our own serials"): per slot of the item type, how many
+see that tool): per slot of the item type, how many
 parts, which ones (allowlists, tags each part needs or excludes, caps), their weights and their
 level gates. Reroll keeps its own copy so it works without Kairosdex installed.
 

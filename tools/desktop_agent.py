@@ -1,6 +1,6 @@
 """
 Runs in YOUR desktop session so test automation can start BL4 there instead of in the hidden,
-elevated session Claude's shell lives in (launching from there breaks Steam).
+elevated session the automation shell runs in (launching from there breaks Steam).
 
 Start it yourself in a normal (non-admin) terminal and close it when you're done testing:
 

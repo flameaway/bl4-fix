@@ -8,7 +8,7 @@ one itself and build its serial (mods/bl4_weapondex/serialgen.py) instead of dro
 gen_weapondex.py also writes it (same inv data as dex.json, so dex.json's source SHA1s cover it).
 
 The rules, as read from the inv NCS and checked against 393 real legendary serials from the saves
-(dev/re/serialgen/, mods/bl4_weapondex/CLAUDE.md "Rolling our own serials"):
+(dev/re/serialgen/):
 
 - Slots: the item type's `parttypes` (nearest type in its `basetype` chain that lists them), in
   serial order. Candidates for a slot: that table's parts in the type and every ancestor.

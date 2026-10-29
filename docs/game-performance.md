@@ -4,7 +4,7 @@ An investigation of frame-time hitches in a long-running game session, done with
 sampling profiler written for it (`dev/perf/`). The game was build 26007962 (v1.11, after the
 Denuvo removal), on an RTX 3080 Ti with 32 GB of RAM, windowed at 2090x1306. Settings were DLSS
 Balanced, frame generation on and Reflex on. The session had been running about 13 h, with our
-mods loaded and several other Claude sessions using the same game.
+mods loaded and several other test sessions using the same game.
 
 **Confidence labels:**
 - **[measured]** comes from samples or timings in this session.
@@ -116,7 +116,7 @@ UE Trace / Unreal Insights is compiled out of this shipping build: there's no `C
 
 - **What changed at the same time:**
   - `WUDFHost` (DeviceGroupId `MttVDDGroup`: the MTT Virtual Display Driver) went from idle (1,150 CPU-s in 35 h) to a full core.
-  - Sunshine (started 14:49) and a Claude Fleet Moonlight client (14:40) were running.
+  - Sunshine (started 14:49) and a Moonlight client (14:40) were running.
   - The desktop was being streamed through the virtual display.
 - **Cause** [inferred]: input-state calls wait on input processing that the streaming stack slows down.
 - **Mitigation in mods:** check `GetForegroundWindow` first (unaffected), and share one key snapshot per frame. Handed to the mod-perf session.
@@ -162,7 +162,7 @@ UE Trace / Unreal Insights is compiled out of this shipping build: there's no `C
   - Only 0.14 of the exe's 0.61 GB was resident at one point.
 - **A trap found while testing.** Writing back the process's default working-set limits (min 200 KB, max 1.3 MB) took the game from 6.3 GB to 0.9 GB resident in one call, soft limits or not. `SetProcessWorkingSetSizeEx` trims down to the maximum at once. `bl4_perf` now never sets a maximum below the current working set.
 - **Remedies:**
-  - Free RAM: ~20 Claude processes held ~15 GB here.
+  - Free RAM: ~20 dev tool processes held ~15 GB here.
   - Optionally, `bl4_perf`'s soft minimum working set. Off by default; not measured yet.
 
 ## 7. Engine settings read live (for reference)

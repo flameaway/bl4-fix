@@ -11,10 +11,6 @@ venv/
 .DS_Store
 Thumbs.db
 
-# local Claude Code settings and the Claude Fleet screenshot drop folder
-.claude/settings.local.json
-fleet-uploads/
-
 # local test harness state
 .bridge/
 # reverse-engineering scratch: a 650 MB image dump and a local capstone install
