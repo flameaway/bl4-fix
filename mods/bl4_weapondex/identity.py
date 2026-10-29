@@ -1,7 +1,6 @@
 """
 An item identity (FInventoryIdentity) of our own, made from a serial with the game's own functions:
-the item's full stats with no pickup, no actor and nothing in the world (CLAUDE.md "Stats from a
-serial, nothing spawned").
+the item's full stats with no pickup, no actor and nothing in the world.
 
 1. copy a live identity (an empty backpack slot's, see source()) with the game's copy constructor;
 2. decode the serial into it with the game's save-load decoder (it resets everything from the

@@ -3,8 +3,8 @@
 // Kairosdex: a dex of BL4's bosses and the legendaries they drop, as a screen in the game's menu
 // page (the page the pause menu lives in).
 //
-// The BL4 Mod Menu runs this file (its extensions.js) and runs it again when it changes, so it
-// tears its last copy down first. The dex itself is dex.json next to this file (made from the
+// The BL4 UI Link (or, until its pak loads, the BL4 Mod Menu) runs this file and runs it again
+// when it changes, so it tears its last copy down first. The dex itself is dex.json next to this file (made from the
 // game's data by tools/gen_weapondex.py); Python (bl4_weapondex/screen.py) serves what changes
 // through GET /ext?k=weapondex: the bosses beaten on this profile (any character), the dev unlock, the search
 // text (typed keys are read in Python, since no key events reach page scripts) and requests to
@@ -14,7 +14,8 @@
 // that drop it is beaten. Items no boss drops are always shown. "Unlock everything" shows it all.
 
 (function () {
-    var ns = window.bl4ModMenu;
+    // eslint-disable-next-line no-undef
+    var ns = (typeof bl4linkNs !== "undefined" && bl4linkNs) || window.bl4ModMenu;
     if (!ns || !ns.ext) return;
     var ext = ns.ext;
     var KEY = "weapondex";

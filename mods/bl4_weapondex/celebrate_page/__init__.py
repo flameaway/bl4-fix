@@ -3,17 +3,23 @@ The Kairosdex's celebrations: the game's own big HUD banner (the one a level up 
 mission gets) for a boss beaten for the first time and a legendary or pearl obtained for the first
 time.
 
-The banners are one HTML widget in the HUD page, celebratory_notifications.html. We ship that page
-from a pak of ours (tools/gen_kairosdex_celebrate.py: the game's copy plus one <script> for our
-loader). Everything else is loose files in uiresources/bl4weapondex/: celebrate.js (the loader,
-fixed), celebrate_main.js and celebrate.css. The loader polls celebrate.json, which holds the
-latest events and a stamp of our files: a changed stamp reloads the script and styles, so they
-update without a restart. Paks are only read at startup, so the page itself (and the first
-install) applies the next time the game starts.
+The banners are one HTML widget in the HUD page, celebratory_notifications.html. Our script gets
+into the HUD page through the BL4 UI Link (../uilink, key "kdxcelebrate", view HUD; celebrate.py
+registers it), so no page of the game's is replaced. Everything is loose files in
+uiresources/bl4weapondex/: celebrate.js (the loader, fixed), celebrate_main.js and celebrate.css.
+The loader polls celebrate.json, which holds the latest events and a stamp of our files: a changed
+stamp reloads the script and styles, so they update without a restart.
 
-To never undo a game update, the pak is only installed while the game's own page is still exactly
-the copy ours was made from (vanilla.json). If a patch changes it, or another mod also replaces
-the page, the pak is removed and the celebrations stay off until the mod is updated.
+Until 0.7.0 a pak of ours (PAK_NAME, the game's banner page plus one <script> for the loader)
+loaded it. sync() removes that pak: the game reads a pak's index once at startup and keeps reading
+file data at those offsets, so an existing pak is only ever removed after the game exits (a
+`.remove` marker next to it and a hidden helper; the setup app runs this too, installer/core.py
+PAGE_MODULES, and with no game running the helper deletes it at once).
+
+The script copies the banner widget's markup, so it's only run while the game's own page is still
+exactly the copy it was written against (vanilla.json, tools/gen_kairosdex_celebrate.py):
+`page_current` says so (None until checked). If a patch changes it, the celebrations stay off and
+the mod shows "Needs update" until it's updated.
 
 Plain Python only (file I/O, no unreal calls, Python 3.11 for the installer), so this is safe to
 run from any thread.
@@ -47,6 +53,11 @@ STATE_PATH = "bl4weapondex/celebrate.json"
 # True when running from a source folder (a dev junction) rather than a packed .sdkmod, whose
 # files can't change while the game runs
 FROM_SOURCE = isinstance(ASSETS, Path)
+# For the status lines
+WHAT = "banner"
+CHANGED = "the HUD banners"
+ON = "Kairosdex celebrations are on."
+OFF = "Kairosdex celebrations are off."
 NAME = "Kairosdex celebrations"
 
 
@@ -58,10 +69,6 @@ class S:
 
 def pak_path(game_dir: Path) -> Path:
     return game_dir / "OakGame" / "Content" / "Paks" / "~mods" / PAK_NAME
-
-
-def build_pak() -> bytes:
-    return pak.build_pak("../../../" + UI_PREFIX, {PAGE: (ASSETS / "celebratory_notifications.html").read_bytes()}, PAK_NAME)
 
 
 def _write_if_changed(path: Path, data: bytes) -> None:
@@ -121,12 +128,14 @@ def remove_loose_files(game_dir: Path) -> None:
             _write_state(game_dir)
 
 
-# Whether this game session already started the helper that applies staged pak changes
+# Whether the game's own page is still the copy our script was written against: None until checked
+page_current: bool | None = None
+# Whether this game session already started the helper that applies the staged pak removal
 _helper_started = False
 
 
 def _staged(target: Path) -> tuple[Path, Path]:
-    """`<pak>.next` (replace it with this) and `<pak>.remove` (delete it), applied after exit."""
+    """`<pak>.next` (an old staged replacement) and `<pak>.remove` (delete it), applied after exit."""
     return target.with_name(target.name + ".next"), target.with_name(target.name + ".remove")
 
 
@@ -137,7 +146,7 @@ def _ps_quote(path: Path) -> str:
 def _apply_after_exit(target: Path) -> bool:
     """
     Starts (once per game session) a hidden helper that waits until no game is running, then
-    applies whatever is staged next to `target` at that point (Easy Respec's helper, see
+    deletes `target` if it's still marked for removal (Easy Respec's helper, see
     bl4_respec/skills_page). Returns whether the helper runs.
     """
     global _helper_started
@@ -147,9 +156,7 @@ def _apply_after_exit(target: Path) -> bool:
     apply = (
         f"if (Test-Path -LiteralPath {_ps_quote(removal)}) {{ "
         f"Remove-Item -LiteralPath {_ps_quote(target)} -Force -ErrorAction Stop; "
-        f"Remove-Item -LiteralPath {_ps_quote(removal)}, {_ps_quote(replacement)} -Force -ErrorAction SilentlyContinue }} "
-        f"elseif (Test-Path -LiteralPath {_ps_quote(replacement)}) {{ "
-        f"Move-Item -LiteralPath {_ps_quote(replacement)} -Destination {_ps_quote(target)} -Force -ErrorAction Stop }}"
+        f"Remove-Item -LiteralPath {_ps_quote(removal)}, {_ps_quote(replacement)} -Force -ErrorAction SilentlyContinue }}"
     )
     script = (
         # Wait for every copy of the game, not our own PID: a dev tool can call this from outside it
@@ -170,61 +177,43 @@ def _apply_after_exit(target: Path) -> bool:
     return True
 
 
-def _install(path: Path, data: bytes) -> str:
-    replacement, removal = _staged(path)
-    removal.unlink(missing_ok=True)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        # Nothing mounted it yet, so it's safe to put in place now
-        replacement.unlink(missing_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(path)
-        return f"{NAME} installed: restart the game once to see them."
-    if path.read_bytes() == data:
-        replacement.unlink(missing_ok=True)
-        return f"{NAME} are on."
-    replacement.write_bytes(data)
-    if _apply_after_exit(path):
-        return f"{NAME} updated: the new banner page loads the next time the game starts."
-    return f"{NAME}: couldn't update the banner page while the game is running."
-
-
-def _remove(path: Path, reason: str) -> str:
+def retire_pak(game_dir: Path) -> str:
+    """Removes our old page pak (after the game exits if it's there). Returns a note ("" = none)."""
+    path = pak_path(game_dir)
     replacement, removal = _staged(path)
     replacement.unlink(missing_ok=True)
     path.with_suffix(".tmp").unlink(missing_ok=True)
     if not path.exists():
         removal.unlink(missing_ok=True)
-        return reason
+        return ""
     removal.write_bytes(b"")
     if _apply_after_exit(path):
-        return f"{reason} The game's own banner page comes back the next time the game starts."
-    return f"{reason} Couldn't remove {path.name} while the game is running."
+        return f" The old {WHAT} page ({PAK_NAME}) is removed when the game exits (the UI Link replaces it)."
+    return f" Couldn't remove the old {WHAT} page ({PAK_NAME}) while the game is running."
+
+
+def check_page(game_dir: Path) -> bool:
+    """Whether the game's own page (its paks, not ~mods) is the copy our script was written for."""
+    expected = json.loads((ASSETS / "vanilla.json").read_text(encoding="utf-8"))["sha1"]
+    paks_dir = game_dir / "OakGame" / "Content" / "Paks"
+    game_copy = pak.winning_entry(sorted(paks_dir.glob("*.pak")), UI_PREFIX + PAGE)
+    return game_copy is not None and game_copy.sha1 == expected
 
 
 def sync(game_dir: Path, enabled: bool) -> str:
-    """Installs or removes our pak to match `enabled` and the installed game. Returns a status line."""
-    ours = pak_path(game_dir)
+    """
+    Removes the old pak, checks the game's page and writes (or blanks) our loose files to match
+    `enabled`. Returns a status line; `page_current` says whether the link should run our script.
+    """
+    global page_current
+    retired = retire_pak(game_dir)
     if not enabled:
+        page_current = None
         remove_loose_files(game_dir)
-        return _remove(ours, f"{NAME} are off.")
-
-    paks_dir = ours.parent.parent
-    expected = json.loads((ASSETS / "vanilla.json").read_text(encoding="utf-8"))["sha1"]
-    game_copy = pak.winning_entry(sorted(paks_dir.glob("*.pak")), UI_PREFIX + PAGE)
-    if game_copy is None or game_copy.sha1 != expected:
+        return f"{OFF}{retired}"
+    page_current = check_page(game_dir)
+    if not page_current:
         remove_loose_files(game_dir)
-        return _remove(ours, f"{NAME} paused: this game version changed the HUD banners, so the mod needs an update.")
-
-    others = [
-        other.name
-        for other in sorted(ours.parent.glob("*.pak"))
-        if other.name.lower() != ours.name.lower() and pak.winning_entry([other], UI_PREFIX + PAGE) is not None
-    ]
-    if others:
-        remove_loose_files(game_dir)
-        return _remove(ours, f"{NAME} paused: {', '.join(others)} in Paks/~mods also changes the HUD banners.")
-
+        return f"{NAME} paused: this game version changed {CHANGED}, so the mod needs an update.{retired}"
     write_loose_files(game_dir)
-    return _install(ours, build_pak())
+    return f"{ON}{retired}"

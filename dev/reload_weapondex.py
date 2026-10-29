@@ -26,6 +26,7 @@ SUBMODULES = (
     "bl4_weapondex.keyboard",
     "bl4_weapondex.celebrate_page",
     "bl4_weapondex.celebrate",
+    "bl4_weapondex.pause_page",
     "bl4_weapondex.screen",
     "bl4_weapondex.bake",
 )
@@ -34,6 +35,11 @@ old = sys.modules.get("bl4_weapondex")
 if old is None:
     new = importlib.import_module("bl4_weapondex")
 else:
+    # The banner loader runs in the HUD page through the link (since 0.7.0): drop the old copy's
+    # registration first, so the new one starts clean (the page tears its loader down)
+    link = sys.modules.get("bl4_weapondex.uilink")
+    if link is not None:
+        link.unregister("kdxcelebrate")
     old.mod.disable(dont_update_setting=True)
     if old.mod in mods_base.mod_list.mod_list:
         mods_base.mod_list.mod_list.remove(old.mod)

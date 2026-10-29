@@ -10,7 +10,7 @@ So for each item:
 - we roll one ourselves (roll.new_serial: its serial, at the player's level; nothing is spawned);
 - we ask the manager for that serial's thumbnail ourselves, through the native function every card
   uses (`RequestThumbnail(manager, out ThumbnailID, const FString& serial, const FIntPoint& size)`,
-  found from the cards' callers, see CLAUDE.md), pinned to this build and checked before use;
+  found from the cards' callers), pinned to this build and checked before use;
 - when its render target turns up, we wait out the manager's pre-render frames, read it straight
   back (RGBA, 0..255 floats with alpha) and a worker thread writes the PNG.
 

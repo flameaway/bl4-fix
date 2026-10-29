@@ -1,5 +1,6 @@
 """
-Celebrations: the game's own big HUD banner (celebrate_page/ draws it) when a boss is beaten for
+Celebrations: the game's own big HUD banner (celebrate_page/ draws it, in the HUD page through
+the BL4 UI Link: link key LINK_KEY) when a boss is beaten for
 the first time on this account, or a legendary or pearl is obtained for the first time (with
 "Per-character Kairosdex" on: the first time for the character being played).
 
@@ -26,7 +27,7 @@ from typing import Any
 from mods_base import get_pc
 from unrealsdk import logging
 
-from . import celebrate_page, data, owned, progress, savegame, stats
+from . import celebrate_page, data, owned, progress, savegame, stats, uilink
 
 CHECK_S = 0.5
 MAX_NEW_PER_CHECK = 8  # a full backpack showing up at once (a load) is a baseline, not 90 banners
@@ -36,6 +37,10 @@ ICON_BOSS = "coui://uiresources/_shared/assets/ico_ui_art_discovery/ico_menu_tar
 ICON_ITEM = "coui://uiresources/_shared/assets/ico_ui_art_challenges/ico_challenge_big_loot.png"
 ICON_PEARL = "common://uiresources/dlc_rarity_pips/assets/ico_misc_pearl.png"
 LABEL = "KAIROSDEX"
+# The loader, run in the HUD page by the BL4 UI Link while celebrations are on and the game's
+# banner page is the one it was written for (celebrate_page.page_current)
+LINK_KEY = "kdxcelebrate"
+LINK_SCRIPT = "coui://uiresources/bl4weapondex/celebrate.js"
 
 
 class S:
@@ -79,11 +84,21 @@ def sync(on: bool, wait: bool = False) -> None:
                 logging.info(f"[Kairosdex] {celebrate_page.sync(game_dir, on)}")
             except Exception as ex:  # noqa: BLE001 - the dex works without it
                 logging.error(f"[Kairosdex] Celebrations: couldn't set up the banner page: {ex!r}")
+            _link(on and celebrate_page.page_current is True)
 
     if wait:
         run()
     else:
         threading.Thread(target=run, name="bl4_weapondex celebrate sync", daemon=True).start()
+
+
+def _link(on: bool) -> None:
+    """Has the link run the loader in the HUD page (or tear it down there)."""
+    if on:
+        uilink.register(LINK_KEY, LINK_SCRIPT, dict, lambda _action: None, views=(uilink.HUD,), mod="Kairosdex")
+    else:
+        uilink.unregister(LINK_KEY)
+        uilink.stop()  # the link's server goes once no script of any mod is left
 
 
 def forget() -> None:
@@ -207,7 +222,7 @@ def tick() -> None:
     if now < S.next_check:
         return
     S.next_check = now + CHECK_S
-    if celebrate_page.FROM_SOURCE and now - S.published_at >= PUBLISH_S:
+    if celebrate_page.FROM_SOURCE and celebrate_page.page_current and now - S.published_at >= PUBLISH_S:
         S.published_at = now
         _publish_dev()
     try:

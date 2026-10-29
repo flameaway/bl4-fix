@@ -2,7 +2,7 @@
 Rolls a dex item ourselves and writes its serial: no pickup, no actor, nothing in the world.
 
 The rules come from rolls.json (tools/gen_weapondex_rolls.py, read from the game's inv data; the
-rules and how they were checked against real rolls are in CLAUDE.md "Rolling our own serials"):
+rules were checked against real rolls, see that tool):
 per slot of the item type, how many parts (min/max, or min + one per success of a chance), which
 parts (an allowlist, the tags each part needs or excludes, caps on parts carrying a tag), weighted
 picks, and level gates. Weights, gates and chances that name an attribute or a data table cell

@@ -21,11 +21,11 @@ it started (owned.py), with "Reset this character's legendaries". The dex itself
 dex.json); if a game patch changes that data the screen says so, and the dex needs rebuilding.
 
 The first time a boss is beaten or a legendary or pearl is obtained, the game's own big HUD
-banner celebrates it with its picture (celebrate.py, drawn by celebrate_page/: option
-"Celebrations").
+banner celebrates it with its picture (celebrate.py, drawn by celebrate_page/ in the HUD page
+through the BL4 UI Link: option "Celebrations").
 
-The screen is HTML in the game's menu page, through the BL4 Mod Menu (screen.py), which must be
-installed. Dev options: "Unlock everything" shows the whole dex; "Forget this character's bosses"
+The screen is HTML in the game's menu page (screen.py), run there by the BL4 UI Link (uilink/;
+no Mod Menu needed). Dev options: "Unlock everything" shows the whole dex; "Forget this character's bosses"
 starts it over. `dex beat <boss>` / `dex forget <boss>` mark one by hand.
 """
 
@@ -148,7 +148,7 @@ celebrate_option = BoolOption(
     True,
     description=(
         "The game's big banner, with the boss's or item's picture, the first time you beat a boss or get a"
-        " legendary or pearl (on any character, or with Per-character Kairosdex on, on this one). Turning this on or off applies from the next game start."
+        " legendary or pearl (on any character, or with Per-character Kairosdex on, on this one)."
     ),
     on_change_while_enabled=lambda _, value: celebrate.sync(bool(value)),
 )
@@ -352,7 +352,6 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
 
 def _tick() -> None:
     if not S.registered:
-        # The Mod Menu may load (or reload) after us
         S.registered = screen.register(GAME_DIR)
     screen.tick()
     tracker.tick(beaten)
@@ -362,9 +361,8 @@ def _tick() -> None:
     if S.pending_open and time.monotonic() > S.pending_open:
         S.pending_open = 0.0
         screen.request_open()
-    keys = screen._menu_module("keys")  # noqa: SLF001
-    if keys is not None and get_pc(possibly_loading=True) is not None:
-        down = keys.key_down(open_key.value)
+    if get_pc(possibly_loading=True) is not None:
+        down = screen.key_down(open_key.value)
         if down and not S.key_was_down and not screen.S.typing:
             screen.toggle()
         S.key_was_down = down
@@ -375,8 +373,6 @@ def _enable() -> None:
     celebrate.setup(GAME_DIR, lambda: bool(celebrate_option.value))
     celebrate.sync(bool(celebrate_option.value))
     S.registered = screen.register(GAME_DIR)
-    if not S.registered:
-        log("Waiting for BL4 Mod Menu: the Kairosdex screen lives in its page.")
 
 
 def _disable() -> None:

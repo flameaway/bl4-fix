@@ -7,7 +7,16 @@ step.
   and compass), and the fight highlighted on the map.
 - Travel: the waypoint, then on the same map at once a teleport next to the machine, facing it,
   however far away it is; on another map the game's own fast travel to the station nearest the
-  machine, then that teleport once the map has loaded and had a moment.
+  machine, then that teleport once the game has put the player on the station.
+
+Why a cross-map trip waits for the game (seen with the bridge, 2026-10-29): the pawn appears in
+the new map at a holding spot far outside it (X -500000) and the game fires
+ClientNotifyTeleporting; a few seconds later it fires it again and moves the pawn onto the
+station. The old hop, 3 s after the pawn appeared, landed by the machine and was then undone by
+that second move. So the hop waits until the game has placed the player (a notify well after
+the pawn appeared, or the pawn moved off where it first appeared), and is done again if the game
+moves them after it. These waits count only unpaused time: with the pause menu open during the
+load (seen in the second test) the game doesn't place the player until it closes.
 - A co-op client's position belongs to the host: a client's teleports are done by the host's copy
   of BL4 Direct (its co-op channel, coop.teleport_near). With an unmodded host a client gets the
   waypoint only.
@@ -28,6 +37,7 @@ from typing import Any
 import unrealsdk
 from mods_base import ENGINE, get_pc
 from unrealsdk import logging
+from unrealsdk.hooks import Type, add_hook, remove_hook
 from unrealsdk.unreal import FGameDataHandle, WrappedStruct
 
 from . import data
@@ -43,12 +53,22 @@ except Exception:  # noqa: BLE001
     stand = None
 
 PIN_CUSTOM_WAYPOINT, PIN_LOCATION = 1, 2
+_statics = unrealsdk.find_class("GameplayStatics").ClassDefaultObject
+
 STATION_TYPE = 24576  # def handle type of travel stations (RequestTeleportToStation's argument)
 # Where to stand without BL4 Direct's stand.py (older copies): rings around the machine
 STAND_RADII = (300, 450, 600)
 STAND_HEIGHT = 120
-# After a map loads, give it a moment before teleporting within it
-ARRIVAL_SETTLE = 3.0
+# Cross-map trips: the game's "putting you somewhere" call, fired on arrival and when it puts the
+# player on the station (a client RPC, so it reaches a co-op client's hook too)
+NOTIFY_FUNC = "/Script/OakGame.OakPlayerController:ClientNotifyTeleporting"
+NOTIFY_HOOK = "bl4_weapondex_trip_notify"
+PLACE_DELAY = 1.0  # after the game's last move, before ours
+LATE_NOTIFY = 0.5  # a notify this long after the pawn appeared is the move onto the station
+PLACED_MOVE = 1000.0  # the pawn moved this far from where it appeared: the game has placed it
+PLACE_FALLBACK = 10.0  # neither sign this long after arriving: hop anyway (the guard still watches)
+GUARD_S = 15.0  # after our hop, a game move within this long gets our hop again
+MAX_HOPS = 3
 TRAVEL_TIMEOUT = 180.0
 
 
@@ -58,7 +78,9 @@ class Refused(Exception):
 
 class S:
     machines: dict[str, dict[str, Any]] | None = None
-    # A cross-map trip in progress: {"boss", "started", "arrived_at"}
+    # A cross-map trip in progress: {"boss", "arrived_at", "first_spot",
+    # "notified_at", "hops", "hopped_at"} (see tick()); its times are on "clock", the trip's
+    # unpaused seconds ("ticked" = monotonic time of the last tick)
     trip: dict[str, Any] | None = None
     our_location_pin: str | None = None
     # A client's teleport the host is making: [boss, reply or None while waiting]
@@ -242,50 +264,121 @@ def start(target: dict[str, Any]) -> bool | None:
     args.bForRespawn = False
     args.bLocalOnly = False
     fn(args)
-    S.trip = {"boss": target, "started": time.monotonic(), "arrived_at": None}
+    S.trip = {"boss": target, "clock": 0.0, "ticked": time.monotonic(),
+              "arrived_at": None, "first_spot": None, "notified_at": 0.0, "hops": 0, "hopped_at": None}  # fmt: skip
+    _watch_notify(True)
     logging.info(f"[Kairosdex] Travelling to {target['station']} for {target['boss']}")
     return False
 
 
+def _on_notify(_obj: Any, _args: Any, _ret: Any, _func: Any) -> None:
+    """The game is moving the player (arrival in the map, then onto the station)."""
+    try:
+        if S.trip is not None:
+            S.trip["notified_at"] = S.trip["clock"]
+    except Exception as ex:  # noqa: BLE001
+        logging.error(f"[Kairosdex] trip notify: {ex!r}")
+
+
+def _watch_notify(on: bool) -> None:
+    """The notify hook, only while a cross-map trip is on (fixed id: a reload replaces it)."""
+    try:
+        if on:
+            add_hook(NOTIFY_FUNC, Type.POST, NOTIFY_HOOK, _on_notify)
+        else:
+            remove_hook(NOTIFY_FUNC, Type.POST, NOTIFY_HOOK)
+    except Exception as ex:  # noqa: BLE001 - a renamed function: the position check still works
+        logging.error(f"[Kairosdex] trip notify hook: {ex!r}")
+
+
 def _end(message: str, *, error: bool = False) -> None:
     S.trip = None
+    _watch_notify(False)
     (logging.error if error else logging.info)(f"[Kairosdex] {message}")
 
 
+def _placed_by_game(trip: dict[str, Any], pawn: Any, now: float) -> bool:
+    """Whether the game has put the player on the station (and had a moment since)."""
+    if now - max(trip["arrived_at"], trip["notified_at"]) < PLACE_DELAY:
+        return False
+    if trip["notified_at"] - trip["arrived_at"] >= LATE_NOTIFY or now - trip["arrived_at"] >= PLACE_FALLBACK:
+        return True
+    where = pawn.K2_GetActorLocation()
+    fx, fy, fz = trip["first_spot"]
+    return math.dist((where.X, where.Y, where.Z), (fx, fy, fz)) > PLACED_MOVE
+
+
+def _hop(trip: dict[str, Any], now: float) -> bool:
+    """Our move to the machine at the end of a cross-map trip. False when the trip is over."""
+    target = trip["boss"]
+    trip["hops"] += 1
+    trip["hopped_at"] = now
+    first = trip["hops"] == 1
+    if is_client():
+        if not _client_ready():
+            _end(f"In co-op the host needs BL4 Direct to move you; follow the waypoint to {target['boss']}.", error=True)
+            return False
+        _hop_as_client(target)
+        return True
+    if not _teleport_next_to(target):
+        _end(f"No room to stand next to {target['boss']}'s Big Encore machine; follow the waypoint.", error=True)
+        return False
+    if first:
+        logging.info(f"[Kairosdex] At {target['boss']} ({target['place']}).")
+    else:
+        logging.info(f"[Kairosdex] The game moved you after the trip: back at {target['boss']}.")
+    return True
+
+
 def tick() -> None:
-    """Every frame: finishes a cross-map trip once its map has loaded."""
+    """
+    Every frame: finishes a cross-map trip. Once the map has loaded and the game has put the
+    player on the station, the hop to the machine; then GUARD_S of watching for the game moving
+    them again (a notify after our hop), which gets the hop again.
+    """
     trip = S.trip
     if trip is None:
         return
     target = trip["boss"]
-    now = time.monotonic()
-    if now - trip["started"] > TRAVEL_TIMEOUT:
+    real = time.monotonic()
+    world = ENGINE.GameViewport.World if ENGINE.GameViewport else None
+    if world is not None and _statics.IsGamePaused(world):
+        trip["ticked"] = real
+        return
+    trip["clock"] += real - trip["ticked"]
+    trip["ticked"] = real
+    now = trip["clock"]
+    if now > TRAVEL_TIMEOUT:
         _end(f"The trip to {target['boss']} didn't arrive; follow the waypoint.", error=True)
         return
     pc = get_pc(possibly_loading=True)
     if pc is None or pc.Pawn is None or current_map().lower() != target["map"].lower():
         return
     if trip["arrived_at"] is None:
+        where = pc.Pawn.K2_GetActorLocation()
         trip["arrived_at"] = now
+        trip["first_spot"] = (where.X, where.Y, where.Z)
         return
-    if now - trip["arrived_at"] < ARRIVAL_SETTLE:
+    hopped_at = trip["hopped_at"]
+    if hopped_at is None:
+        if _placed_by_game(trip, pc.Pawn, now):
+            _hop(trip, now)
         return
-    if is_client():
+    if trip["notified_at"] > hopped_at:  # the game moved the player after our hop
+        if trip["hops"] >= MAX_HOPS:
+            _end(f"The game keeps moving you away from {target['boss']}; follow the waypoint.", error=True)
+        elif now - trip["notified_at"] >= PLACE_DELAY:
+            _hop(trip, now)
+        return
+    if now - hopped_at >= GUARD_S:
         S.trip = None
-        if _client_ready():
-            _hop_as_client(target)
-        else:
-            _end(f"In co-op the host needs BL4 Direct to move you; follow the waypoint to {target['boss']}.", error=True)
-        return
-    if _teleport_next_to(target):
-        _end(f"At {target['boss']} ({target['place']}).")
-    else:
-        _end(f"No room to stand next to {target['boss']}'s Big Encore machine; follow the waypoint.", error=True)
+        _watch_notify(False)
 
 
 def cancel() -> None:
     S.trip = None
     S.hop = None
+    _watch_notify(False)
 
 
 # endregion

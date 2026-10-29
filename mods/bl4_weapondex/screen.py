@@ -1,9 +1,12 @@
 """
 The link between the Kairosdex screen (ui/dex.js, running in the game's menu page) and Python.
 
-The screen lives in the same page as the BL4 Mod Menu, the game's menu page, and borrows its
-link: it registers with bl4_mod_menu.extensions, which loads ui/dex.js into the page and serves
-state() to it. Actions from the page come back through act(). So this needs the Mod Menu.
+The screen lives in the game's menu page (where the pause menu is). The BL4 UI Link (uilink/,
+shared by our mods; no Mod Menu needed) runs ui/dex.js there, serves state() to it and brings the
+page's actions back to act(); dex.js adds the Kairosdex entry to the pause list itself. Until the
+link's pak loads (the first start after installing) the BL4 Mod Menu's own link carries the
+script if it's installed. (0.6.0 had its own link, host.py, and a pause menu pak, 4250: retired,
+pause_page/ removes an old 4250 after the game exits.)
 
 The page fetches the dex itself (dex.json, a loose file next to dex.js); the state is only what
 changes: which bosses are beaten on this profile, the dev unlock, the search text, open/close
@@ -21,7 +24,6 @@ outcome goes back in the state's "trip" (the page closes the menus once the play
 from __future__ import annotations
 
 import json
-import sys
 import threading
 import time
 from collections.abc import Callable
@@ -33,7 +35,7 @@ import unrealsdk
 from mods_base import SETTINGS_DIR, get_pc
 from unrealsdk import logging
 
-from . import data, keyboard, owned, picture, progress, roll, savegame, thumbs, travel
+from . import data, health, keyboard, owned, pause_page, picture, progress, roll, savegame, thumbs, travel, uilink
 
 KEY = "weapondex"
 VIEW_FILE = SETTINGS_DIR / "weapondex_view.json"
@@ -61,12 +63,13 @@ MISSING = -1.0e30
 
 class S:
     game_dir: Path | None = None
+    retired = False  # 0.6.0's standalone leftovers (pak 4250, host.json) looked at this session
     published_at = 0.0
     published: dict[str, tuple[int, int]] = {}  # noqa: RUF012 - file -> (size, mtime) last copied
     open_request: dict[str, Any] = {"id": 0, "own": False, "boss": None}  # noqa: RUF012
     open_requested_at = -1e9
     open_pending = False  # until the page acknowledges it (do: "opened")
-    open_menus_closed = 0  # the Mod Menu's menus_closed count when it was made
+    open_menus_closed = 0  # the link's menus_closed count when it was made
     waiting_until = 0.0
     close_request = 0
     search = ""
@@ -90,14 +93,29 @@ class S:
     list_hover: Callable[[], bool] = lambda: False  # noqa: E731
 
 
-def _menu_module(name: str) -> Any:
-    return sys.modules.get(f"bl4_mod_menu.{name}")
-
-
 def available() -> bool:
-    """The Mod Menu is loaded and its link to the page is running."""
-    web = _menu_module("web")
-    return _menu_module("extensions") is not None and web is not None and web.Link.server is not None
+    """The screen can show this session (the link is live, or the Mod Menu carries it until then)."""
+    return uilink.reachable(KEY)
+
+
+def _unavailable() -> str:
+    link = uilink.status()
+    match link.get("state"):
+        case "next_start":
+            return "The Kairosdex screen shows from the next game start (its page link was just set up)."
+        case "game_changed" | "conflict" | "error":
+            return f"The Kairosdex screen can't show: {link.get('detail') or link.get('state')}"
+        case _:
+            return "The Kairosdex screen isn't ready yet (it starts a few seconds after the game)."
+
+
+def key_down(name: str | None) -> bool:
+    """The open key, read off the game thread (the Mod Menu's key thread when it's loaded, else the link's)."""
+    return uilink.key_down(name)
+
+
+def _press_escape() -> None:
+    uilink.press_escape()
 
 
 def say(text: str) -> None:
@@ -107,8 +125,7 @@ def say(text: str) -> None:
 
 
 def _changed() -> None:
-    if (exts := _menu_module("extensions")) is not None:
-        exts.changed(KEY)
+    uilink.changed(KEY)
 
 
 # region Page link
@@ -121,14 +138,13 @@ def _defeated(char: str | None) -> dict[str, float]:
 
 
 def state() -> dict[str, Any]:
-    web = _menu_module("web")
     char = progress.scope()  # None: the account's dex
     return {
         "open": {**S.open_request, "fresh": _open_pending()},
         "close": S.close_request,
-        # Bumped by the Mod Menu each time the game's menus close: the page may sleep through
+        # Bumped by the link each time the game's menus close: the page may sleep through
         # the moment they're closed, but sees this change when it wakes
-        "menus_closed": getattr(getattr(web, "Link", None), "menus_closed", 0),
+        "menus_closed": _menus_closed(),
         # Wins seen by the mod carry their time; ones only the game's save shows are SAVE_ONLY
         "defeated": _defeated(char),
         "character": progress.character() is not None,
@@ -247,14 +263,34 @@ def _view() -> dict[str, Any] | None:
 
 
 def register(game_dir: Path) -> bool:
+    """Starts the screen's side: the page script goes to the link."""
     S.game_dir = game_dir
-    exts = _menu_module("extensions")
-    if exts is None:
-        return False
     publish(force=True)
     _start_small_backfill(game_dir)
-    exts.register(KEY, SCRIPT_URL, state, act)
+    _retire_standalone(game_dir)
+    uilink.register(KEY, SCRIPT_URL, state, act, views=(uilink.MENUS,), mod="Kairosdex")
     return True
+
+
+def _retire_standalone(game_dir: Path) -> None:
+    """
+    0.6.0 ran the screen without the Mod Menu through its own link (host.py) and pause menu pak
+    (4250). The UI Link does that now: the old pak goes after the game exits (it may be mounted),
+    its host.json now, and its loose pause.js once the pak is gone. Once per session, on a worker.
+    """
+    if S.retired:
+        return
+    S.retired = True
+
+    def run() -> None:
+        try:
+            (game_dir / UI_DIR / "host.json").unlink(missing_ok=True)
+            if line := pause_page.retire(game_dir):
+                logging.info(f"[Kairosdex] {line}")
+        except Exception as ex:  # noqa: BLE001
+            logging.error(f"[Kairosdex] couldn't remove the old pause menu page: {ex!r}")
+
+    threading.Thread(target=run, name="bl4_weapondex retire", daemon=True).start()
 
 
 SMALL_THREAD = "weapondex-small"
@@ -282,8 +318,8 @@ def unregister() -> None:
     travel.cancel()
     roll.stop()
     thumbs.stop("stopped (mod disabled)")
-    if (exts := _menu_module("extensions")) is not None:
-        exts.unregister(KEY)
+    uilink.unregister(KEY)
+    uilink.stop()
 
 
 def publish(*, force: bool = False) -> None:
@@ -328,12 +364,11 @@ def publish(*, force: bool = False) -> None:
 
 
 def screen_open() -> bool:
-    exts = _menu_module("extensions")
-    return exts is not None and exts.page_open(KEY)
+    return uilink.page_open(KEY)
 
 
 def _menus_closed() -> int:
-    return getattr(getattr(_menu_module("web"), "Link", None), "menus_closed", 0)
+    return uilink.menus_closed()
 
 
 def _open_pending() -> bool:
@@ -350,24 +385,12 @@ def _menu_showing(pc: Any) -> bool:
     One of the game's menus is up. bShowMouseCursor alone isn't reliable, so the page (which only
     runs while a menu shows) must also have polled just now.
     """
-    exts = _menu_module("extensions")
-    if not pc.bShowMouseCursor or exts is None:
-        return False
-    try:
-        return exts.polling(KEY, MENU_POLL_S)
-    except TypeError:  # a Mod Menu from before polling() took a time
-        return True
+    return bool(pc.bShowMouseCursor) and uilink.polling(KEY, MENU_POLL_S)
 
 
 def _showing_now() -> bool:
     """Our screen is up right now (screen_open() can lag a few seconds behind a close)."""
-    exts = _menu_module("extensions")
-    if exts is None:
-        return False
-    try:
-        return exts.page_open(KEY, OPEN_POLL_S)
-    except TypeError:
-        return exts.page_open(KEY)
+    return uilink.page_open(KEY, OPEN_POLL_S)
 
 
 def request_open(boss: str | None = None) -> None:
@@ -377,13 +400,13 @@ def request_open(boss: str | None = None) -> None:
         logging.info("[Kairosdex] The Kairosdex opens in game, not at the title screen.")
         return
     if not available():
-        logging.error("[Kairosdex] The Kairosdex needs the BL4 Mod Menu mod (it shows in the same page).")
+        logging.error(f"[Kairosdex] {_unavailable()}")
         return
     own = not _menu_showing(pc)
-    if own and (menu := _menu_module("menu")) is not None:
+    if own:
         # In gameplay: open the pause menu, whose page holds our screen (the page only runs while
         # one of the game's menus shows)
-        menu.press_escape()
+        _press_escape()
     S.open_request = {"id": S.open_request["id"] + 1, "own": own, "boss": boss}
     S.open_requested_at = time.monotonic()
     S.open_pending = True
@@ -444,10 +467,9 @@ def _trace_tick() -> None:
         _Trace.watching = None
     elif age > 4.0:
         pc = get_pc(possibly_loading=True)
-        exts = _menu_module("extensions")
         w["outcome"] = "nothing after 4 s"
         w["after"] = {"cursor": bool(pc and pc.bShowMouseCursor), "pending": S.open_pending,
-                      "polling": bool(exts and exts.polling(KEY, MENU_POLL_S)), "menus_closed": _menus_closed(),
+                      "polling": uilink.polling(KEY, MENU_POLL_S), "menus_closed": _menus_closed(),
                       "request": dict(S.open_request)}  # fmt: skip
         _Trace.watching = None
 
@@ -544,6 +566,8 @@ def _tick_trips() -> None:
 
 
 def tick() -> None:
+    uilink.tick()
+    health.tick()
     _trace_tick()
     publish()
     _poll_typing()
@@ -555,7 +579,7 @@ def tick() -> None:
     if S.waiting_until and time.monotonic() > S.waiting_until:
         S.waiting_until = 0.0
         if not screen_open():
-            logging.error("[Kairosdex] The screen didn't open. Is BL4 Mod Menu enabled (it adds the screen to the pause menu)?")
+            logging.error("[Kairosdex] The screen didn't open (the game's menu page didn't run it).")
     elif S.waiting_until and screen_open():
         S.waiting_until = 0.0
 
