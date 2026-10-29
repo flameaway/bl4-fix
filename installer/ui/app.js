@@ -21,10 +21,15 @@ const S = {
   task: null,
   logCount: 0,
   log: [],
-  friends: { host_port: 7777, allow_lan: true, friends: [], firewall_current: true },
+  friends: { host_port: 7777, allow_lan: true, firewall: false, friends: [], firewall_current: true },
   friendsDirty: false,
+  firewallSaved: false, // the firewall on/off choice as saved (an install or Save applies a change)
+  update: null, // what the latest release has that this app doesn't (api.update_check), once known
   publicIp: "",
   draft: { name: "", ip: "", port: "" },
+  // Disk Space: the last scan's numbers for the current choice (api.space_info), the voice
+  // languages to keep, whether to blank old patch data
+  space: { info: null, keep: null, old: true, seq: 0 },
 };
 
 /* ---------- templates ---------- */
@@ -143,6 +148,35 @@ async function boot() {
   await statusP;
   claptrap.start();
   setInterval(pollRunning, 3000);
+  if (S.info.updated) toast(`Updated to BL4 Fix ${S.info.version}`);
+  checkUpdate();
+}
+
+async function checkUpdate(manual = false) {
+  const u = await S.api.update_check();
+  S.update = u && u.release ? u : null;
+  if (S.update && S.update.stale) toast(`A newer BL4 Fix Setup is out (${S.update.version}): Update App`);
+  else if (manual) toast(S.update ? "BL4 Fix Setup is up to date" : "Couldn't reach GitHub (offline?)", !S.update);
+  render();
+}
+
+function updateSummary(u) {
+  const parts = [];
+  if (u.version && u.version !== u.current) parts.push(`BL4 Fix Setup ${u.current} -> ${u.version}`);
+  if (u.new_mods.length) parts.push("New mods: " + u.new_mods.join(", "));
+  if (u.newer_mods.length) parts.push("Updated: " + u.newer_mods.join(", "));
+  if (u.sdk) parts.push("A newer Python SDK");
+  return parts.join("\n");
+}
+
+async function updateApp(confirmed = false) {
+  const u = S.update;
+  if (S.busy || !u || !u.stale) return;
+  if (!u.can_apply) { S.api.open_releases(); return; }
+  const size = u.size ? ` (${Math.round(u.size / 1048576)} MB)` : "";
+  if (!confirmed && !(await confirmDialog("Update BL4 Fix Setup?", `${updateSummary(u)}\n\nDownloads the new app${size}, replaces this one and restarts it. Your mods, friends and settings stay as they are.`, "Update and restart", false, { okCls: "" }))) return;
+  startTask("selfupdate", "Updating BL4 Fix Setup");
+  if (!(await S.api.update_apply())) endTask();
 }
 
 function getApi() {
@@ -156,12 +190,14 @@ function getApi() {
 /* ---------- the main menu (title screen panel) ---------- */
 
 const NAV = [
+  { id: "update", text: "Update App", big: true }, // shown only when a newer release is out
   { id: "install", text: "Install", big: true },
   { id: "launch", text: "Launch Game", big: true },
   { divider: true },
   { id: "loadout", text: "Loadout" },
   { id: "coop", text: "Co-op" },
   { id: "system", text: "System" },
+  { id: "space", text: "Disk Space" },
   { id: "quit", text: "Quit" },
 ];
 
@@ -180,10 +216,11 @@ function buildMenu() {
     $(".mm_button_txt", btn).textContent = item.text;
     // The brackets next to Game Settings hold its icons; Install shows the pending changes there
     const info = $(".mm_game_settings_info", btn);
-    if (item.id === "install") {
+    if (item.id === "install" || item.id === "update") {
       $$(".mm_game_settings_icon", info).forEach((n) => n.remove());
       info.appendChild(el("p", "su_mm_info", ""));
       slot.classList.add("game_settings_enable", "su_mm_install");
+      if (item.id === "update") slot.hidden = true;
     } else {
       info.remove();
     }
@@ -202,6 +239,7 @@ function buildMenu() {
 }
 
 function navigate(id) {
+  if (id === "update") return updateApp();
   if (id === "install") return install();
   if (id === "launch") return launch();
   if (id === "quit") return quit();
@@ -318,6 +356,8 @@ function pageDetails() {
       return { title: "Co-op", meta: "Direct IP  //  No lobbies", body: "Send your IP to a friend, add theirs, and join each other's games. In game, F6 opens the BL4 Direct panel to host and join." };
     case "system":
       return { title: "Activity", meta: "Systems check", body: S.log.length ? "" : "Nothing yet. Installs, repairs and firewall changes are logged here.", log: true };
+    case "space":
+      return { title: "Disk Space", meta: "Optional  //  Not part of Install", body: SPACE_WHY };
     default: {
       const { add, remove } = changes();
       const known = S.status && S.status.valid;
@@ -339,9 +379,10 @@ function render() {
   const entries = $("#entries");
   const scroll = entries.scrollTop;
   entries.innerHTML = "";
-  $("#page-title").textContent = { loadout: "Loadout", coop: "Co-op", system: "System" }[S.page];
+  $("#page-title").textContent = { loadout: "Loadout", coop: "Co-op", system: "System", space: "Disk Space" }[S.page];
   if (S.page === "loadout") renderLoadout();
   else if (S.page === "coop") renderCoop();
+  else if (S.page === "space") renderSpace();
   else renderSystem();
   entries.scrollTop = scroll;
   showDetails(pageDetails());
@@ -374,11 +415,43 @@ function renderLoadout() {
         onClick: m.required ? null : () => setMod(m.id, !S.selected.has(m.id)),
       });
     }
+    if (sec.title === "Core") firewallRow();
   }
   title("Quick picks");
   const picks = el("div", "su_btn_row");
   picks.append(listButton("Everything", () => preset("all")), listButton("Core only", () => preset("none")));
   row("Select", [picks], { title: "Quick picks", body: "Everything: every mod (what a first install picks). Core only: just BL4 Direct Connect and the Mod Menu." });
+}
+
+const FIREWALL_WHY =
+  "Strongly recommended if you host. Steam's own rule lets anyone on the internet reach the game's co-op port while you host: " +
+  "bots that scan for open ports, or anyone who learns your IP. If the game's network code ever has a security hole, " +
+  "this rule keeps everyone but your friends from reaching it at all.";
+
+// Optional (off on a new install): some players don't want a setup app touching their firewall
+function firewallRow() {
+  const f = S.friends;
+  const changed = f.firewall !== S.firewallSaved;
+  let status = null;
+  if (changed) status = { kind: f.firewall ? "add" : "remove", text: f.firewall ? "+ Rule" : "- Rule" };
+  else if (!f.firewall) status = { kind: "warn", text: "Recommended" };
+  row("Firewall rule for hosting", [toggle(f.firewall, setFirewall)], {
+    title: "Firewall rule for hosting", meta: f.firewall ? "Only friends can reach your hosted games" : "Off: recommended on",
+    metaCls: f.firewall ? "su_ok" : "su_warn",
+    body: FIREWALL_WHY + "\n\nOn: one Windows Firewall rule that blocks inbound UDP on your host port from everyone except this PC, the friends on your Co-op list and (if allowed) your local network. " +
+      "It only ever blocks; it never opens anything. Windows asks for admin when the rule changes.\n\nOff: BL4 Fix never touches your firewall (an old BL4 Direct rule is removed).",
+  }, { status, onClick: () => setFirewall(!f.firewall) });
+}
+
+// Installed: applies at once (Windows asks for admin when the rule changes). Before the first
+// install there's nothing to apply to yet: the choice goes in with Install
+async function setFirewall(on) {
+  if (S.busy) return;
+  S.friends.firewall = on;
+  if (!S.status || !S.status.valid || !S.status.installed.length) { render(); return; }
+  render();
+  startTask("firewall", on ? "Firewall rule on" : "Firewall rule off");
+  if (!(await S.api.set_firewall(S.gameDir, on))) endTask();
 }
 
 function renderCoop() {
@@ -409,10 +482,14 @@ function renderCoop() {
     listButton("Add", addFriend, "su_small su_tiny"),
   ], { title: "Add a friend", body: "Their name, public IPv4 address (like 203.0.113.5) and the port they host on (7777 unless they changed it)." });
   title("Firewall");
+  firewallRow();
   const current = f.firewall_current && !S.friendsDirty;
-  row(current ? "Firewall matches this list" : "Changes not saved yet", [listButton("Save & lock firewall", saveFriends, "su_wide")], {
+  const saved = f.firewall ? (current ? "Firewall matches this list" : "Changes not saved yet") : current ? "Saved (no firewall rule)" : "Changes not saved yet";
+  row(saved, [listButton(f.firewall ? "Save & lock firewall" : "Save", saveFriends, "su_wide")], {
     title: "Firewall", meta: current ? "Up to date" : "Not applied", metaCls: current ? "su_ok" : "su_warn",
-    body: "Saves the list and limits your hosted games' port to this PC, your friends and (if allowed) your local network. If the game is running, press Reload friends in BL4 Direct's panel.",
+    body: f.firewall
+      ? "Saves the list and limits your hosted games' port to this PC, your friends and (if allowed) your local network. If the game is running, press Reload friends in BL4 Direct's panel."
+      : "Saves the list. The firewall rule is off, so nothing is changed in Windows Firewall (an existing BL4 Direct rule is removed).",
   }, { status: { kind: current ? "on" : "warn", text: current ? "Saved" : "Unsaved" } });
 }
 
@@ -437,11 +514,122 @@ function renderSystem() {
     });
   }
   title("Maintenance");
+  const u = S.update;
+  const appParts = [valueText(S.info.version, "su_mono")];
+  if (u && u.stale) appParts.push(listButton(u.can_apply ? "Update" : "Download", () => updateApp(), "su_small"));
+  else appParts.push(listButton("Check now", () => !S.busy && checkUpdate(true), "su_small"));
+  row("BL4 Fix Setup", appParts, {
+    title: "BL4 Fix Setup", meta: !u ? "Not checked (offline?)" : u.stale ? `Update available: ${u.version} (${u.release})` : `Up to date (${u.release})`,
+    metaCls: u && u.stale ? "su_warn" : u ? "su_ok" : "",
+    body: (u && u.stale ? updateSummary(u) + "\n\n" : "") + "The app checks GitHub for a newer release each time it starts. Update replaces this app in place and restarts it; your mods, friends and settings stay.",
+  }, { status: u && u.stale ? { kind: "warn", text: "Update" } : null });
   row("Refresh", [listButton("Check again", () => !S.busy && refreshStatus(), "su_small")], { title: "Refresh", body: "Reads the install again." });
   row("Uninstall", [listButton("Uninstall...", uninstall, "su_small su_danger")], {
     title: "Uninstall", meta: "Removes every mod BL4 Fix installed", metaCls: "su_bad",
     body: "Also removes the firewall rule. Your friends list and mod settings are kept.",
   });
+}
+
+/* ---------- disk space (installer/slim.py) ---------- */
+
+const SPACE_WHY =
+  "Removes the voice languages you don't use and the old patch data the game never reads. Separate from Install: " +
+  "nothing changes until you press Free space.\n\n" +
+  "Undo: Verify integrity of game files in Steam. Scan again after a game update.\n\n" +
+  "Idea and methods from bl4-slim by nanafy (MIT).";
+
+function gb(n) {
+  return n >= 1073741824 || !n ? `${(n / 1073741824).toFixed(2)} GB` : `${(n / 1048576).toFixed(1)} MB`;
+}
+
+function renderSpace() {
+  const sp = S.space;
+  const info = sp.info;
+  const total = info ? info.voice_bytes + (sp.old ? info.old_bytes : 0) : 0;
+  $("#page-crumb").textContent = info ? `${gb(info.on_disk)} on disk  //  ${gb(total)} to free` : "Not scanned yet";
+  title("Borderlands 4");
+  row("Size on disk", [valueText(info ? gb(info.on_disk) : "Not scanned", "su_mono"), listButton(info ? "Scan again" : "Scan", spaceScan, "su_small")], {
+    title: "Scan", meta: "Changes nothing",
+    body: "Reads the game's own pak and IoStore indexes (about 20 seconds) to find the voice languages installed and the old patch copies the game no longer reads.",
+  });
+  if (!info) return;
+  title("Voice languages");
+  for (const l of info.languages) {
+    const keep = sp.keep.has(l.name);
+    row(l.name, [valueText(gb(l.size), "su_mono"), toggle(keep, (v) => setKeep(l.name, v), "Remove", "Keep")], {
+      title: l.name, meta: keep ? "Kept" : `Removing frees ${gb(l.size)}`, metaCls: keep ? "su_ok" : "su_warn",
+      body: "Keep the language your game's voice setting is on (Options > Audio). Removing the one the game uses leaves the characters silent until you verify the game files in Steam.",
+    }, { status: keep ? null : { kind: "remove", text: "- Remove" }, onClick: () => setKeep(l.name, !keep) });
+  }
+  title("Old patch data");
+  const canOld = !!info.unit;
+  row("Old patch copies", [valueText(canOld ? gb(info.old_bytes) : "Not on this drive", "su_mono"), canOld ? toggle(sp.old, setSpaceOld, "Keep", "Free") : null], {
+    title: "Old patch copies", meta: canOld ? `${info.old_files} files` : "Needs NTFS",
+    body: canOld
+      ? "Byte ranges that only hold an older copy of something a later patch replaced. They're blanked in place: each file keeps its size and every byte the game reads (checked before and after), and Windows stops storing the blanked parts. In Explorer, \"Size on disk\" shows the real number."
+      : "This drive can't free part of a file: it needs NTFS (and a few MB free for a test).",
+  }, { status: canOld && sp.old && info.old_bytes ? { kind: "remove", text: "- Free" } : null, onClick: canOld ? () => setSpaceOld(!sp.old) : null });
+  title("Free space");
+  const running = !!(S.status && S.status.running);
+  row(total ? `Frees ${gb(total)}` : "Nothing to free", [listButton("Free space...", spaceApply, "su_wide su_danger" + (total && !running ? "" : " su_disabled"))], {
+    title: "Free space", meta: running ? "Close Borderlands 4 first" : total ? `About ${gb(info.on_disk - total)} left` : "", metaCls: running ? "su_warn" : "",
+    body: "Deletes the voice languages marked Remove and blanks the old patch copies, if picked. Close the game and let Steam finish any update first.",
+  });
+  row("Undo", [valueText("Verify integrity in Steam", "su_dim")], {
+    title: "Undo", body: "Steam > Borderlands 4 > Properties > Installed Files > Verify integrity of game files downloads everything removed here again.",
+  });
+}
+
+async function spaceScan() {
+  if (S.busy) return;
+  if (!S.status || !S.status.valid) return toast("Pick the Borderlands 4 folder first", true);
+  startTask("space_scan", "Reading the game files");
+  if (!(await S.api.space_scan(S.gameDir))) endTask();
+}
+
+// Asks Python what the current choice frees; a newer request wins over a slower older one
+async function spaceInfo(keep) {
+  const seq = ++S.space.seq;
+  const info = await S.api.space_info(keep, S.space.old);
+  if (seq !== S.space.seq) return;
+  S.space.info = info && info.languages ? info : null;
+  if (S.space.info) S.space.keep = new Set(S.space.info.keep);
+  if (S.page === "space") render();
+}
+
+function setKeep(name, on) {
+  if (S.busy || !S.space.info) return;
+  const keep = new Set(S.space.keep);
+  if (on) keep.add(name);
+  else if (keep.size <= 1) return toast("Keep at least one voice language", true);
+  else keep.delete(name);
+  S.space.keep = keep;
+  render();
+  spaceInfo([...keep]);
+}
+
+function setSpaceOld(on) {
+  if (S.busy || !S.space.info) return;
+  S.space.old = on;
+  render();
+  spaceInfo([...S.space.keep]);
+}
+
+async function spaceApply() {
+  const sp = S.space;
+  const info = sp.info;
+  if (S.busy || !info) return;
+  if (S.status && S.status.running) { claptrap.react("running"); return toast("Close Borderlands 4 first", true); }
+  const drop = info.languages.filter((l) => !sp.keep.has(l.name));
+  const old = sp.old && info.old_bytes;
+  if (!drop.length && !old) return;
+  const lines = [];
+  if (drop.length) lines.push("Delete these voice languages:\n" + drop.map((l) => `  ${l.name}  (${gb(l.size)})`).join("\n"));
+  if (old) lines.push(`Blank ${gb(info.old_bytes)} of old patch copies in ${info.old_files} files.`);
+  lines.push(`Keeping: ${[...sp.keep].join(", ")}.\n\nUndo: Verify integrity of game files in Steam (downloads it all again).`);
+  if (!(await confirmDialog("Free disk space?", lines.join("\n\n"), `Free ${gb(info.voice_bytes + (old || 0))}`))) return;
+  startTask("space", "Freeing disk space");
+  if (!(await S.api.space_apply(S.gameDir, [...sp.keep], !!sp.old))) { endTask(); toast("Scan again first", true); }
 }
 
 function renderLog() {
@@ -488,8 +676,10 @@ function updateMenu() {
   else if (st.running) { sub = "Game running"; disabled = true; }
   else {
     const { add, remove } = changes();
+    const fwChanged = S.friends.firewall !== S.firewallSaved;
     if (!st.installed.length) sub = `${S.selected.size} mods`;
     else if (add.length || remove.length) { text = "Apply"; sub = [add.length ? `+${add.length}` : "", remove.length ? `-${remove.length}` : ""].filter(Boolean).join(" "); }
+    else if (fwChanged) { text = "Apply"; sub = "Firewall"; }
     else if (!st.ready) text = "Repair";
     else { text = "Reinstall"; sub = "Up to date"; }
   }
@@ -498,6 +688,14 @@ function updateMenu() {
   info.textContent = sub;
   info.parentElement.classList.toggle("su_empty", !sub);
   n.slot.classList.toggle("su_disabled", disabled);
+
+  const u = S.nav.update;
+  u.slot.hidden = !(S.update && S.update.stale);
+  if (S.update) {
+    const info = $(".su_mm_info", u.btn);
+    info.textContent = S.update.new_mods.length ? `${S.update.new_mods.length} new mod${S.update.new_mods.length === 1 ? "" : "s"}` : S.update.version;
+  }
+  u.slot.classList.toggle("su_disabled", S.busy);
 
   const l = S.nav.launch;
   const running = !!(st && st.valid && st.running);
@@ -529,6 +727,7 @@ async function chooseFolder() {
   if (!(await S.api.is_game_dir(picked))) { toast("That's not a Borderlands 4 folder", true); return; }
   S.gameDir = picked;
   S.status = null;
+  S.space.info = null;
   render();
   await refreshStatus();
   loadFriends();
@@ -539,10 +738,25 @@ async function chooseFolder() {
 async function install() {
   if (S.busy || !S.status || !S.status.valid) return;
   if (S.status.running) { claptrap.react("running"); toast("Close Borderlands 4 first", true); return; }
+  if (S.update && S.update.stale) {
+    // This exe's mods are older than the release's (or it lacks new ones): update it first
+    const first = await confirmDialog("Update the app first?", `A newer BL4 Fix Setup is out:\n${updateSummary(S.update)}\n\nThis app would install its older copies.`, "Update first", false,
+      { cancelText: "Install anyway", okCls: "", backdrop: null });
+    if (first === null) return;
+    if (first) return updateApp(true);
+  }
   const { remove } = changes();
+  // A first install with the firewall rule off: recommend it once
+  if (!S.friends.firewall && !S.status.installed.length) {
+    const on = await confirmDialog("Turn on the firewall rule?", FIREWALL_WHY + "\n\nYou can change this any time on the Co-op page.", "Turn it on", false,
+      { cancelText: "Install without", okCls: "", backdrop: null });
+    if (on === null) return;
+    if (on) { S.friends.firewall = true; S.friendsDirty = true; }
+  }
   if (remove.length && !(await confirmDialog("Remove mods?", "These will be uninstalled (their settings are kept):\n\n" + remove.map((m) => m.name).join("\n"), "Remove and apply"))) return;
   startTask("install", "Installing");
-  if (!(await S.api.install(S.gameDir, [...S.selected]))) endTask();
+  S.installFirewall = S.friends.firewall;
+  if (!(await S.api.install(S.gameDir, [...S.selected], S.friends.firewall))) endTask();
 }
 
 async function uninstall() {
@@ -578,7 +792,7 @@ function startTask(name, label) {
   S.task = name;
   S.logCount = 0;
   addLog(label, "su_head");
-  if (name !== "friends") {
+  if (name !== "friends" && name !== "firewall") {
     $("#working-title").textContent = label;
     $("#working-line").textContent = "Starting...";
     $("#pfill").style.width = "3%";
@@ -602,15 +816,45 @@ window.app = {
     if (!S.busy) return;
     S.logCount++;
     const expect = S.task === "install" ? S.selected.size + 8 : 8;
-    $("#pfill").style.width = Math.min(94, 3 + (91 * S.logCount) / expect) + "%";
+    const step = /^\[(\d+)\/(\d+)\]/.exec(msg); // Disk Space: "[i/n] file"
+    $("#pfill").style.width = Math.min(94, step ? 3 + (91 * step[1]) / step[2] : 3 + (91 * S.logCount) / expect) + "%";
     $("#working-line").textContent = msg;
   },
   async onTaskDone(name, error) {
     $("#pfill").style.width = "100%";
     await sleep(400);
     endTask();
+    if (name === "selfupdate") {
+      if (error) { claptrap.react("failed"); celebrate(false, error); }
+      else celebrate(true, "Restarting with the new version...", "Updated");
+      return;
+    }
+    if (name === "space_scan") {
+      if (error) toast("Scan: " + error, true);
+      else await spaceInfo(null); // the suggested languages to keep
+      return;
+    }
+    if (name === "space") {
+      const freed = error ? 0 : await S.api.space_freed();
+      // Python drops its scan once files change (scan again for new numbers), keeps it after a
+      // refusal (game running, Steam busy)
+      await spaceInfo([...S.space.keep]);
+      if (error) { claptrap.react("failed"); celebrate(false, error); }
+      else { claptrap.react("space_freed"); celebrate(true, `Freed ${gb(freed || 0)}. Undo: Verify integrity in Steam.`, "Space Freed"); }
+      return;
+    }
+    if (name === "firewall") {
+      // Only the switch changed on disk: keep any unsaved edits to the list
+      const saved = await S.api.load_friends(S.gameDir || "");
+      if (error) S.friends.firewall = saved.firewall;
+      S.firewallSaved = saved.firewall;
+      if (!S.friendsDirty) S.friends = saved;
+      toast(error ? "Firewall: " + error : saved.firewall ? "Firewall rule on: only friends can reach your hosted games" : "Firewall rule off", !!error);
+      refreshStatus();
+      return;
+    }
     if (name === "friends") {
-      toast(error ? "Firewall: " + error : "Friends saved, firewall locked", !!error);
+      toast(error ? "Firewall: " + error : S.friends.firewall ? "Friends saved, firewall locked" : "Friends saved, firewall left alone", !!error);
       S.friendsDirty = false;
       loadFriends();
     } else if (error) {
@@ -618,6 +862,7 @@ window.app = {
       celebrate(false, error);
     } else {
       claptrap.react(name === "uninstall" ? "uninstalled" : "installed");
+      if (name === "install") S.firewallSaved = S.installFirewall;
       celebrate(true, name === "uninstall" ? "BL4 Fix and its mods are gone." : "In game: F6 for co-op, F7 for mod settings.", name === "uninstall" ? "Uninstalled" : "Installed");
     }
     refreshStatus();
@@ -639,6 +884,7 @@ async function lookupIp() {
 
 async function loadFriends() {
   S.friends = await S.api.load_friends(S.gameDir || "");
+  S.firewallSaved = S.friends.firewall;
   S.friendsDirty = false;
   if (S.page === "coop") render();
 }
@@ -673,12 +919,14 @@ async function saveFriends() {
   if (!S.status || !S.status.valid) return toast("Pick the Borderlands 4 folder first", true);
   const f = S.friends;
   startTask("friends", "Friends & firewall");
-  if (!(await S.api.save_friends(S.gameDir, { host_port: f.host_port, allow_lan: f.allow_lan, friends: f.friends }))) endTask();
+  if (!(await S.api.save_friends(S.gameDir, { host_port: f.host_port, allow_lan: f.allow_lan, firewall: f.firewall, friends: f.friends }))) endTask();
 }
 
 /* ---------- popups ---------- */
 
-function confirmDialog(titleText, body, okText, uninstallOptions = false) {
+// opts: cancelText, okCls (the OK button's class, default su_danger), backdrop (what a click
+// outside the dialog resolves to, default false)
+function confirmDialog(titleText, body, okText, uninstallOptions = false, opts = {}) {
   return new Promise((resolve) => {
     $("#dialog-title").textContent = titleText;
     const b = $("#dialog-body");
@@ -697,9 +945,12 @@ function confirmDialog(titleText, body, okText, uninstallOptions = false) {
     const btns = $("#dialog-btns");
     btns.innerHTML = "";
     const done = (ok) => { $("#dialog").hidden = true; resolve(ok ? { removeSdk } : false); };
-    btns.append(listButton("Cancel", () => done(false)), listButton(okText, () => done(true), "su_danger"));
+    btns.append(listButton(opts.cancelText || "Cancel", () => done(false)), listButton(okText, () => done(true), opts.okCls ?? "su_danger"));
     $("#dialog").hidden = false;
-    $("#dialog").onclick = (e) => { if (e.target.id === "dialog") done(false); };
+    $("#dialog").onclick = (e) => {
+      if (e.target.id !== "dialog") return;
+      if ("backdrop" in opts) { $("#dialog").hidden = true; resolve(opts.backdrop); } else done(false);
+    };
   });
 }
 
@@ -761,6 +1012,8 @@ const LINES = {
   running: ["Whoa, the game's running! Close Borderlands 4 first, I can't swap parts while it's moving!"],
   launch: ["To Kairos! Go get 'em, Vault Hunter! I'll guard the installer!", "Launching! Don't forget to press F7 when you get there!", "Off you go! Bring me back something shiny!"],
   friend: ["A new friend! Hi, friend! Wanna be best friends?"],
+  page_space: ["Eight languages of voice lines? I only need one. Mine. In every language.", "Spring cleaning! Out with the old patches, in with the... free space!"],
+  space_freed: ["Ahh, so roomy in here! I could do cartwheels. If I had cartwheels.", "Space freed! Your drive thanks you. I thank you. Everyone's thankful!"],
 };
 const MOD_LINES = {
   bl4_direct: "Direct IP co-op! No lobbies, no waiting. Just you, your friends, and me.",
@@ -837,10 +1090,10 @@ const claptrap = {
   },
   react(event) {
     if (!this.el) return;
-    const moves = { launch: "ct_spin", installed: "ct_dance", working: "ct_dance", failed: "ct_sad", uninstalled: "ct_sad", running: "ct_sad", friend: "ct_hop", mod_on: "ct_hop", preset_all: "ct_spin" };
+    const moves = { launch: "ct_spin", installed: "ct_dance", space_freed: "ct_dance", working: "ct_dance", failed: "ct_sad", uninstalled: "ct_sad", running: "ct_sad", friend: "ct_hop", mod_on: "ct_hop", preset_all: "ct_spin" };
     if (moves[event]) this.act(moves[event], event === "working" ? 60000 : 2400);
     const lines = LINES[event];
-    const important = ["installed", "failed", "running", "working", "uninstalled", "launch"].includes(event);
+    const important = ["installed", "failed", "running", "working", "uninstalled", "launch", "space_freed"].includes(event);
     if (lines && (important || Math.random() < 0.5)) this.say(this.pick(lines), important);
   },
 };
@@ -896,6 +1149,7 @@ function mockApi() {
   if (demo === "dialog") setTimeout(() => uninstall(), 600);
   if (demo === "working") setTimeout(() => { startTask("install", "Installing"); app.onLog("Installing Python SDK 0.3 (was: none)..."); app.onLog("Installed bl4_minimap."); }, 600);
   if (demo === "hover") setTimeout(() => { $$(".menu_options_entry")[3].classList.add("hover_effect"); S.nav.coop.btn.classList.add("hover_effect"); S.nav.coop.slot.classList.add("hover_effect"); $$(".su_btn")[0]?.classList.add("hover_effect"); }, 600);
+  if (demo === "space") setTimeout(() => spaceScan().then(() => sleep(3000)).then(() => setKeep("German", true)).then(() => sleep(300)).then(() => { if (params.has("bottom")) $("#entries").scrollTop = 99999; }), 600);
   if (demo === "talk") setTimeout(() => claptrap.say("Hey there, minion! Er, I mean, valued Vault Hunter!", true), 600);
   const ok = (key, label, value, hint, good = true) => ({ key, label, ok: good, value, hint });
   return {
@@ -920,7 +1174,7 @@ function mockApi() {
     is_game_dir: async () => true,
     open_folder: async () => {},
     public_ip: async () => { await sleep(300); return "203.0.113.57"; },
-    load_friends: async () => ({ host_port: 7777, allow_lan: true, firewall_current: true, friends: [
+    load_friends: async () => ({ host_port: 7777, allow_lan: true, firewall: !params.has("nofw"), firewall_current: true, friends: [
       { name: "Moxxi", address: "198.51.100.23", port: 7777 }, { name: "Zane", address: "203.0.113.9", port: 7778 }, { name: "Amara", address: "192.0.2.144", port: 7777 }] }),
     normalize_ip: async (t) => (/^\d+\.\d+\.\d+\.\d+$/.test(t.trim()) ? t.trim() : ""),
     install: async () => {
@@ -934,6 +1188,30 @@ function mockApi() {
     uninstall: async () => { setTimeout(() => app.onTaskDone("uninstall", null), 800); return true; },
     save_friends: async () => { setTimeout(() => app.onTaskDone("friends", null), 600); return true; },
     launch_game: async () => "",
+    update_check: async () => (params.has("update")
+      ? { stale: true, release: "v2026.11.01", version: "0.5.3", current: "0.5.2", new_mods: ["Instant Fast Travel"], newer_mods: ["Minimap", "Reroll"], sdk: false, size: 104000000, can_apply: true }
+      : { stale: false, release: "v2026.10.27", version: "0.5.2", current: "0.5.2", new_mods: [], newer_mods: [], sdk: false, size: 0, can_apply: true }),
+    update_apply: async () => { setTimeout(() => app.onTaskDone("selfupdate", null), 800); return true; },
+    open_releases: async () => {},
+    set_firewall: async () => { setTimeout(() => app.onTaskDone("firewall", null), 600); return true; },
+    space_scan: async () => {
+      (async () => { for (const l of ["Reading 1080 game files...", "Working out the old patch data...", "Done."]) { await sleep(300); app.onLog(l); } app.onTaskDone("space_scan", null); })();
+      return true;
+    },
+    space_info: async (keep, old) => {
+      const G = 1073741824;
+      const langs = [["English(US)", 7.85], ["French(France)", 8.47], ["German", 8.77], ["Italian", 8.7], ["Spanish(Spain)", 9.46], ["Japanese", 8.63], ["Korean", 8.57], ["Chinese(Simplified)", 8.38]]
+        .map(([name, s]) => ({ name, size: s * G }));
+      keep = keep || ["English(US)"];
+      const drop = langs.filter((l) => !keep.includes(l.name));
+      return { on_disk: 189.78 * G, languages: langs, keep, old, voice_bytes: drop.reduce((a, l) => a + l.size, 0), voice_files: drop.length * 72,
+        old_bytes: old ? (71.5 + (8 - drop.length - 1) * 1.4) * G : 0, old_files: 209, unit: params.has("fat") ? 0 : 65536 };
+    },
+    space_apply: async () => {
+      (async () => { for (let i = 1; i <= 6; i++) { await sleep(250); app.onLog(`[${i}/6] pakchunk0-Windows_${i}_P.ucas`); } app.onTaskDone("space", null); })();
+      return true;
+    },
+    space_freed: async () => 132.48 * 1073741824,
     minimize: async () => {}, close: async () => {}, drag: async () => {},
   };
 }

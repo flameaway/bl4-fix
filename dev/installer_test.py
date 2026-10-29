@@ -18,6 +18,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "installer"))
 
+import build  # noqa: E402
 import catalog  # noqa: E402
 import core  # noqa: E402
 import shared  # noqa: E402  (core puts the payload copy on sys.path)
@@ -26,7 +27,10 @@ firewall_calls: list[tuple] = []
 core.game_running = lambda: False
 core.firewall.apply_rule = lambda port, ips, lan: firewall_calls.append(("apply", port, list(ips), lan)) or "ok"
 core.firewall.remove_rule = lambda: firewall_calls.append(("remove",)) or "ok"
-core.firewall.rule_summary = lambda: "stubbed"
+core.firewall.rule_summary = lambda: None  # no rule yet; tests switch it to "stubbed" once one exists
+core.is_admin = lambda: True  # never a real UAC prompt from tests (elevation is stubbed below)
+elevated_calls: list[list[str]] = []
+core._run_self_elevated = lambda args, log=print: elevated_calls.append(list(args))  # noqa: SLF001
 core._make_shortcut = lambda target, log=print: None  # noqa: SLF001  (no Start menu entries from tests)
 
 results: list[tuple[bool, str]] = []
@@ -68,10 +72,17 @@ def main() -> int:
         cards_settings = json.loads((sdk_mods / "settings" / "bl4_item_cards.json").read_text())
         check(cards_settings.get("enabled") is True, "fresh: item cards mod enabled in settings")
         check(core.friends_file(game).is_file(), "fresh: friends file created")
-        check(firewall_calls[-1] == ("apply", 7777, [], True), f"fresh: firewall applied with defaults {firewall_calls[-1]}")
+        check(not firewall_calls, f"fresh: firewall rule off by default, firewall untouched {firewall_calls}")
         cfg = core.load_config(game)
-        check(cfg.firewall_up_to_date(), "fresh: firewall recorded as up to date")
-        check(core.status(game).ready, "fresh: status ready")
+        check(not cfg.firewall and cfg.firewall_up_to_date(), "fresh: firewall off recorded as up to date")
+        check(core.status(game).ready and core.status(game).firewall_ok, "fresh: status ready, firewall OK")
+
+        # --- turned on: the rule is made ---
+        core.install(game, log, use_firewall=True)
+        check(firewall_calls[-1] == ("apply", 7777, [], True), f"on: firewall applied with defaults {firewall_calls[-1]}")
+        check(core.load_config(game).firewall_up_to_date(), "on: firewall recorded as up to date")
+        core.firewall.rule_summary = lambda: "stubbed"
+        cfg = core.load_config(game)
 
         # --- repair keeps user data ---
         (sdk_mods / "settings" / "other_mod.json").write_text('{"x": 1}')
@@ -97,6 +108,54 @@ def main() -> int:
         core.apply_firewall(game, log)
         check(firewall_calls[-1][2] == ["203.0.113.5", "21.142.145.1"],
               f"firewall: '01' normalized, junk skipped {firewall_calls[-1][2]}")
+
+        # --- firewall rule turned off: removed once, then left alone; on again re-applies ---
+        core.install(game, log, use_firewall=False)
+        cfg = core.load_config(game)
+        check(firewall_calls[-1] == ("remove",), f"firewall off: old rule removed {firewall_calls[-1]}")
+        check(not cfg.firewall and cfg.firewall_up_to_date(), "firewall off: saved, nothing for the game to update")
+        check([f.name for f in cfg.friends] == ["Bob", "Zero", "Junk"], "firewall off: friends kept")
+        calls = len(firewall_calls)
+        core.firewall.rule_summary = lambda: None
+        core.install(game, log)
+        check(len(firewall_calls) == calls, "firewall off: a repair doesn't touch the firewall")
+        check(core.status(game).firewall_ok, "firewall off + no rule: status OK")
+        core.firewall.rule_summary = lambda: "stubbed"
+        core.install(game, log, use_firewall=True)
+        check(firewall_calls[-1][0] == "apply" and core.load_config(game).firewall, "firewall on again: rule applied")
+
+        # --- friends files from before the switch: on if the app had made the rule ---
+        legacy = tmp / "legacy.json"
+        legacy.write_text(json.dumps({"host_port": 7777, "friends": [], "firewall_applied": "7777|True|"}))
+        check(shared.Config.load(legacy).firewall, "legacy: a file with an applied rule keeps it on")
+        legacy.write_text(json.dumps({"host_port": 7777, "friends": []}))
+        check(not shared.Config.load(legacy).firewall, "legacy: no rule made before -> off")
+        core.friends_file(game).unlink()
+        core.install(game, log)
+        check(firewall_calls[-1][0] == "apply" and core.load_config(game).firewall,
+              "friends file deleted, rule there: a repair keeps the rule")
+
+        # --- not admin: only the firewall step asks for it (an elevated copy of the app) ---
+        core.is_admin = lambda: False
+        calls = len(firewall_calls)
+        core.install(game, log)
+        check(elevated_calls[-1:] == [["--apply-firewall", "--game", str(game)]] and len(firewall_calls) == calls,
+              f"not admin: firewall rule through the elevated app {elevated_calls[-1:]}")
+        cfg = core.load_config(game)
+        cfg.firewall = False
+        cfg.save(core.friends_file(game))
+        core.firewall.rule_summary = lambda: None
+        n = len(elevated_calls)
+        core.install(game, log)
+        check(len(elevated_calls) == n, "not admin, rule off and none there: no admin prompt at all")
+        writable = core._writable  # noqa: SLF001
+        core._writable = lambda game_dir: False  # noqa: SLF001
+        core.install(game, log, mods={"bl4_reroll"}, use_firewall=True)
+        check(elevated_calls[-1] == ["--install", "--game", str(game), "--mods", "bl4_reroll", "--firewall", "on"],
+              f"not admin, protected game folder: whole install elevated {elevated_calls[-1]}")
+        core._writable = writable  # noqa: SLF001
+        core.is_admin = lambda: True
+        core.firewall.rule_summary = lambda: "stubbed"
 
         # --- optional mods: defaults, add, remove, keep the player's off switch ---
         check(core.installed_mods(game) == catalog.DEFAULTS, f"mods: first install = defaults {sorted(core.installed_mods(game))}")
@@ -127,7 +186,8 @@ def main() -> int:
         with zipfile.ZipFile(sdk_mods / "bl4_dialog_skipper.sdkmod") as zf:
             names = zf.namelist()
         check("bl4_dialog_skipper/LICENSE" in names and "bl4_dialog_skipper/__init__.py" in names, "mods: port ships its GPL LICENSE")
-        check(not any("CLAUDE.md" in n or "__pycache__" in n for n in names), "mods: no CLAUDE.md / pycache in .sdkmod")
+        local = {p.name for p in (REPO / "ported" / "bl4_dialog_skipper").rglob("*") if p.name in build.LOCAL_ONLY}
+        check(not any(n.rsplit("/", 1)[-1] in local or "__pycache__" in n for n in names), "mods: no local-only files / pycache in .sdkmod")
 
         (sdk_mods / "settings" / "bl4_dialog_skipper.json").write_text(json.dumps({"enabled": False, "x": 2}))
         core.install(game, log)

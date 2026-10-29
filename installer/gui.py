@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import catalog
 import core
+import selfupdate
 import shared
 
 PAD = {"padx": 8, "pady": 4}
@@ -42,6 +43,34 @@ class App(tk.Tk):
         self.refresh_status()
         self.load_friends()
         self.lookup_public_ip()
+        if selfupdate.finish_update():
+            self.log(f"Updated to BL4 Fix {shared.MOD_VERSION}.")
+        threading.Thread(target=self._check_update, daemon=True).start()
+
+    def _check_update(self) -> None:
+        result, manifest = selfupdate.check()
+        if result and result["stale"]:
+            self.on_ui(lambda: self._offer_update(result, manifest))
+
+    def _offer_update(self, result: dict, manifest: dict) -> None:
+        lines = [f"BL4 Fix Setup {result['current']} -> {result['version']} ({result['release']})"]
+        if result["new_mods"]:
+            lines.append("New mods: " + ", ".join(result["new_mods"]))
+        if result["newer_mods"]:
+            lines.append("Updated: " + ", ".join(result["newer_mods"]))
+        if selfupdate.this_exe() is None:
+            self.log("A newer release is out: " + "; ".join(lines))
+            return
+        text = "A newer BL4 Fix Setup is out.\n\n" + "\n".join(lines) + "\n\nUpdate and restart now?"
+        if not messagebox.askyesno("BL4 Fix", text):
+            return
+
+        def run() -> None:
+            exe = selfupdate.update(manifest, self.log)
+            selfupdate.restart(exe)
+            self.on_ui(self.destroy)
+
+        self._run_task("Update", run)
 
     def on_ui(self, func: Callable[[], None]) -> None:
         """Run func on the Tk thread. Safe to call from any thread."""
@@ -189,7 +218,8 @@ class App(tk.Tk):
             "These mods will be removed (their settings are kept):\n\n" + "\n".join(dropping) + "\n\nContinue?",
         ):
             return
-        self._run_task("Install", lambda: core.install(game, self.log, mods=chosen))
+        use_firewall = bool(self.use_firewall.get())
+        self._run_task("Install", lambda: core.install(game, self.log, mods=chosen, use_firewall=use_firewall))
 
     def uninstall(self) -> None:
         game = self.game()
@@ -221,6 +251,7 @@ class App(tk.Tk):
 
         self.host_port = tk.IntVar(value=shared.DEFAULT_PORT)
         self.allow_lan = tk.BooleanVar(value=True)
+        self.use_firewall = tk.BooleanVar(value=False)
         row = ttk.Frame(you)
         row.pack(fill="x", **PAD)
         ttk.Label(row, text="Port when you host:").pack(side="left")
@@ -228,6 +259,12 @@ class App(tk.Tk):
         ttk.Checkbutton(row, text="Also allow my local network / Tailscale", variable=self.allow_lan).pack(
             side="left", padx=12,
         )
+        row = ttk.Frame(you)
+        row.pack(fill="x", **PAD)
+        ttk.Checkbutton(
+            row, text="Firewall rule: block my host port to everyone but these friends (strongly recommended if you host)",
+            variable=self.use_firewall,
+        ).pack(side="left")
         lan = core.lan_ip() or "this PC's local IP"
         ttk.Label(
             you,
@@ -261,7 +298,7 @@ class App(tk.Tk):
         ttk.Button(form, text="Add / update", command=self.add_friend).pack(side="left", padx=4)
         ttk.Button(form, text="Remove selected", command=self.remove_friend).pack(side="left")
 
-        ttk.Button(frame, text="Save && update firewall", command=self.save_friends).pack(anchor="e", **PAD)
+        ttk.Button(frame, text="Save (and update the firewall rule)", command=self.save_friends).pack(anchor="e", **PAD)
         ttk.Label(
             frame,
             text="In game: press F6 for the co-op panel (BL4 Direct Connect) - host, join, and add friends there too.",
@@ -290,6 +327,7 @@ class App(tk.Tk):
         config = core.load_config(path)
         self.host_port.set(config.host_port)
         self.allow_lan.set(config.allow_lan)
+        self.use_firewall.set(config.firewall)
         self.tree.delete(*self.tree.get_children())
         for f in config.friends:
             self.tree.insert("", "end", values=(f.name, f.address, f.port))
@@ -318,6 +356,7 @@ class App(tk.Tk):
         config = shared.Config(
             host_port=int(self.host_port.get()),
             allow_lan=bool(self.allow_lan.get()),
+            firewall=bool(self.use_firewall.get()),
             friends=[
                 shared.Friend(str(v[0]), str(v[1]), int(v[2]))
                 for v in (self.tree.item(i, "values") for i in self.tree.get_children())

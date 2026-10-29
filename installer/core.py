@@ -20,11 +20,12 @@ import tomllib
 import urllib.request
 import winreg
 import zipfile
+from collections.abc import Callable
+from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 
 import catalog
-import firewall
 
 if getattr(sys, "frozen", False):
     PAYLOAD = Path(sys._MEIPASS) / "payload"  # type: ignore[attr-defined]  # noqa: SLF001
@@ -34,6 +35,7 @@ else:
 sys.path.insert(0, str(PAYLOAD))
 import movies  # noqa: E402  # bundled copy of mods/bl4_skip_intro/movies.py
 import shared  # noqa: E402  # bundled copy of mods/bl4_direct/shared.py
+import firewall  # noqa: E402  # builds its rule with shared
 
 SDK_ZIP = PAYLOAD / "oak2-sdk.zip"
 SDK_ZIP_SHA256 = "602675446abed184169fa158be3c8bc81777a71203581e4a248eca8a3d00b5c7"
@@ -44,7 +46,7 @@ SKIP_INTRO = "bl4_skip_intro"
 # Where mods put the shim paks and loose UI files they write themselves (catalog.ModInfo)
 MOD_PAKS_REL = Path("OakGame/Content/Paks/~mods")
 UI_REL = Path("OakGame/Content/uiresources")
-# A Start menu entry for the copy of this app in the game folder, to add or remove mods later
+# A Start menu entry for this app (the exe the player ran), to add or remove mods later
 SHORTCUT_NAME = "BL4 Fix Setup.lnk"
 # What the shortcut was called before the project was BL4 Fix (2026-10-25): removed on install
 OLD_SHORTCUT_NAMES = ("BL4 Mods Setup.lnk",)
@@ -57,8 +59,13 @@ GAME_EXE_REL = Path("OakGame/Binaries/Win64/Borderlands4.exe")
 WIN64_REL = Path("OakGame/Binaries/Win64")
 SDK_MARKER_REL = WIN64_REL / "Plugins/unrealsdk.toml"
 INSTALL_RECORD = "bl4_direct_install.json"
-# Dot-folders in sdk_mods are skipped by the SDK's mod loader
+# Where setup apps before 2026-10-28 kept a ~100 MB copy of themselves (dot-folders in sdk_mods
+# aren't loaded as mods), for BL4 Direct Connect's firewall button and the Start menu. Removed on
+# install (the mod updates the firewall itself now; the Mod Menu removes it too)
 TOOLS_DIR_REL = Path("sdk_mods/.bl4_direct")
+OLD_COPY_NAME = "BL4DirectSetup.exe"
+# Where the app moves itself when the player started it from that old copy (their only one)
+APP_HOME_REL = Path("Programs/BL4 Fix/BL4FixSetup.exe")  # in %LOCALAPPDATA%
 
 
 def payload_mod(mod_id: str) -> Path:
@@ -89,6 +96,118 @@ def is_admin() -> bool:
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except OSError:
         return False
+
+
+# region Admin on demand
+#
+# The app runs as the player (no UAC prompt to start it). Only a few steps need admin: the firewall
+# rule, the VC++ runtime, and a game folder the player can't write to (Steam's own folders let
+# every user write). Those run in an elevated copy of this app (its CLI), behind one UAC prompt.
+
+# Set by main.py in an elevated copy: never ask again from there (no prompt loops)
+NO_ELEVATE = False
+
+
+class _ShellExecuteInfo(ctypes.Structure):
+    _fields_ = (
+        ("cbSize", wintypes.DWORD), ("fMask", ctypes.c_ulong), ("hwnd", wintypes.HWND),
+        ("lpVerb", wintypes.LPCWSTR), ("lpFile", wintypes.LPCWSTR), ("lpParameters", wintypes.LPCWSTR),
+        ("lpDirectory", wintypes.LPCWSTR), ("nShow", ctypes.c_int), ("hInstApp", wintypes.HINSTANCE),
+        ("lpIDList", ctypes.c_void_p), ("lpClass", wintypes.LPCWSTR), ("hkeyClass", wintypes.HKEY),
+        ("dwHotKey", wintypes.DWORD), ("hIconOrMonitor", wintypes.HANDLE), ("hProcess", wintypes.HANDLE),
+    )  # fmt: skip
+
+
+# Own instances, so these prototypes don't change the shared ctypes.windll ones
+_shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+_shell32.ShellExecuteExW.argtypes = (ctypes.POINTER(_ShellExecuteInfo),)
+_shell32.ShellExecuteExW.restype = wintypes.BOOL
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+_kernel32.WaitForSingleObject.restype = wintypes.DWORD
+_kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+_kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+_kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+
+def run_as_admin(exe: str, params: str, on_wait: Callable[[], None] | None = None) -> int:
+    """Runs a program elevated (UAC prompt), hidden, and waits for it. Returns its exit code."""
+    if NO_ELEVATE:
+        raise RuntimeError("this step needs admin rights, but this copy of the app isn't elevated")
+    info = _ShellExecuteInfo()
+    info.cbSize = ctypes.sizeof(info)
+    info.fMask = 0x40 | 0x100  # SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
+    info.lpVerb = "runas"
+    info.lpFile = exe
+    info.lpParameters = params
+    info.nShow = 0  # SW_HIDE
+    if not _shell32.ShellExecuteExW(ctypes.byref(info)):
+        error = ctypes.get_last_error()
+        if error == 1223:  # ERROR_CANCELLED: the player said no
+            raise RuntimeError("Windows didn't get permission (the admin prompt was declined).")
+        raise ctypes.WinError(error)
+    code = wintypes.DWORD()
+    try:
+        while _kernel32.WaitForSingleObject(info.hProcess, 200) == 0x102:  # WAIT_TIMEOUT
+            if on_wait:
+                on_wait()
+        _kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code))
+    finally:
+        _kernel32.CloseHandle(info.hProcess)
+    if on_wait:
+        on_wait()
+    return code.value
+
+
+def _run_self_elevated(args: list[str], log=print) -> None:  # noqa: ANN001
+    """Runs this app's CLI elevated and relays its output to `log`. Raises its error, if any."""
+    if getattr(sys, "frozen", False):
+        exe, argv = sys.executable, list(args)
+    else:
+        exe, argv = sys.executable, [str(Path(__file__).with_name("main.py")), *args]
+    lines: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "elevated.log"
+        argv += ["--log-file", str(out)]
+        seen = 0
+
+        def relay() -> None:
+            nonlocal seen
+            try:
+                new = out.read_text(encoding="utf-8")[seen:]
+            except OSError:
+                return
+            cut = new.rfind("\n")
+            if cut < 0:
+                return
+            seen += cut + 1
+            for line in new[:cut].splitlines():
+                if line.strip():
+                    lines.append(line)
+                    log(line)
+
+        code = run_as_admin(exe, subprocess.list2cmdline(argv), relay)
+    if code:
+        error = next((ln for ln in reversed(lines) if ln.startswith("Error: ")), None)
+        raise RuntimeError(error.removeprefix("Error: ") if error else f"the admin step failed (exit code {code})")
+
+
+def _writable(game_dir: Path) -> bool:
+    """Whether this process can change the game folder (Steam's folders let every user write)."""
+    for folder in (game_dir, game_dir / WIN64_REL):
+        try:
+            with tempfile.TemporaryFile(dir=folder):
+                pass
+        except OSError:
+            return False
+    return True
+
+
+def _needs_admin_for(game_dir: Path) -> bool:
+    return not is_admin() and not _writable(game_dir)
+
+
+# endregion
 
 
 # region Game detection
@@ -203,7 +322,12 @@ def friends_file(game_dir: Path) -> Path:
 
 
 def load_config(game_dir: Path) -> shared.Config:
-    return shared.Config.load(friends_file(game_dir))
+    path = friends_file(game_dir)
+    config = shared.Config.load(path)
+    if not path.exists() and firewall.rule_summary() is not None:
+        # No friends file (deleted?) but our rule is there: keep it on, don't fall back to "off"
+        config.firewall = True
+    return config
 
 
 @dataclass
@@ -218,6 +342,8 @@ class Status:
     intro_skipped: bool
     mods: frozenset[str]
     dev_mods: frozenset[str] = frozenset()
+    # The player's choice (Config.firewall): False = no rule wanted
+    firewall_wanted: bool = True
 
     @property
     def vcredist_ok(self) -> bool:
@@ -245,13 +371,22 @@ class Status:
             f"{mark(self.vcredist_ok)}VC++ runtime: {vc} (need {'.'.join(map(str, VCREDIST_MIN))}+)",
             f"{mark(self.sdk_ok)}Python SDK:   {self.sdk or 'not installed'} (need {shared.SDK_VERSION})",
             f"{mark(self.mod_ok)}BL4 Direct Connect: {self.mod or 'not installed'} (this app: {shared.MOD_VERSION})",
-            f"{mark(self.firewall is not None)}Firewall:     {self.firewall or 'no rule (hosted games reachable by anyone who can reach the port)'}",
+            f"{mark(self.firewall_ok)}Firewall:     {self._firewall_line()}",
             f"Skip intro:   {self._intro_line()}",
             f"Mods:         {self._mods_line()}",
             *(f"!! {c}" for c in self.conflicts),
             f"Compatibility: {shared.compat_code(self.game_dir)}",
         ]
 
+
+    @property
+    def firewall_ok(self) -> bool:
+        return (self.firewall is not None) == self.firewall_wanted
+
+    def _firewall_line(self) -> str:
+        if not self.firewall_wanted:
+            return "off (your choice; no rule)" if self.firewall is None else "off, but the old rule is still there (repair removes it)"
+        return self.firewall or "no rule (hosted games reachable by anyone who can reach the port)"
 
     def _mods_line(self) -> str:
         optional = [catalog.BY_ID[m].name for m in catalog.OPTIONAL if m in self.mods]
@@ -291,6 +426,7 @@ def status(game_dir: Path) -> Status:
         mod=installed_mod_version(game_dir),
         firewall=firewall.rule_summary(),
         conflicts=find_conflicts(game_dir),
+        firewall_wanted=load_config(game_dir).firewall,
         skip_intro=skip_intro_enabled(game_dir),
         intro_skipped=movies.skipped(game_dir),
         mods=installed_mods(game_dir),
@@ -346,11 +482,15 @@ def install_vcredist(log) -> None:  # noqa: ANN001
     with tempfile.TemporaryDirectory() as tmp:
         exe = Path(tmp) / "vc_redist.x64.exe"
         urllib.request.urlretrieve(VCREDIST_URL, exe)  # noqa: S310
-        log("Installing Microsoft Visual C++ runtime...")
-        res = subprocess.run([str(exe), "/install", "/quiet", "/norestart"], check=False)
+        if is_admin():
+            log("Installing Microsoft Visual C++ runtime...")
+            code = subprocess.run([str(exe), "/install", "/quiet", "/norestart"], check=False).returncode
+        else:
+            log("Installing Microsoft Visual C++ runtime (Windows asks for admin)...")
+            code = run_as_admin(str(exe), "/install /quiet /norestart")
         # 3010 = success, reboot required; 1638 = newer version already installed
-        if res.returncode not in (0, 3010, 1638):
-            raise RuntimeError(f"VC++ runtime installer failed with code {res.returncode}")
+        if code not in (0, 3010, 1638):
+            raise RuntimeError(f"VC++ runtime installer failed with code {code}")
 
 
 def choose_mods(
@@ -382,13 +522,15 @@ def install(
     log=print,  # noqa: ANN001
     skip_intro: bool | None = None,
     mods: set[str] | frozenset[str] | None = None,
+    use_firewall: bool | None = None,
 ) -> None:
     """
-    Installs/repairs everything, and adds/removes optional mods. Needs admin (VC++ runtime and
-    firewall).
+    Installs/repairs everything, and adds/removes optional mods. Asks for admin (UAC) only for
+    what needs it: the VC++ runtime, the firewall rule, a game folder this user can't write to.
 
     mods: the mods to have installed (required ones are added); None keeps what's installed (the
     defaults on a first install). skip_intro: the old Skip Intro switch, applied on top.
+    use_firewall: the hosting firewall rule on/off (Config.firewall); None keeps the saved choice.
     """
     if not is_game_dir(game_dir):
         raise RuntimeError(f"{game_dir} doesn't look like a Borderlands 4 install")
@@ -398,6 +540,14 @@ def install(
     if conflicts := find_conflicts(game_dir):
         raise RuntimeError("\n".join(conflicts))
     chosen = choose_mods(game_dir, mods, skip_intro)
+    if _needs_admin_for(game_dir):
+        log("This user can't change the game folder: Windows asks for admin to install.")
+        optional = ",".join(sorted(chosen - set(catalog.REQUIRED))) or "none"
+        args = ["--install", "--game", str(game_dir), "--mods", optional]
+        if use_firewall is not None:
+            args += ["--firewall", "on" if use_firewall else "off"]
+        _run_self_elevated(args, log)
+        return
 
     vc = vcredist_version()
     if vc is None or vc < VCREDIST_MIN:
@@ -434,28 +584,12 @@ def install(
         set_skip_intro(game_dir, True, log)
     prepare_pages(game_dir, chosen, log)
 
-    # A copy of this app inside the game folder, so the in-game panel can ask it (with a UAC prompt)
-    # to update the firewall when friends are added in game, and to add or remove mods later
-    if getattr(sys, "frozen", False):
-        tools = game_dir / TOOLS_DIR_REL
-        tools.mkdir(parents=True, exist_ok=True)
-        # Still named BL4DirectSetup.exe in the game folder: BL4 Direct Connect (its firewall button)
-        # and the Mod Menu's updater look for it there, older versions included
-        target = tools / "BL4DirectSetup.exe"
-        version_file = tools / "version.txt"  # the in-game updater compares it with the latest release
-        try:
-            copied = version_file.read_text(encoding="utf-8").strip()
-        except OSError:
-            copied = ""
-        if Path(sys.executable).resolve() != target.resolve() and not (
-            target.exists() and _version_key(copied) > _version_key(shared.MOD_VERSION)
-        ):
-            shutil.copyfile(sys.executable, target)
-            version_file.write_text(shared.MOD_VERSION, encoding="utf-8")
-        _make_shortcut(target, log)
+    _settle_app(game_dir, log)
 
     config = load_config(game_dir)
-    if not friends_file(game_dir).exists():
+    if use_firewall is not None:
+        config.firewall = use_firewall
+    if use_firewall is not None or not friends_file(game_dir).exists():
         config.save(friends_file(game_dir))
     apply_firewall(game_dir, log)
 
@@ -570,6 +704,11 @@ def remove_mod(game_dir: Path, mod_id: str, log=print) -> None:  # noqa: ANN001
             (game_dir / MOD_PAKS_REL / name).unlink(missing_ok=True)
     for folder in info.ui_dirs:
         shutil.rmtree(game_dir / UI_REL / folder, ignore_errors=True)
+    # The BL4 UI Link's pak and loose files are shared: only the last mod using it takes them away
+    if info.link and not any(m.link and (sdk_mods / f"{m.id}.sdkmod").exists() for m in catalog.MODS):
+        for name in (catalog.LINK_PAK, f"{catalog.LINK_PAK}.next", f"{catalog.LINK_PAK}.remove"):
+            (game_dir / MOD_PAKS_REL / name).unlink(missing_ok=True)
+        shutil.rmtree(game_dir / UI_REL / catalog.LINK_UI_DIR, ignore_errors=True)
     if had:
         log(f"Removed {info.name}.")
 
@@ -588,6 +727,54 @@ def _refresh_icons() -> None:
         ctypes.WinDLL("shell32").SHChangeNotify(0x08000000, 0x0000, None, None)  # SHCNE_ASSOCCHANGED, SHCNF_IDLIST
     except (OSError, AttributeError):
         pass
+
+
+def _shortcut_targets(link: Path, exe: Path) -> bool:
+    """Whether a .lnk file points at `exe` (the path is stored in it as ANSI and/or UTF-16 text)."""
+    try:
+        data = link.read_bytes().lower()
+    except OSError:
+        return False
+    path = str(exe).lower()
+    return path.encode("utf-16-le") in data or path.encode("mbcs", "replace") in data
+
+
+def _settle_app(game_dir: Path, log=print) -> None:  # noqa: ANN001
+    """
+    Removes the old copy of this app from the game folder and points Start menu > BL4 Fix Setup at
+    the exe the player ran (it updates itself in place, so the entry stays good). Started from the
+    old copy itself (the old Start menu entry), the app first moves out of the game folder.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    exe = Path(sys.executable).resolve()
+    tools = game_dir / TOOLS_DIR_REL
+    old_copy = tools / OLD_COPY_NAME
+    if exe.is_relative_to(tools.resolve()) and (local := os.environ.get("LOCALAPPDATA")):
+        home = Path(local) / APP_HOME_REL
+        try:
+            home.parent.mkdir(parents=True, exist_ok=True)
+            home.unlink(missing_ok=True)
+            try:
+                exe.rename(home)  # Windows lets a running exe be moved on the same drive
+            except OSError:
+                # Another drive: copy. The running original goes at the next run (or the Mod Menu's)
+                shutil.copyfile(exe, home)
+            exe = home
+            log(f"Moved BL4 Fix Setup out of the game folder, to {home}.")
+        except OSError as ex:
+            log(f"Couldn't move BL4 Fix Setup out of the game folder ({ex}).")
+    if tools.is_dir():
+        shutil.rmtree(tools, ignore_errors=True)
+        if not old_copy.exists():
+            log("Removed the old copy of BL4 Fix Setup from the game folder.")
+    if exe.is_relative_to(Path(tempfile.gettempdir()).resolve()):
+        # Opened from inside a zip (Windows unpacks it into a temp folder): no entry to a file that
+        # will vanish. Drop an entry pointing at the old copy
+        if (link := _shortcut_path()) is not None and _shortcut_targets(link, old_copy):
+            link.unlink(missing_ok=True)
+        return
+    _make_shortcut(exe, log)
 
 
 def _make_shortcut(target: Path, log=print) -> None:  # noqa: ANN001
@@ -620,7 +807,26 @@ def _make_shortcut(target: Path, log=print) -> None:  # noqa: ANN001
 
 
 def apply_firewall(game_dir: Path, log=print) -> None:  # noqa: ANN001
+    """Makes our rule match the friends file: the allowlist, or no rule if the player turned it off."""
     config = load_config(game_dir)
+    rule = firewall.rule_summary()
+    if not config.firewall and rule is None:
+        # Off: never touch the firewall (no admin needed either)
+        log("Firewall: left alone (rule turned off).")
+        config.firewall_applied = config.firewall_signature()
+        config.save(friends_file(game_dir))
+        return
+    if not is_admin():
+        log("Windows asks for admin to update the firewall rule...")
+        _run_self_elevated(["--apply-firewall", "--game", str(game_dir)], log)
+        return
+    if not config.firewall:
+        # Off: take away the rule we added before
+        firewall.remove_rule()
+        log("Firewall: removed the BL4 Direct rule (turned off).")
+        config.firewall_applied = config.firewall_signature()
+        config.save(friends_file(game_dir))
+        return
     ips = list(dict.fromkeys(f.address for f in config.friends if shared.is_ipv4(f.address)))
     firewall.apply_rule(config.host_port, ips, config.allow_lan)
     config.firewall_applied = config.firewall_signature()
@@ -631,9 +837,25 @@ def apply_firewall(game_dir: Path, log=print) -> None:  # noqa: ANN001
     )
 
 
+def remove_firewall_rule(log=print) -> None:  # noqa: ANN001
+    """Takes our firewall rule away, if there is one (asks for admin then)."""
+    if firewall.rule_summary() is None:
+        return
+    if is_admin():
+        firewall.remove_rule()
+        log("Removed the BL4 Direct firewall rule.")
+    else:
+        log("Windows asks for admin to remove the firewall rule...")
+        _run_self_elevated(["--remove-firewall"], log)
+
+
 def uninstall(game_dir: Path, remove_sdk: bool, log=print) -> None:  # noqa: ANN001
     if game_running():
         raise RuntimeError("Close Borderlands 4 first.")
+    if _needs_admin_for(game_dir):
+        log("This user can't change the game folder: Windows asks for admin to uninstall.")
+        _run_self_elevated(["--uninstall", "--game", str(game_dir), *(["--remove-sdk"] if remove_sdk else [])], log)
+        return
     sdk_mods = game_dir / "sdk_mods"
     for info in catalog.MODS:
         # Skip Intro always: its movies may be moved aside even with the mod gone
@@ -644,8 +866,8 @@ def uninstall(game_dir: Path, remove_sdk: bool, log=print) -> None:  # noqa: ANN
     if (link := _shortcut_path()) is not None:
         for name in (link.name, *OLD_SHORTCUT_NAMES):
             (link.parent / name).unlink(missing_ok=True)
-    firewall.remove_rule()
-    log("Removed BL4 Fix: its mods and the firewall rule (your friends list and mod settings are kept).")
+    remove_firewall_rule(log)
+    log("Removed BL4 Fix and its mods (your friends list and mod settings are kept).")
 
     if remove_sdk:
         for name in _sdk_zip_names():
@@ -667,6 +889,9 @@ def uninstall(game_dir: Path, remove_sdk: bool, log=print) -> None:  # noqa: ANN
 
 # (mod id, page module in the mod, whether its sync() takes `enabled`)
 PAGE_MODULES: tuple[tuple[str, str, bool], ...] = (
+    # Since 0.2.0 these only remove the Mod Menu's old pause / title page paks (4245 / 4247); the
+    # rest remove their mod's old page pak too (scripts run through the UI Link now) and publish
+    # its loose files
     ("bl4_mod_menu", "pause_page", False),
     ("bl4_mod_menu", "main_page", False),
     ("bl4_item_cards", "card_page", True),
@@ -674,14 +899,36 @@ PAGE_MODULES: tuple[tuple[str, str, bool], ...] = (
     ("bl4_instant_tabs", "pages", False),
     ("bl4_weapondex", "celebrate_page", True),
     ("bl4_damage_meter", "popup_page", True),
+    # The BL4 UI Link (shared; whichever of these is installed builds the same pak)
+    ("bl4_builds", "uilink", False),
+    ("bl4_tidy_pause", "uilink", False),
+    ("bl4_reroll", "uilink", False),
+    ("bl4_uvh_teleport", "uilink", False),
+    ("bl4_damage_meter", "uilink", False),
+    ("bl4_weapondex", "uilink", False),
+    ("bl4_mod_menu", "uilink", False),
+    ("bl4_item_cards", "uilink", False),
+    ("bl4_respec", "uilink", False),
+    ("bl4_instant_tabs", "uilink", False),
 )
 # Loose scripts those pages load at once, which these mods publish from code that only runs in
-# game (it imports the SDK): mod id -> (folder in the .sdkmod, folder under uiresources). Item
+# game (it imports the SDK): (mod id, folder in the .sdkmod, folder under uiresources). Item
 # Cards and Easy Respec publish theirs from their page module's sync().
-PAGE_SCRIPTS: dict[str, tuple[str, str]] = {
-    "bl4_mod_menu": ("ui", "bl4modmenu"),
-    "bl4_instant_tabs": ("ui", "bl4instanttabs"),
-}
+PAGE_SCRIPTS: tuple[tuple[str, str, str], ...] = (
+    ("bl4_mod_menu", "ui", "bl4modmenu"),
+    ("bl4_instant_tabs", "ui", "bl4instanttabs"),
+    # The link's boot.js must be there when the game creates its pages (before any mod runs)
+    ("bl4_builds", "uilink/ui", "bl4link"),
+    ("bl4_tidy_pause", "uilink/ui", "bl4link"),
+    ("bl4_reroll", "uilink/ui", "bl4link"),
+    ("bl4_uvh_teleport", "uilink/ui", "bl4link"),
+    ("bl4_damage_meter", "uilink/ui", "bl4link"),
+    ("bl4_weapondex", "uilink/ui", "bl4link"),
+    ("bl4_mod_menu", "uilink/ui", "bl4link"),
+    ("bl4_item_cards", "uilink/ui", "bl4link"),
+    ("bl4_respec", "uilink/ui", "bl4link"),
+    ("bl4_instant_tabs", "uilink/ui", "bl4link"),
+)
 
 
 def mod_enabled(game_dir: Path, mod_id: str) -> bool:
@@ -729,8 +976,9 @@ def prepare_pages(game_dir: Path, chosen: set[str] | frozenset[str], log=print) 
                 status = module.sync(game_dir, enabled) if takes_enabled else module.sync(game_dir)
             except Exception as ex:  # noqa: BLE001 - the mod sets its page up in game anyway
                 status = f"couldn't prepare its page ({ex}); it does that itself in game (one extra restart)"
-            log(f"{catalog.BY_ID[mod_id].name}: {status}")
-        for mod_id, (folder, ui_dir) in PAGE_SCRIPTS.items():
+            if status:
+                log(f"{catalog.BY_ID[mod_id].name}: {status}")
+        for mod_id, folder, ui_dir in PAGE_SCRIPTS:
             if mod_id not in chosen or not mod_enabled(game_dir, mod_id):
                 continue
             source = root / mod_id / folder

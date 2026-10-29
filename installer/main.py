@@ -12,8 +12,18 @@ With no arguments, opens the GUI. Command line use (from a terminal):
     BL4FixSetup.exe --add-friend NAME IP [--port N]
     BL4FixSetup.exe --remove-friend NAME
     BL4FixSetup.exe --host-port N | --allow-lan on|off
+    BL4FixSetup.exe --firewall on|off    (off: no firewall rule; with --install, before the first one)
+    BL4FixSetup.exe --remove-firewall    (just take the firewall rule away)
+
+The app runs without admin rights. Steps that need them (firewall rule, VC++ runtime, a game
+folder this user can't write to) run in an elevated copy of it: `--log-file` is how that copy
+hands its output back (core._run_self_elevated).
     BL4FixSetup.exe --apply-firewall
     BL4FixSetup.exe --prepare-pages    (the installed mods' shim paks + page scripts, see core)
+
+Disk Space (slim.py; never part of --install):
+    BL4FixSetup.exe --disk-scan [--keep LANGS]    (what it would free; changes nothing)
+    BL4FixSetup.exe --disk-free --keep LANGS|all [--old-patches on|off]
 """
 
 from __future__ import annotations
@@ -68,7 +78,13 @@ def cli(args: argparse.Namespace) -> int:
     import core  # noqa: PLC0415
     import shared  # noqa: PLC0415
 
+    if args.remove_firewall:
+        core.remove_firewall_rule()
+        return 0
     game = _pick_game(args.game)
+    if not core.is_game_dir(game):
+        # Never write a friends file (or act on the firewall) for a folder that isn't the game
+        raise SystemExit(f"{game} doesn't look like a Borderlands 4 install")
     config = core.load_config(game)
     changed_config = False
 
@@ -77,6 +93,9 @@ def cli(args: argparse.Namespace) -> int:
             raise SystemExit("Close Borderlands 4 first.")
         core.prepare_pages(game, core.installed_mods(game))
         return 0
+
+    if args.disk_scan or args.disk_free:
+        return _disk_space(game, args)
 
     if args.list_mods:
         installed = core.installed_mods(game)
@@ -91,9 +110,12 @@ def cli(args: argparse.Namespace) -> int:
         mods |= _mod_ids(args.add_mod or "")
         mods -= _mod_ids(args.remove_mod or "")
     skip_intro = None if args.skip_intro is None else args.skip_intro == "on"
-    if args.install or mods is not None or skip_intro is not None:
+    installing = bool(args.install or mods is not None or skip_intro is not None)
+    if installing:
+        use_firewall = None if args.firewall is None else args.firewall == "on"
         # Skip Intro is a mod now: switching it installs or removes it like the others
-        core.install(game, skip_intro=skip_intro, mods=mods)
+        core.install(game, skip_intro=skip_intro, mods=mods, use_firewall=use_firewall)
+        config = core.load_config(game)  # install may have saved the firewall choice
     if args.uninstall:
         core.uninstall(game, remove_sdk=args.remove_sdk)
     if args.add_friend:
@@ -113,18 +135,63 @@ def cli(args: argparse.Namespace) -> int:
     if args.allow_lan:
         config.allow_lan = args.allow_lan == "on"
         changed_config = True
+    if args.firewall and not installing:
+        config.firewall = args.firewall == "on"
+        changed_config = True
 
     if changed_config:
         config.save(core.friends_file(game))
         print(f"Saved {core.friends_file(game)}")
     if changed_config or args.apply_firewall:
         core.apply_firewall(game)
-    actions = ("install", "uninstall", "apply_firewall", "skip_intro", "mods", "add_mod", "remove_mod")
+    actions = ("install", "uninstall", "apply_firewall", "firewall", "remove_firewall", "skip_intro", "mods", "add_mod", "remove_mod")
     if args.status or not any(vars(args)[k] for k in actions) and not changed_config:
         st = core.status(game)
         print("\n".join(st.lines()))
         print(f"Friends: {', '.join(f'{f.name} {f.address}:{f.port}' for f in config.friends) or 'none'}")
         return 0 if st.ready else 1
+    return 0
+
+
+def _disk_space(game: Path, args: argparse.Namespace) -> int:
+    """--disk-scan / --disk-free: unused voice languages and old patch data (slim.py)."""
+    import core  # noqa: PLC0415
+    import slim  # noqa: PLC0415
+
+    if args.disk_free:
+        if not args.keep:
+            raise SystemExit("--disk-free needs --keep: the voice languages to keep (a comma list), or all")
+        if core.game_running():
+            raise SystemExit("Close Borderlands 4 first.")
+        if slim.steam_busy(game):
+            raise SystemExit("Steam is updating or checking the game. Let it finish first.")
+    scanner = slim.Scanner(game)
+    installed = sorted(scanner.voices)
+    if not args.keep:
+        keep = scanner.default_keep()
+    elif args.keep.strip().lower() == "all":
+        keep = installed
+    else:
+        keep = list(dict.fromkeys(slim.match_language(k, installed) for k in args.keep.split(",") if k.strip()))
+    plan = scanner.plan(keep, args.old_patches != "off")
+    print(f"Game on disk now: {slim.gb(scanner.on_disk)}")
+    for name in installed:
+        print(f"  {name:21} {slim.gb(scanner.voice_sizes[name]):>10}  {'keep' if name in plan.keep else 'remove'}")
+    print(f"Voice languages to remove: {slim.gb(plan.voice_bytes)} ({len(plan.remove)} files)")
+    if args.old_patches == "off":
+        print("Old patch copies: left alone")
+    elif not scanner.unit:
+        print("Old patch copies: this drive can't free part of a file (needs NTFS and a few MB free)")
+    else:
+        print(f"Old patch copies: {slim.gb(plan.old_bytes)} in {len(plan.todo)} files")
+    if not args.disk_free or not plan.total:
+        return 0
+    if not scanner.writable and not core.is_admin() and not core.NO_ELEVATE:
+        argv = ["--disk-free", "--keep", ",".join(plan.keep), "--old-patches", "on" if plan.old else "off", "--game", str(game)]
+        core._run_self_elevated(argv)  # noqa: SLF001
+        return 0
+    freed = scanner.apply(plan)
+    print(f"Done. Freed {slim.gb(freed)}. Undo: Steam > Properties > Installed Files > Verify integrity.")
     return 0
 
 
@@ -141,22 +208,41 @@ def main() -> int:
     parser.add_argument("--host-port", type=int)
     parser.add_argument("--allow-lan", choices=["on", "off"])
     parser.add_argument("--apply-firewall", action="store_true")
+    parser.add_argument("--firewall", choices=["on", "off"], help="the hosting firewall rule (off: never touch the firewall)")
+    parser.add_argument("--remove-firewall", action="store_true", help="remove the hosting firewall rule")
+    parser.add_argument("--log-file", help=argparse.SUPPRESS)  # an elevated copy's output, for the app that started it
     parser.add_argument("--skip-intro", choices=["on", "off"], help="logo movies off (on) or back (off)")
     parser.add_argument("--mods", help="the optional mods to have: all, none, defaults or a comma list of ids")
     parser.add_argument("--add-mod", metavar="IDS", help="install these mods (comma list), keep the rest")
     parser.add_argument("--remove-mod", metavar="IDS", help="remove these mods (comma list), keep the rest")
     parser.add_argument("--list-mods", action="store_true", help="every mod this app can install")
     parser.add_argument("--prepare-pages", action="store_true", help="set up the installed mods' game pages now")
+    parser.add_argument("--disk-scan", action="store_true", help="what Disk Space would free (changes nothing)")
+    parser.add_argument("--disk-free", action="store_true", help="remove unused voice languages / old patch data")
+    parser.add_argument("--keep", metavar="LANGS", help="with --disk-*: voice languages to keep (comma list, or all)")
+    parser.add_argument("--old-patches", choices=["on", "off"], default="on", help="with --disk-*: free old patch data")
 
     if len(sys.argv) == 1:
         _run_gui()
         return 0
 
     _attach_console()
+    args = parser.parse_args()
+    if args.log_file:
+        # An elevated copy started by core._run_self_elevated: output goes where that app reads it
+        import core  # noqa: PLC0415
+
+        sys.stdout = sys.stderr = open(args.log_file, "w", encoding="utf-8", buffering=1)  # noqa: SIM115
+        core.NO_ELEVATE = True
     try:
-        code = cli(parser.parse_args())
+        code = cli(args)
     except Exception as ex:  # noqa: BLE001 - a windowed exe would show a raw traceback dialog
-        print(f"Error: {ex!r}")
+        print(f"Error: {ex}" if args.log_file else f"Error: {ex!r}")
+        code = 2
+    except SystemExit as ex:
+        if not args.log_file or isinstance(ex.code, int | None):
+            raise
+        print(f"Error: {ex.code}")
         code = 2
     _save_silent_output(code)
     return code

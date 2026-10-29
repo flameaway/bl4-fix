@@ -77,6 +77,18 @@ def check_versions() -> str:
     return mod_version
 
 
+
+
+def _local_only() -> frozenset[str]:
+    """File names this clone keeps out of git (.git/info/exclude): local files never ship."""
+    try:
+        lines = (REPO / ".git" / "info" / "exclude").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return frozenset()
+    return frozenset(s for line in lines if (s := line.strip()) and not s.startswith("#") and not set("/*?[") & set(s))
+
+
+LOCAL_ONLY = _local_only()
 # Fixed zip timestamps, so the same files always give the same bytes: tools/release.py compares
 # hashes with the last release to spot a mod that changed without a version bump
 ZIP_DATE = (1980, 1, 1, 0, 0, 0)
@@ -86,7 +98,7 @@ def build_sdkmod(src: Path, out: Path, extra: dict[str, Path] | None = None) -> 
     files = {
         (Path(src.name) / path.relative_to(src)).as_posix(): path
         for path in src.rglob("*")
-        if path.is_file() and "__pycache__" not in path.parts and path.name != "CLAUDE.md"
+        if path.is_file() and "__pycache__" not in path.parts and path.name not in LOCAL_ONLY
     }
     files |= {(Path(src.name) / name).as_posix(): path for name, path in (extra or {}).items()}
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -148,7 +160,15 @@ def ensure_pyinstaller() -> Path:
     return python
 
 
+def check_shared() -> None:
+    """Every mod's copy of a shared package (shared/uilink, shared/health) matches the source."""
+    result = subprocess.run([sys.executable, str(REPO / "tools" / "sync_shared.py"), "--check"], check=False)
+    if result.returncode != 0:
+        raise SystemExit("a mod's copy of a shared package is stale: run python tools/sync_shared.py")
+
+
 def main() -> None:
+    check_shared()
     version = check_versions()
     python = ensure_pyinstaller()
     # The setup window's game UI files (fonts, menus, Claptrap), taken from this machine's install
@@ -176,7 +196,7 @@ def main() -> None:
     subprocess.run(
         [
             str(python), "-m", "PyInstaller",
-            "--noconfirm", "--clean", "--onefile", "--windowed", "--uac-admin",
+            "--noconfirm", "--clean", "--onefile", "--windowed",
             "--name", "BL4FixSetup",
             "--distpath", str(REPO / "dist"),
             "--workpath", str(BUILD / "pyinstaller"),
@@ -194,6 +214,8 @@ def main() -> None:
             "--hidden-import", "catalog",
             "--hidden-import", "webgui",
             "--hidden-import", "gui",
+            "--hidden-import", "selfupdate",
+            "--hidden-import", "slim",
             # What the mods' page modules import when core.prepare_pages runs them from the
             # .sdkmod (PyInstaller only bundles what the app itself imports)
             "--hidden-import", "importlib.resources",

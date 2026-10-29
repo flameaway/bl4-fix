@@ -334,3 +334,6 @@ input { user-select: text; }
 .still #subs { opacity: 1; transform: none; }
 .su_btn.su_tiny { min-width: 8rem; }
 .su_btn.su_tiny .button_inner { padding: 0 1.2rem; }
+
+/* Detail texts can have paragraphs (the firewall row) */
+#d-body { white-space: pre-line; }

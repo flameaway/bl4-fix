@@ -20,7 +20,9 @@ from pathlib import Path
 
 import catalog
 import core
+import selfupdate
 import shared
+import slim
 
 HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 UI_DIR = HERE / "ui"
@@ -68,6 +70,10 @@ class Api:
         self._window = None  # set by run(); not a public attribute, so pywebview doesn't walk it
         self._busy = False
         self._lock = threading.Lock()
+        self._manifest: dict | None = None  # the latest release's, from update_check()
+        self._slim: slim.Scanner | None = None  # the Disk Space page's last scan
+        self._slim_lock = threading.Lock()
+        self._space_freed = 0
 
     # region page plumbing
 
@@ -134,6 +140,7 @@ class Api:
             "game_dir": str(found[0]) if found else "",
             "default_port": shared.DEFAULT_PORT,
             "lan_ip": core.lan_ip() or "",
+            "updated": selfupdate.finish_update(),  # this run follows an in-place update
             "mods": [
                 {
                     "id": m.id,
@@ -172,9 +179,10 @@ class Api:
                  "value": st.sdk or "missing", "hint": f"needs {shared.SDK_VERSION}"},
                 {"key": "mod", "label": "BL4 Direct Connect", "ok": st.mod_ok,
                  "value": st.mod or "missing", "hint": f"this app: {shared.MOD_VERSION}"},
-                {"key": "fw", "label": "Firewall", "ok": st.firewall is not None and config.firewall_up_to_date(),
-                 "value": "locked" if st.firewall else "no rule",
-                 "hint": st.firewall or "hosted games reachable by anyone who can reach the port"},
+                {"key": "fw", "label": "Firewall", "ok": st.firewall_ok and config.firewall_up_to_date(),
+                 "value": ("off" if st.firewall is None else "old rule left") if not config.firewall
+                 else "locked" if st.firewall else "no rule",
+                 "hint": st._firewall_line()},  # noqa: SLF001
                 {"key": "intro", "label": "Skip Intro", "ok": True,
                  "value": st._intro_line(), "hint": ""},  # noqa: SLF001
             ],
@@ -196,9 +204,9 @@ class Api:
 
     def launch_game(self, game_dir: str) -> str:
         """
-        Starts Borderlands 4: through Steam for a Steam install, else its exe. This app runs
-        elevated, and Steam started from here would run as admin too, so explorer.exe opens it:
-        the running (unelevated) shell takes the request over. Returns an error, or "".
+        Starts Borderlands 4: through Steam for a Steam install, else its exe. explorer.exe opens
+        it, so the running shell takes the request over (older builds of this app ran elevated, and
+        Steam started from there ran as admin too). Returns an error, or "".
         """
         path = Path(game_dir)
         if not game_dir or not core.is_game_dir(path):
@@ -214,13 +222,108 @@ class Api:
         if game_dir and Path(game_dir).is_dir():
             os.startfile(game_dir)  # noqa: S606
 
-    def install(self, game_dir: str, mods: list[str]) -> bool:
+    def install(self, game_dir: str, mods: list[str], use_firewall: bool | None = None) -> bool:
         path = Path(game_dir)
-        return self._task("install", lambda: core.install(path, self._log, mods=set(mods)))
+        fw = None if use_firewall is None else bool(use_firewall)
+        return self._task("install", lambda: core.install(path, self._log, mods=set(mods), use_firewall=fw))
 
     def uninstall(self, game_dir: str, remove_sdk: bool) -> bool:
         path = Path(game_dir)
         return self._task("uninstall", lambda: core.uninstall(path, bool(remove_sdk), self._log))
+
+    # endregion
+    # region updating this app
+
+    def update_check(self) -> dict:
+        """What the latest release has that this exe doesn't ({} when offline)."""
+        result, manifest = selfupdate.check()
+        if result is None:
+            return {}
+        self._manifest = manifest
+        result["can_apply"] = selfupdate.this_exe() is not None
+        return result
+
+    def update_apply(self) -> bool:
+        manifest = self._manifest
+        if manifest is None:
+            return False
+
+        def run() -> None:
+            exe = selfupdate.update(manifest, self._log)
+            selfupdate.restart(exe)
+            # Leave the window to the new copy (after onTaskDone has reached the page)
+            threading.Timer(1.0, self._window.destroy).start()
+
+        return self._task("selfupdate", run)
+
+    def open_releases(self) -> None:
+        selfupdate.open_releases_page()
+
+    # endregion
+    # region disk space (slim.py: its own page, never part of Install)
+
+    def space_scan(self, game_dir: str) -> bool:
+        path = Path(game_dir)
+
+        def run() -> None:
+            self._slim = None
+            scanner = slim.Scanner(path, self._log)
+            self._log("Working out the old patch data...")
+            with self._slim_lock:
+                scanner.plan(list(scanner.voices))  # fills the caches every later plan uses
+            self._slim = scanner
+            self._log(f"Done. Borderlands 4 takes {slim.gb(scanner.on_disk)} on disk.")
+
+        return self._task("space_scan", run)
+
+    def space_info(self, keep: list[str] | None = None, old: bool = True) -> dict:
+        """What the scan found and what keeping `keep` (None: the suggested languages) would free."""
+        scanner = self._slim
+        if scanner is None:
+            return {}
+        with self._slim_lock:
+            plan = scanner.plan(scanner.default_keep() if keep is None else list(keep), bool(old))
+        return {
+            "on_disk": scanner.on_disk,
+            "languages": [{"name": n, "size": scanner.voice_sizes[n]} for n in slim.LANGUAGES if n in scanner.voices],
+            "keep": plan.keep,
+            "old": plan.old,
+            "voice_bytes": plan.voice_bytes,
+            "voice_files": len(plan.remove),
+            "old_bytes": plan.old_bytes,
+            "old_files": len(plan.todo),
+            "unit": scanner.unit,
+        }
+
+    def space_freed(self) -> int:
+        """What the last Free space gave back, measured on disk."""
+        return self._space_freed
+
+    def space_apply(self, game_dir: str, keep: list[str], old: bool) -> bool:
+        path = Path(game_dir)
+        scanner = self._slim
+        if scanner is None or scanner.game_dir != path:
+            return False
+
+        def run() -> None:
+            if core.game_running():
+                raise RuntimeError("Close Borderlands 4 first.")
+            if slim.steam_busy(path):
+                raise RuntimeError("Steam is updating or checking the game. Let it finish first.")
+            self._slim = None  # the files change: a new scan after this
+            before = scanner.on_disk
+            if scanner.writable or core.is_admin():
+                with self._slim_lock:
+                    plan = scanner.plan(list(keep), bool(old))
+                scanner.apply(plan, self._log)
+            else:
+                # The elevated copy scans again itself and frees the same choice
+                args = ["--disk-free", "--keep", ",".join(keep), "--old-patches", "on" if old else "off", "--game", str(path)]
+                core._run_self_elevated(args, self._log)  # noqa: SLF001
+            self._space_freed = max(0, before - slim.size_on_disk(path))
+            self._log(f"Done. Freed {slim.gb(self._space_freed)}.")
+
+        return self._task("space", run)
 
     # endregion
     # region friends
@@ -236,9 +339,22 @@ class Api:
         return {
             "host_port": config.host_port,
             "allow_lan": config.allow_lan,
+            "firewall": config.firewall,
             "friends": [{"name": f.name, "address": f.address, "port": f.port} for f in config.friends],
             "firewall_current": config.firewall_up_to_date(),
         }
+
+    def set_firewall(self, game_dir: str, on: bool) -> bool:
+        """The firewall switch, applied at once: only that setting changes (the list on disk stays)."""
+        path = Path(game_dir)
+
+        def run() -> None:
+            config = core.load_config(path)
+            config.firewall = bool(on)
+            config.save(core.friends_file(path))
+            core.apply_firewall(path, self._log)
+
+        return self._task("firewall", run)
 
     def normalize_ip(self, text: str) -> str:
         return shared.normalize_ipv4(text or "") or ""
@@ -254,6 +370,7 @@ class Api:
             host_port=max(1024, min(65535, int(data.get("host_port") or shared.DEFAULT_PORT))),
             allow_lan=bool(data.get("allow_lan", True)),
             friends=friends,
+            firewall=bool(data.get("firewall", False)),
         )
 
         def save() -> None:
