@@ -5,8 +5,8 @@ fitted to this repo's rules (game-thread only, no per-frame cost, everything res
 options and keys in the Mod Menu).
 
 The originals are by **Yeti** ([RedxYeti/yeti-bl4-sdk](https://github.com/RedxYeti/yeti-bl4-sdk))
-and are licensed GPL-3.0, so these ports are GPL-3.0 too (see `LICENSE`). The rest of the repo
-keeps its own terms. They are modified versions (rewritten 2026-10-24 from the originals as of
+and are licensed GPL-3.0, so these ports are GPL-3.0 too (see `LICENSE`), like the rest of the
+repo. They are modified versions (rewritten 2026-10-24 from the originals as of
 commit af729fe, 2026-06-27); the table below says what changed.
 
 | Port | Original | What changed |

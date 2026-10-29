@@ -436,8 +436,13 @@ two-instance testing, the installer).
 
 ## License
 
-[MIT](LICENSE): use, change and share the code freely, as long as you keep the copyright notice
-and credit. The ports in [`ported/`](ported) are GPL-3.0, like the originals.
+Copyright (c) 2026 flameaway. [GPL-3.0](LICENSE) (version 3 or, at your option, any later
+version): use, change and share the code freely, but anything you share that's built on it must
+stay open source under the same license, with its source available. The ports in
+[`ported/`](ported) are GPL-3.0 like their originals.
+
+Borderlands 4 game files and anything generated from them (pages, data, pictures) belong to
+Gearbox Software and aren't covered by this license.
 
 BL4 Fix is a fan project, not affiliated with or endorsed by Gearbox Software or 2K. Borderlands
 is a trademark of Gearbox Software. Screenshots are from the game with these mods installed.
