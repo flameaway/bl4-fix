@@ -173,63 +173,10 @@ input { user-select: text; }
 .su_log_line.su_head { color: #f2a73b; margin-top: 1rem; }
 
 /* endregion */
-/* region Claptrap */
+/* region Claptrap (a still picture) */
 
-#claptrap {
-  position: absolute; right: 1rem; bottom: -2rem; height: 60rem; width: 60rem; z-index: 1;
-  transform: translateX(80rem); cursor: pointer; pointer-events: auto;
-}
-#claptrap.ct_in { transform: none; transition: transform 1.6s cubic-bezier(0.25, 1.2, 0.4, 1); }
-#claptrap .ct_body { position: absolute; inset: 0; transform-origin: 70% 92%; animation: ct_idle 3.2s ease-in-out infinite; }
+#claptrap { position: absolute; right: 1rem; bottom: -2rem; height: 60rem; width: 60rem; z-index: 1; pointer-events: none; }
 #claptrap img { position: absolute; right: 0; bottom: 0; height: 100%; filter: drop-shadow(0 1.5rem 2.5rem rgba(0, 0, 0, 0.7)) brightness(0.92); }
-/* His eye (at 57.8% / 33% of the picture) glows */
-#claptrap .ct_eye {
-  position: absolute; width: 8rem; height: 8rem; right: 19.3rem; top: 15.8rem; border-radius: 50%;
-  background: radial-gradient(circle, rgba(130, 220, 255, 0.85) 0%, rgba(40, 160, 255, 0.35) 35%, transparent 70%);
-  mix-blend-mode: screen; animation: ct_eye 2.6s ease-in-out infinite;
-}
-#claptrap.ct_talk .ct_eye { animation: ct_eye_talk 0.22s steps(2) infinite; }
-@keyframes ct_eye { 0%, 100% { opacity: 0.55; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.08); } }
-@keyframes ct_eye_talk { 0% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0.5; transform: scale(0.85); } }
-@keyframes ct_idle { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-0.8rem) rotate(-1.2deg); } }
-
-#claptrap.ct_talk .ct_body { animation: ct_chatter 0.35s ease-in-out infinite; }
-@keyframes ct_chatter { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-0.6rem) rotate(1deg); } }
-
-#claptrap.ct_roll .ct_body { animation: ct_roll 2.4s ease-in-out; }
-@keyframes ct_roll {
-  0% { transform: none; } 25% { transform: translateX(-14rem) rotate(-7deg); } 45% { transform: translateX(-14rem) rotate(3deg); }
-  75% { transform: translateX(4rem) rotate(6deg); } 100% { transform: none; }
-}
-#claptrap.ct_wave .ct_body { animation: ct_wave 2.2s ease-in-out; }
-@keyframes ct_wave { 0%, 100% { transform: rotate(0); } 15%, 45%, 75% { transform: rotate(-6deg); } 30%, 60%, 90% { transform: rotate(5deg); } }
-#claptrap.ct_spin .ct_body { animation: ct_spin 1.4s cubic-bezier(0.5, 0, 0.3, 1); }
-@keyframes ct_spin { 0% { transform: none; } 30% { transform: translateY(-6rem) scaleX(1); } 50% { transform: translateY(-8rem) scaleX(-1); } 70% { transform: translateY(-6rem) scaleX(1); } 100% { transform: none; } }
-#claptrap.ct_peek .ct_body { animation: ct_peek 2.6s ease-in-out; }
-@keyframes ct_peek { 0% { transform: none; } 30%, 60% { transform: translate(42rem, 0) rotate(18deg); } 100% { transform: none; } }
-#claptrap.ct_hop .ct_body { animation: ct_hop 0.9s cubic-bezier(0.3, 0, 0.3, 1); }
-@keyframes ct_hop { 0%, 100% { transform: none; } 20% { transform: scaleY(0.9); } 50% { transform: translateY(-7rem) rotate(-4deg); } 80% { transform: scaleY(0.95); } }
-#claptrap.ct_boing .ct_body { animation: ct_boing 0.8s cubic-bezier(0.2, 2, 0.4, 1); }
-@keyframes ct_boing { 0% { transform: scale(1, 1); } 30% { transform: scale(1.06, 0.88); } 60% { transform: scale(0.95, 1.08); } 100% { transform: scale(1, 1); } }
-#claptrap.ct_dance .ct_body { animation: ct_dance 0.6s ease-in-out infinite; }
-@keyframes ct_dance { 0%, 100% { transform: rotate(-6deg) translateY(0); } 25% { transform: rotate(0) translateY(-3rem); } 50% { transform: rotate(6deg) translateY(0); } 75% { transform: rotate(0) translateY(-3rem); } }
-#claptrap.ct_sad .ct_body { animation: ct_sad 2.4s ease-in-out forwards; }
-@keyframes ct_sad { 0% { transform: none; } 30%, 80% { transform: translateY(3rem) rotate(8deg); } 100% { transform: none; } }
-
-/* endregion */
-/* region Subtitles (his lines) */
-
-#subs {
-  position: fixed; left: 60rem; right: 4rem; bottom: 2.6rem; z-index: 6; display: flex; justify-content: center;
-  opacity: 0; transform: translateY(1rem); transition: opacity 0.25s, transform 0.25s; pointer-events: none;
-}
-#subs.su_show { opacity: 1; transform: none; }
-.su_sub {
-  margin: 0; padding: 0.9rem 2.2rem; max-width: 110rem; text-align: center; background: rgba(0, 0, 0, 0.55);
-  font-family: Industry-Medium; font-size: 2.6rem; line-height: 125%; color: #fff;
-  -webkit-text-stroke: 0.2rem #000;
-}
-.su_sub_speaker { color: #ffcc4d; }
 
 /* endregion */
 /* region Boot: the title screen */
@@ -330,8 +277,6 @@ input { user-select: text; }
 /* Previews (?still): no boot, no motion */
 .still #boot { display: none; }
 .still *, .still *::before, .still *::after { animation: none !important; transition: none !important; }
-.still #claptrap { transform: none; }
-.still #subs { opacity: 1; transform: none; }
 .su_btn.su_tiny { min-width: 8rem; }
 .su_btn.su_tiny .button_inner { padding: 0 1.2rem; }
 

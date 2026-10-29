@@ -146,7 +146,6 @@ async function boot() {
   $("#boot").classList.add("done");
   showPage(params.get("page") || "loadout");
   await statusP;
-  claptrap.start();
   setInterval(pollRunning, 3000);
   if (S.info.updated) toast(`Updated to BL4 Fix ${S.info.version}`);
   checkUpdate();
@@ -254,7 +253,6 @@ function showPage(id) {
   }
   render();
   $("#entries").scrollTop = 0;
-  claptrap.react("page_" + id);
 }
 
 /* ---------- rows ---------- */
@@ -411,7 +409,6 @@ function renderLoadout() {
       if (m.required) t.classList.add("su_locked");
       row(m.name, [t], { title: m.name, meta, body: m.blurb }, {
         status,
-        onHover: () => claptrap.hoverMod(m),
         onClick: m.required ? null : () => setMod(m.id, !S.selected.has(m.id)),
       });
     }
@@ -619,7 +616,7 @@ async function spaceApply() {
   const sp = S.space;
   const info = sp.info;
   if (S.busy || !info) return;
-  if (S.status && S.status.running) { claptrap.react("running"); return toast("Close Borderlands 4 first", true); }
+  if (S.status && S.status.running) return toast("Close Borderlands 4 first", true);
   const drop = info.languages.filter((l) => !sp.keep.has(l.name));
   const old = sp.old && info.old_bytes;
   if (!drop.length && !old) return;
@@ -645,14 +642,12 @@ function setMod(id, on) {
   if (S.busy) return;
   if (on) S.selected.add(id);
   else S.selected.delete(id);
-  claptrap.react(on ? "mod_on" : "mod_off");
   render();
 }
 
 function preset(name) {
   if (S.busy) return;
   S.selected = new Set(S.info.mods.filter((m) => m.required || name === "all" || (name === "defaults" && m.default)).map((m) => m.id));
-  claptrap.react("preset_" + name);
   render();
 }
 
@@ -715,7 +710,6 @@ async function pollRunning() {
   if (running && S.launching) S.launching = false;
   if (running !== S.status.running) {
     S.status.running = running;
-    if (running) claptrap.react("running");
     render();
   }
 }
@@ -737,7 +731,7 @@ async function chooseFolder() {
 
 async function install() {
   if (S.busy || !S.status || !S.status.valid) return;
-  if (S.status.running) { claptrap.react("running"); toast("Close Borderlands 4 first", true); return; }
+  if (S.status.running) { toast("Close Borderlands 4 first", true); return; }
   if (S.update && S.update.stale) {
     // This exe's mods are older than the release's (or it lacks new ones): update it first
     const first = await confirmDialog("Update the app first?", `A newer BL4 Fix Setup is out:\n${updateSummary(S.update)}\n\nThis app would install its older copies.`, "Update first", false,
@@ -778,7 +772,6 @@ async function launch() {
   S.launching = true;
   setTimeout(() => { S.launching = false; updateMenu(); }, 90000);
   toast("Starting Borderlands 4...");
-  claptrap.react("launch");
   updateMenu();
 }
 
@@ -797,7 +790,6 @@ function startTask(name, label) {
     $("#working-line").textContent = "Starting...";
     $("#pfill").style.width = "3%";
     $("#working").hidden = false;
-    claptrap.react("working");
   }
   updateMenu();
 }
@@ -825,7 +817,7 @@ window.app = {
     await sleep(400);
     endTask();
     if (name === "selfupdate") {
-      if (error) { claptrap.react("failed"); celebrate(false, error); }
+      if (error) celebrate(false, error);
       else celebrate(true, "Restarting with the new version...", "Updated");
       return;
     }
@@ -839,8 +831,8 @@ window.app = {
       // Python drops its scan once files change (scan again for new numbers), keeps it after a
       // refusal (game running, Steam busy)
       await spaceInfo([...S.space.keep]);
-      if (error) { claptrap.react("failed"); celebrate(false, error); }
-      else { claptrap.react("space_freed"); celebrate(true, `Freed ${gb(freed || 0)}. Undo: Verify integrity in Steam.`, "Space Freed"); }
+      if (error) celebrate(false, error);
+      else celebrate(true, `Freed ${gb(freed || 0)}. Undo: Verify integrity in Steam.`, "Space Freed");
       return;
     }
     if (name === "firewall") {
@@ -858,10 +850,8 @@ window.app = {
       S.friendsDirty = false;
       loadFriends();
     } else if (error) {
-      claptrap.react("failed");
       celebrate(false, error);
     } else {
-      claptrap.react(name === "uninstall" ? "uninstalled" : "installed");
       if (name === "install") S.firewallSaved = S.installFirewall;
       celebrate(true, name === "uninstall" ? "BL4 Fix and its mods are gone." : "In game: F6 for co-op, F7 for mod settings.", name === "uninstall" ? "Uninstalled" : "Installed");
     }
@@ -905,7 +895,6 @@ async function addFriend() {
   S.friends.friends = S.friends.friends.filter((f) => f.name.toLowerCase() !== name.toLowerCase());
   S.friends.friends.push({ name, address: ip, port });
   S.draft = { name: "", ip: "", port: "" };
-  claptrap.react("friend");
   markFriendsDirty();
 }
 
@@ -991,113 +980,6 @@ async function copy(text) {
   toast("Copied " + text);
 }
 
-/* ---------- Claptrap ---------- */
-
-// His lines are ours, written for this app
-const LINES = {
-  hello: ["Hey there, minion! Er, I mean, valued Vault Hunter!", "Welcome to the ECHO-4 mod station! I'm your personal installation assistant!", "Ooh, a visitor! Let's put some mods on you!"],
-  idle: ["Is it just me, or is this the best installer you've ever seen? It's me. I made it. Mostly.", "I could install these mods with my eye closed. I only have one eye. It's always open.", "Psst. You can click me. I won't bite. I don't have a mouth.", "Fun fact: I am ninety-eight percent installer, two percent dance machine.", "Take your time! I'll just stand here. Rolling in place. Forever.", "Did you know stairs are my natural enemy? Good thing installers don't have stairs."],
-  poke: ["Hey! That tickles my processors!", "Ow! My chassis!", "Woohoo! Do it again!", "Minion! Personal space!", "Boop!"],
-  page_loadout: ["Pick your gear! Everything looks better with mods. Especially me."],
-  page_coop: ["Friends! I have so many friends. They're all imaginary, but they count!", "Co-op! Finally, someone to share loot with. And by share, I mean give to me."],
-  page_system: ["Running diagnostics... Everything's fine! Probably! Don't look too closely."],
-  mod_on: ["Equipped!", "Ooh, good choice!", "Locked and loaded!", "Adding it to the pile!"],
-  mod_off: ["Aww. Fine. Be that way.", "Unequipped. I'll miss that one.", "Into the bin it goes!"],
-  preset_all: ["EVERYTHING? Now we're talking! Maximum mods!"],
-  preset_none: ["Core only? Minimalist. I respect that. I don't, but I said it."],
-  working: ["Installing! Don't turn off your computer! Or me!", "Beep boop, copying files... I'm doing a little dance while I wait.", "This is the part where I look busy!"],
-  installed: ["Ta-daaa! All installed! Now go shoot something!", "Done! Launch the game and press F7. You're welcome!"],
-  uninstalled: ["Everything's gone. Just like my friends. Sniff."],
-  failed: ["Uh oh. That wasn't supposed to happen. Check the log on the System page!"],
-  running: ["Whoa, the game's running! Close Borderlands 4 first, I can't swap parts while it's moving!"],
-  launch: ["To Kairos! Go get 'em, Vault Hunter! I'll guard the installer!", "Launching! Don't forget to press F7 when you get there!", "Off you go! Bring me back something shiny!"],
-  friend: ["A new friend! Hi, friend! Wanna be best friends?"],
-  page_space: ["Eight languages of voice lines? I only need one. Mine. In every language.", "Spring cleaning! Out with the old patches, in with the... free space!"],
-  space_freed: ["Ahh, so roomy in here! I could do cartwheels. If I had cartwheels.", "Space freed! Your drive thanks you. I thank you. Everyone's thankful!"],
-};
-const MOD_LINES = {
-  bl4_direct: "Direct IP co-op! No lobbies, no waiting. Just you, your friends, and me.",
-  bl4_mod_menu: "The Mod Menu! F7 in game. That's where all the knobs and buttons live.",
-  bl4_item_cards: "Detailed item cards! Every number, every skill, every shiny detail!",
-  bl4_skip_intro: "Skip the logos and get straight to the shooting. Efficient!",
-  bl4_minimap: "A minimap! Now you'll never get lost. Unlike me. I'm always lost.",
-  bl4_third_person: "Third person! Finally, you can admire your own outfit.",
-  bl4_weapondex: "The Kairosdex! Gotta loot 'em all!",
-  bl4_reroll: "Reroll your stats for Eridium! It's like gambling, but you always win. Sometimes.",
-  bl4_respec: "Right-click a skill to take a point back. If only life had that.",
-  bl4_vehicles_anywhere: "Vehicles anywhere! Even indoors! Especially indoors!",
-  bl4_backpack_size: "A bigger backpack! More room for loot. And snacks. Mostly loot.",
-  bl4_shoot_open: "Shoot a chest to open it! Violence solves everything!",
-  bl4_less_fog: "Less fog! Now you can see all the things trying to kill you.",
-  bl4_perf: "Performance fixes! Smoother frames, fewer hitches. I feel faster already!",
-  bl4_builds: "Build presets! Swap your whole loadout in a click.",
-  bl4_uvh_teleport: "Hover a boss challenge, press T, and zoom! Straight to the action!",
-  bl4_instant_tabs: "Instant menu tabs! No more waiting. I hate waiting. I'm waiting right now.",
-  bl4_echo_anywhere: "Open your ECHO even when the game says no. Rebel!",
-  bl4_dialog_skipper: "Skip voice lines?! Not mine, I hope! Mine are the best ones!",
-  bl4_grapple_anywhere: "Grapple anywhere! Up, up and away!",
-  bl4_ground_loot: "Ground loot helpers! Vacuum up everything on the floor. Including me, probably.",
-  bl4_slam_tweaks: "Ground slam! Feel the impact! Feel the POWER!",
-  bl4_encore_tweaks: "Big Encore machines refill you. Like a vending machine, but for being alive!",
-};
-const MOVES = ["ct_roll", "ct_wave", "ct_spin", "ct_peek", "ct_hop", "ct_boing", "ct_dance", "ct_sad"];
-
-const claptrap = {
-  el: null,
-  lastSpoke: 0,
-  pick(list) { return list[(Math.random() * list.length) | 0]; },
-  start() {
-    this.el = $("#claptrap");
-    this.el.classList.add("ct_in");
-    onClick(this.el, () => { this.act("ct_boing", 900); this.say(this.pick(LINES.poke), true); });
-    setTimeout(() => this.say(this.pick(LINES.hello), true), 900);
-    this.schedule();
-  },
-  schedule() {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      if (!S.busy && !document.hidden) {
-        this.act(this.pick(["ct_roll", "ct_wave", "ct_spin", "ct_peek", "ct_hop"]));
-        if (Math.random() < 0.45 && performance.now() - this.lastSpoke > 15000) this.say(this.pick(LINES.idle));
-      }
-      this.schedule();
-    }, 7000 + Math.random() * 9000);
-  },
-  act(cls, ms = 2400) {
-    if (!this.el || document.body.classList.contains("still")) return;
-    this.el.classList.remove(...MOVES);
-    void this.el.offsetWidth;
-    this.el.classList.add(cls);
-    clearTimeout(this.actTimer);
-    this.actTimer = setTimeout(() => this.el.classList.remove(cls), ms);
-  },
-  say(text, force = false) {
-    const now = performance.now();
-    if (!force && now - this.lastSpoke < 3500) return;
-    this.lastSpoke = now;
-    const subs = $("#subs");
-    $("#sub-text").textContent = text;
-    subs.classList.remove("su_show");
-    void subs.offsetWidth;
-    subs.classList.add("su_show");
-    if (this.el) this.el.classList.add("ct_talk");
-    clearTimeout(this.subTimer);
-    this.subTimer = setTimeout(() => { subs.classList.remove("su_show"); if (this.el) this.el.classList.remove("ct_talk"); }, 1800 + text.length * 55);
-  },
-  hoverMod(m) {
-    clearTimeout(this.hoverTimer);
-    this.hoverTimer = setTimeout(() => { if (MOD_LINES[m.id] && Math.random() < 0.6) this.say(MOD_LINES[m.id]); }, 700);
-  },
-  react(event) {
-    if (!this.el) return;
-    const moves = { launch: "ct_spin", installed: "ct_dance", space_freed: "ct_dance", working: "ct_dance", failed: "ct_sad", uninstalled: "ct_sad", running: "ct_sad", friend: "ct_hop", mod_on: "ct_hop", preset_all: "ct_spin" };
-    if (moves[event]) this.act(moves[event], event === "working" ? 60000 : 2400);
-    const lines = LINES[event];
-    const important = ["installed", "failed", "running", "working", "uninstalled", "launch", "space_freed"].includes(event);
-    if (lines && (important || Math.random() < 0.5)) this.say(this.pick(lines), important);
-  },
-};
-
 /* ---------- wiring ---------- */
 
 function wire() {
@@ -1150,7 +1032,6 @@ function mockApi() {
   if (demo === "working") setTimeout(() => { startTask("install", "Installing"); app.onLog("Installing Python SDK 0.3 (was: none)..."); app.onLog("Installed bl4_minimap."); }, 600);
   if (demo === "hover") setTimeout(() => { $$(".menu_options_entry")[3].classList.add("hover_effect"); S.nav.coop.btn.classList.add("hover_effect"); S.nav.coop.slot.classList.add("hover_effect"); $$(".su_btn")[0]?.classList.add("hover_effect"); }, 600);
   if (demo === "space") setTimeout(() => spaceScan().then(() => sleep(3000)).then(() => setKeep("German", true)).then(() => sleep(300)).then(() => { if (params.has("bottom")) $("#entries").scrollTop = 99999; }), 600);
-  if (demo === "talk") setTimeout(() => claptrap.say("Hey there, minion! Er, I mean, valued Vault Hunter!", true), 600);
   const ok = (key, label, value, hint, good = true) => ({ key, label, ok: good, value, hint });
   return {
     init: async () => ({ version: "0.5.0", sdk_version: "0.3", icon: "", game_dir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Borderlands 4", default_port: 7777, lan_ip: "192.168.1.42", mods }),
