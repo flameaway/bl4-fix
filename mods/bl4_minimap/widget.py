@@ -67,6 +67,8 @@ MARKER_LOOKS = {
     "enemy": (_RADAR + "ui_art_radar_pip_medium.ui_art_radar_pip_medium", 24.0, (1, 1, 1, 1)),
     "boss": (_RADAR + "ui_art_radar_Bosspip.ui_art_radar_Bosspip", 40.0, (1, 1, 1, 1)),
     "friend": (DOT_TEXTURE, 24.0, (0.35, 0.85, 1, 1)),
+    # A teammate whose class is known: its texture is their vault hunter's map icon (markers.py)
+    "friend_class": (DOT_TEXTURE, 36.0, (1, 1, 1, 1)),
     "waypoint": (_DISCOVERY + "ico_Custom_Waypoint.ico_Custom_Waypoint", 40.0, (1, 1, 1, 1)),
     "objective": (_DISCOVERY + "ico_main_mission.ico_main_mission", 40.0, (1, 1, 1, 1)),
     "legendary": (_DISCOVERY + "ico_misc_legendaries.ico_misc_legendaries", 34.0, (1, 1, 1, 1)),

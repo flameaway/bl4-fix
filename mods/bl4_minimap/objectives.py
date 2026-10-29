@@ -11,8 +11,10 @@ the minimap falls back to the ECHO map's copy (refreshed when you open the map).
 - A waypoint's +0xC8 is a shared pointer to its data; the data's +0x38 is a FWeakObjectPtr
   (object index, serial) to the target actor (an NPC to talk to, an object to use, ...). Waypoints
   without an actor (go to an area) have the weak pointer zeroed and their own position at data
-  +0x50 (an FVector of doubles). Bounty boards and contract posters (data +0x30 == 4) are active
-  waypoints too but don't show on the compass: skipped.
+  +0x50 (an FVector of doubles). Data with the giver vtable (or kind 4 at +0x30, Cowbell_P; World_P's
+  givers read 2 there) aren't objectives: they're the mission givers
+  the ECHO map marks (`ico_side_mission_npc[_dlc]`, same spots to the metre) and contract posters by
+  bounty boards. Kept apart in `givers`: they come and go as you take and finish missions.
 - The weak pointer resolves through GUObjectArray, whose address we take from the code that
   resolves it (the waypoint's own virtual at RVA 0xC8A2D4: `cmp [rip+X], edx` = NumElements,
   `mov r9, [rip+Y]` = the chunk table; 65536 items of 24 bytes per chunk: object*, flags, ...,
@@ -20,8 +22,7 @@ the minimap falls back to the ECHO map's copy (refreshed when you open the map).
 - The actor's position: its RootComponent's RelativeLocation (reflected offsets), when the root
   isn't attached to anything (then relative = world).
 
-Found by disassembling OakEcho4Statics.WasWaypointPathFound and the waypoint class's virtuals
-(see CLAUDE.md, "Live objectives").
+Found by disassembling OakEcho4Statics.WasWaypointPathFound and the waypoint class's virtuals.
 """
 
 from __future__ import annotations
@@ -37,15 +38,43 @@ from unrealsdk.unreal import UObject, WeakPointer
 
 READ_INTERVAL = 0.5  # s between reads of the objective list
 SEARCH_INTERVAL = 2.0  # s between searches for the provider (each walks every object), paused only
-MAX_WAYPOINTS = 32
-DATA_SIZE = 0x68  # what we read of a waypoint's data
+# A sanity bound, not a real limit: World_P lists 93 (mostly mission givers). It was 32, and on
+# reaching World_P live objectives turned off for the session (markers only changed with the ECHO map)
+MAX_WAYPOINTS = 2048
+DATA_SIZE = 0x80  # what we read of a waypoint's data
 DATA_LOCATION = 0x50  # its own position (doubles), for waypoints without a target actor
 # What kind of waypoint (a guess from what each showed): the tracked mission's objectives (on the
-# compass) were 1 (an NPC, or an area) and 2 (an area across the map); 4 = bounty boards and their
-# contract posters (not on the compass; their data has another vtable, RVA 0xB41AC40), with or
-# without an actor: in the Speakeasy three posters showed as the objective.
+# compass) were 1 (an NPC, or an area) and 2 (an area across the map); 4 = mission givers and the
+# contract posters by bounty boards (not on the compass; their data has another vtable, RVA
+# 0xB41AC40), with or without an actor. Cowbell_P, 2026-10-28: five kind-4 points sat exactly on the
+# ECHO map's five `ico_side_mission_npc_dlc` icons, three more 2-3 m from its bounty board.
+# World_P, 2026-10-28: all 93 listed points (givers and posters) had +0x30 = **2** with that same
+# giver vtable, so the kind alone drew every giver as an objective (rows of them on the rim). The
+# data's vtable is what tells them apart: givers/posters 0xB41AC40, objectives 0xB400BE0, in both maps.
 DATA_KIND = 0x30
-KIND_BOUNTY = 4
+KIND_GIVER = 4
+# On objectives (not givers) +0x30 looks like the mission's type: 1 for World_P's side mission "Old
+# Lads", 2 for the Cowbell_P objective drawn as ico_main_mission_dlc (2026-10-28; two samples)
+KIND_SIDE, KIND_MAIN = 1, 2
+GIVER_DATA_VTABLE = 0xB41AC40  # RVA in this build (pinned like _NUM_INSN below)
+OBJECTIVE_DATA_VTABLE = 0xB400BE0  # the tracked mission's objectives
+# An objective's data +0x78 is an FName: its mission's NCS `missiontype` (a tracked bounty read
+# "contract", World_P 2026-10-28). Compared as raw FName bytes against the names below (made once
+# through a GameplayTag), so unknown bytes are never decoded. Lowercase: FNames ignore case.
+DATA_TYPE = 0x78
+MISSION_TYPES = (
+    "Contract", "SideMission", "MicroMission", "DLC_SideMission", "DLC_MicroMission", "DLC_MainStory",
+    "FactionMission", "DynamicEvent", "Event", "Safehouse", "Crawler", "Silo",
+    "DrillSite", "OrderBunker", "Mine", "Volcano", "PearlGenerator", "Raid", "TikiBar", "Colosseum",
+    "DigispaceBoss", "Takedown", "Takedown_Hardcore", "Takedown_Timer", "FuelSiphon", "TedioreGrotto",
+    "TedioreLockdown", "Airship", "Meteor", "RiftBoss", "DahlBunker",
+)  # fmt: skip
+# The waypoint's own +0x40 holds flags. With three accepted bounties listed (World_P, 2026-10-28) the
+# tracked one (where the ECHO map's route ended, the only one on the compass) read 0 there and the
+# other two 4; mission givers 0 (one 12). So 4 = a mission you have but aren't tracking (one sample;
+# the tracked one also read +0x44 = 0x20 and +0xD8 = 1, the others 0).
+WAYPOINT_FLAGS = 0x40
+FLAG_UNTRACKED = 0x4
 MAX_COORD = 2e7  # world units: anything further out isn't a position
 SAME_SPOT = 500.0  # waypoints closer than this (5 m) show as one
 
@@ -105,8 +134,17 @@ class Objectives:
     num_addr = 0
     chunks_addr = 0
     waypoint_vtable = 0
+    giver_vtable = 0  # address of the giver/poster data's vtable
     root_off = attach_off = location_off = 0
     points: list[tuple[float, float, float]] = []  # noqa: RUF012  # world positions
+    types: list[str] = []  # noqa: RUF012  # each point's mission type (lowercase MISSION_TYPES, "" unknown)
+    untracked: list[bool] = []  # noqa: RUF012  # each point: from a mission you aren't tracking
+    type_names: dict[bytes, str] = {}  # noqa: RUF012  # FName bytes -> lowercase mission type
+    objective_vtable = 0
+    mission_kind = 0  # KIND_SIDE / KIND_MAIN of the first tracked objective (0: none or unknown)
+    givers: list[tuple[float, float, float]] = []  # noqa: RUF012  # mission givers / contract posters
+    read_ok = False  # the last read went through (givers is this level's list, not just empty)
+    seen_givers: dict[tuple[int, int], tuple[float, float, float] | None] = {}  # noqa: RUF012  # (waypoint, id) -> spot
 
     @classmethod
     def _fail(cls, why: str) -> None:
@@ -114,6 +152,10 @@ class Objectives:
             unrealsdk.logging.warning(f"[Minimap] live objectives off: {why}")
         cls.broken = why
         cls.points = []
+        cls.types = []
+        cls.untracked = []
+        cls.givers = []
+        cls.read_ok = False
 
     @classmethod
     def _setup(cls, pawn: UObject) -> bool:
@@ -133,6 +175,12 @@ class Objectives:
             return False
         cdo = unrealsdk.find_class("GbxDiscoveryProviderObject_OakMissionWaypoint").ClassDefaultObject
         cls.waypoint_vtable = _u64(cdo._get_address()) or 0  # noqa: SLF001
+        cls.giver_vtable = base + GIVER_DATA_VTABLE
+        cls.objective_vtable = base + OBJECTIVE_DATA_VTABLE
+        cls.type_names = {}
+        for name in MISSION_TYPES:
+            tag = unrealsdk.make_struct("GameplayTag", TagName=name)
+            cls.type_names[ctypes.string_at(tag._get_address(), 8)] = name.lower()  # noqa: SLF001
         cls.root_off = _offset("Actor", "RootComponent")
         cls.attach_off = _offset("SceneComponent", "AttachParent")
         cls.location_off = _offset("SceneComponent", "RelativeLocation")
@@ -185,22 +233,36 @@ class Objectives:
         cls.next_read = now + READ_INTERVAL
         provider = cls._find_provider(paused, new_world)
         if provider is None:
-            cls.points = []
+            cls.points, cls.types, cls.untracked, cls.givers, cls.read_ok = [], [], [], [], False
             return
         if not cls.checked and not cls._setup(pawn):
             return
         head = _read(provider._get_address() + 0x38, 16)  # noqa: SLF001
         if head is None:
-            cls.points = []
+            cls.points, cls.types, cls.untracked, cls.givers, cls.read_ok = [], [], [], [], False
             return
         data, count = struct.unpack_from("<Qi", head, 0)
         if not 0 <= count <= MAX_WAYPOINTS:
             cls._fail(f"odd waypoint count {count}")
             return
         entries = _read(data, count * 24) if count else b""
-        points = []
+        if entries is None:
+            cls.points, cls.types, cls.untracked, cls.givers, cls.read_ok = [], [], [], [], False
+            return
+        points: list[tuple[float, float, float]] = []
+        types: list[str] = []
+        untracked: list[bool] = []
+        givers: list[tuple[float, float, float]] = []
+        kind = other_kind = 0
+        seen: dict[tuple[int, int], tuple[float, float, float] | None] = {}
         for i in range(count):
-            waypoint, entry_id = struct.unpack_from("<QQ", entries or b"", i * 24)
+            waypoint, entry_id = struct.unpack_from("<QQ", entries, i * 24)
+            # Givers stay put: each is read once while it's in the list (World_P has ~90)
+            if (waypoint, entry_id) in cls.seen_givers:
+                where = seen[waypoint, entry_id] = cls.seen_givers[waypoint, entry_id]
+                if where is not None:
+                    givers.append(where)
+                continue
             head = _read(waypoint, 0xD0)
             if head is None or struct.unpack_from("<Q", head, 0)[0] != cls.waypoint_vtable:
                 cls._fail("waypoint list layout changed")
@@ -212,8 +274,8 @@ class Objectives:
             data = _read(shared, DATA_SIZE) if shared else None
             if data is None:
                 continue
-            if struct.unpack_from("<I", data, DATA_KIND)[0] == KIND_BOUNTY:
-                continue
+            data_kind = struct.unpack_from("<I", data, DATA_KIND)[0]
+            giver = data_kind == KIND_GIVER or struct.unpack_from("<Q", data, 0)[0] == cls.giver_vtable
             index, serial = struct.unpack_from("<ii", data, 0x38)
             target = cls._object_at(index) if index or serial else None
             where = None
@@ -221,12 +283,32 @@ class Objectives:
                 where = cls._location(target[0])
             if where is None:
                 where = _data_location(data)  # no actor (go to an area), or it's attached
-            if where is not None and not any(_near(where, p) for p in points):
+            if giver:
+                seen[waypoint, entry_id] = where
+                if where is not None:
+                    givers.append(where)
+            elif where is not None and not any(_near(where, p) for p in points):
                 points.append(where)
-        cls.points = points
+                objective = struct.unpack_from("<Q", data, 0)[0] == cls.objective_vtable
+                types.append(cls.type_names.get(data[DATA_TYPE : DATA_TYPE + 8], "") if objective else "")
+                other = bool(struct.unpack_from("<I", head, WAYPOINT_FLAGS)[0] & FLAG_UNTRACKED)
+                untracked.append(other)
+                found = data_kind if data_kind in (KIND_SIDE, KIND_MAIN) else 0
+                if other:
+                    other_kind = other_kind or found
+                else:
+                    kind = kind or found
+        cls.seen_givers = seen
+        cls.points, cls.types, cls.untracked, cls.givers, cls.read_ok = points, types, untracked, givers, True
+        cls.mission_kind = kind or other_kind
 
     @classmethod
     def clear(cls) -> None:
         cls.provider = WeakPointer()
         cls.points = []
+        cls.types = []
+        cls.untracked = []
+        cls.givers = []
+        cls.seen_givers = {}
+        cls.read_ok = False
         cls.next_read = 0.0

@@ -1,17 +1,20 @@
 """
 The ECHO map's icons and route line, copied for the minimap.
 
-While the big map is open, its private world holds one actor per icon (`BP_MapPOI_StandardIcon_C`
-/ `BP_MapPOI_StandardAreaIcon_C`, each with an `OakMapViewerPOIIconComponent` whose material
+While the big map is open, its private world holds one actor per icon (`OakMapViewerPOI`s:
+standard, area and vault tracker icons, each with an `OakMapViewerPOIIconComponent` whose material
 instance carries the icon texture and flags: `IsHidden`, `PinOpacity`, `IsBlip`) and the route to
 your waypoint (`OakMapViewerWaypointPath`: a list of spline-mesh segments from your position to the
 destination). Positions are in map space (world / 100, same origin). The game builds all of it
 natively when the map opens, and none of it exists while the map is closed.
 
-So once per opening (a moment after it opens, behind the paused menu) we read it all and keep it:
-icons and the route are saved per character and map (JSON in the SDK settings folder) so
-they're there next session. The minimap shows the icons in range and the route as
-a dotted line, trimmed to the part still ahead of you. Open the map again to refresh them.
+So once per opening (a moment after it opens, behind the paused menu) we read it all and keep it,
+and again whenever your custom waypoint changes while the map is open (placing a pin there
+redraws the map's route to it): icons and the route are saved per character and map (JSON in the
+SDK settings folder) so they're there next session. The minimap shows the icons in range and the
+route as a dotted line, trimmed to the part still ahead of you. Open the map again to refresh them.
+Icons the minimap draws live instead (your waypoint pin, players, mission givers) are left out
+or replaced by the caller.
 """
 
 from __future__ import annotations
@@ -31,20 +34,68 @@ from . import scene
 
 FOLDER: Path = SETTINGS_DIR / "minimap_icons"
 SNAPSHOT_DELAY_S = 1.0  # after the map opens: let it finish placing its icons and route
-ICON_CLASSES = (
-    "/Game/GameData/Map/BP_MapPOI_StandardIcon.BP_MapPOI_StandardIcon_C",
-    "/Game/GameData/Map/BP_MapPOI_StandardAreaIcon.BP_MapPOI_StandardAreaIcon_C",
-)
+# Every icon actor on the map is an OakMapViewerPOI (seen: BP_MapPOI_StandardIcon_C,
+# _StandardAreaIcon_C, _VaultTrackerAreaIcon_C, _PlayerIcon_C). Players are drawn live (markers.py).
+POI_CLASS = "OakMapViewerPOI"
+SKIP_POI_CLASSES = frozenset({"BP_MapPOI_PlayerIcon_C"})
 MAP_TO_WORLD = 100.0
 ROUTE_START_SLACK = 5000.0  # world units: a route starting this close to the player is the live one
+ROUTE_END_SLACK = 3000.0  # world units: a route ending this close to the waypoint pin leads to it
+RESNAP_DELAY_S = 0.5  # after the waypoint pin changes with the map open: let it redraw the route
+PIN_CUSTOM_WAYPOINT = 1
 DEFAULT_ROUTE_COLOR = (0.565, 0.804, 0.859, 1.0)
-# The tracked mission's objective icons on the map: ico_main_mission, ico_side_mission_dlc, ...
-OBJECTIVE_ICON = re.compile(r"^ico_(main|side)_mission(_optnl)?(_dlc)?$", re.IGNORECASE)
+# The tracked mission's objective icons on the map: ico_main_mission, ico_side_mission_dlc, a
+# bounty's ico_contract_mission, an activity's ico_activity_waypoint, ... (_brdcrmb: the marker when
+# the objective is through a door or in another area). Drawn live instead (objectives.py).
+OBJECTIVE_ICON = re.compile(
+    r"^ico_((main|side)_mission(_brdcrmb)?(_optnl)?(_dlc)?|contract_mission|faction_mission"
+    r"|activity_waypoint(_brdcrmb|_optnl)?)$",
+    re.IGNORECASE,
+)
+# Mission givers: ico_side_mission_npc[_dlc], ico_faction_mission_npc, ico_dlc_mission_giver_maingame
+GIVER_ICON = re.compile(r"^ico_(\w+_mission_npc(_dlc)?|dlc_mission_giver_\w+)$", re.IGNORECASE)
+# Rift events and the other world events (they come and go): Cowbell's ico_rift_boss /
+# ico_dlc_rift_boss_totem, Harmonica's Digi-Rifts, and ico_world_events (world boss "Rift Champion"
+# events, caravans, migrations: NCS missiontype Event). Shown only with "Always show rift events".
+RIFT_ICON = re.compile(r"^ico_(rift_boss|dlc_rift_boss_\w+|world_events)$", re.IGNORECASE)
+# Drawn live by the minimap (your pin: markers.py, players), so the map's copies would be stale doubles
+LIVE_ICON = re.compile(r"^(ico_Custom_Waypoint_PlayerOwned|player_class_\w+)$", re.IGNORECASE)
+
+
+def _icon_name(texture: str) -> str:
+    return texture.rsplit(".", 1)[-1]
 
 
 def is_objective(texture: str) -> bool:
     """A mission objective's icon (not a mission giver's: those end in _npc)."""
-    return OBJECTIVE_ICON.search(texture.rsplit(".", 1)[-1]) is not None
+    return OBJECTIVE_ICON.search(_icon_name(texture)) is not None
+
+
+def is_giver(texture: str) -> bool:
+    """A mission giver's icon (someone with a mission for you)."""
+    return GIVER_ICON.search(_icon_name(texture)) is not None
+
+
+def is_rift(texture: str) -> bool:
+    """A rift event's or another world event's icon."""
+    return RIFT_ICON.search(_icon_name(texture)) is not None
+
+
+def is_live(texture: str) -> bool:
+    """An icon the minimap draws from live data instead (your own waypoint pin, players)."""
+    return LIVE_ICON.search(_icon_name(texture)) is not None
+
+
+def pin_location(pc: UObject, world_name: str) -> tuple[float, float, float] | None:
+    """Your custom waypoint (the map pin the game routes you to), when it's on this map."""
+    state = pc.PlayerState
+    if state is None:
+        return None
+    for pin in state.DiscoveryPinningState.PinnedDatas:
+        if pin.pintype == PIN_CUSTOM_WAYPOINT and str(pin.PinnedCustomWaypointWorldName).lower() == world_name.lower():
+            loc = pin.PinnedCustomWaypointLocation
+            return (float(loc.X), float(loc.Y), float(loc.Z))
+    return None
 
 
 def _character(pc: UObject) -> str | None:
@@ -72,9 +123,12 @@ class MapData:
     key: tuple[str, str] | None = None  # (character, world)
     icons: list[dict[str, Any]] = []  # noqa: RUF012  # {"x", "y", "texture", "blip", "pinned"} world units
     routes: list[list[tuple[float, float]]] = []  # noqa: RUF012  # world-unit polylines
+    route_pin: tuple[float, float] | None = None  # your waypoint pin when the route was copied (x, y)
     route_color = DEFAULT_ROUTE_COLOR
     opened_at = 0.0  # when we saw the map open (0: closed)
     snapped = False  # read this opening already
+    snap_pin: tuple[float, float, float] | None = None  # the pin when we last read (or None)
+    resnap_at = 0.0  # read again at this time (the pin changed with the map open); 0: no
     version = 0  # bumped when icons or routes change
 
     @classmethod
@@ -84,11 +138,13 @@ class MapData:
 
     @classmethod
     def _load(cls) -> None:
-        cls.icons, cls.routes = [], []
+        cls.icons, cls.routes, cls.route_pin = [], [], None
         try:
             data = json.loads(cls._path().read_text(encoding="utf-8"))
             cls.icons = data.get("icons", [])
             cls.routes = [[tuple(p) for p in route] for route in data.get("routes", [])]
+            pin = data.get("route_pin")
+            cls.route_pin = (float(pin[0]), float(pin[1])) if pin else None
             cls.route_color = tuple(data.get("route_color", DEFAULT_ROUTE_COLOR))
         except (OSError, ValueError):
             pass
@@ -98,42 +154,37 @@ class MapData:
     def _save(cls) -> None:
         FOLDER.mkdir(parents=True, exist_ok=True)
         tmp = cls._path().with_suffix(".tmp")
-        data = {"icons": cls.icons, "routes": cls.routes, "route_color": cls.route_color}
+        data = {"icons": cls.icons, "routes": cls.routes, "route_color": cls.route_color, "route_pin": cls.route_pin}
         tmp.write_text(json.dumps(data), encoding="utf-8")
         tmp.replace(cls._path())
 
     @classmethod
-    def _snapshot(cls, pc: UObject | None = None) -> None:
+    def _snapshot(cls, pc: UObject | None = None, pin: tuple[float, float, float] | None = None) -> None:
         viewer = scene.Viewer.get()
         if viewer is None:
             return
         level = viewer.Outer
         poi_component = unrealsdk.find_class("OakMapViewerPOIIconComponent")
         icons: list[dict[str, Any]] = []
-        for path in ICON_CLASSES:
-            try:
-                cls_obj = unrealsdk.find_object("BlueprintGeneratedClass", path)
-            except ValueError:
-                continue
-            for actor in unrealsdk.find_all(cls_obj, exact=True):
-                if actor.Outer is not level or actor.bHidden or "Default__" in actor._path_name():  # noqa: SLF001
+        for actor in unrealsdk.find_all(POI_CLASS, exact=False):
+            if actor.Outer is not level or actor.bHidden or str(actor.Class.Name) in SKIP_POI_CLASSES:
+                continue  # (class default objects live in their package, not the viewer's level)
+            for comp in actor.K2_GetComponentsByClass(poi_component):
+                if not comp.bVisible or comp.K2_GetComponentScale().X <= 0:
+                    continue  # an old one from an earlier opening, on its way out
+                textures, scalars = _params(comp.MaterialInstance)
+                texture = textures.get(str(comp.MaterialTextureParamName))
+                if texture is None or scalars.get(str(comp.MaterialIsHiddenParamName), 0.0) > 0.5:
                     continue
-                for comp in actor.K2_GetComponentsByClass(poi_component):
-                    if not comp.bVisible or comp.K2_GetComponentScale().X <= 0:
-                        continue  # an old one from an earlier opening, on its way out
-                    textures, scalars = _params(comp.MaterialInstance)
-                    texture = textures.get(str(comp.MaterialTextureParamName))
-                    if texture is None or scalars.get(str(comp.MaterialIsHiddenParamName), 0.0) > 0.5:
-                        continue
-                    loc = comp.K2_GetComponentLocation()
-                    icons.append({
-                        "x": round(loc.X * MAP_TO_WORLD, 1),
-                        "y": round(loc.Y * MAP_TO_WORLD, 1),
-                        "texture": texture._path_name(),  # noqa: SLF001
-                        "blip": scalars.get(str(comp.MaterialIsBlipParamName), 0.0) > 0.5,
-                        "pinned": scalars.get(str(comp.MaterialPinOpacityParamName), 0.0) > 0.5,
-                        "area": bool(comp.bIsAreaComponent),
-                    })
+                loc = comp.K2_GetComponentLocation()
+                icons.append({
+                    "x": round(loc.X * MAP_TO_WORLD, 1),
+                    "y": round(loc.Y * MAP_TO_WORLD, 1),
+                    "texture": texture._path_name(),  # noqa: SLF001
+                    "blip": scalars.get(str(comp.MaterialIsBlipParamName), 0.0) > 0.5,
+                    "pinned": scalars.get(str(comp.MaterialPinOpacityParamName), 0.0) > 0.5,
+                    "area": bool(comp.bIsAreaComponent),
+                })
         routes: list[list[tuple[float, float]]] = []
         for path_actor in unrealsdk.find_all("OakMapViewerWaypointPath", exact=True):
             if path_actor.Outer is not level or path_actor.bHidden:
@@ -161,9 +212,14 @@ class MapData:
             loc = pawn.K2_GetActorLocation()
             live = [r for r in routes if (r[0][0] - loc.X) ** 2 + (r[0][1] - loc.Y) ** 2 <= ROUTE_START_SLACK**2]
             routes = live or routes
+        if pin is not None and routes:
+            # With a pin the map routes to it; a path still left from before the pin leads elsewhere
+            to_pin = [r for r in routes if (r[-1][0] - pin[0]) ** 2 + (r[-1][1] - pin[1]) ** 2 <= ROUTE_END_SLACK**2]
+            routes = to_pin or routes
         if icons:
             cls.icons = icons
         cls.routes = routes
+        cls.route_pin = (pin[0], pin[1]) if pin is not None else None
         cls._save()
         cls.version += 1
         scene.log(f"map data: {len(icons)} icons, {len(routes)} route(s)")
@@ -184,12 +240,22 @@ class MapData:
         if not is_open:
             cls.opened_at = 0.0
             cls.snapped = False
+            cls.resnap_at = 0.0
             return
         if cls.opened_at == 0.0:
             cls.opened_at = now
+        pin = pin_location(pc, world_name)
         if not cls.snapped and now - cls.opened_at >= SNAPSHOT_DELAY_S:
             cls.snapped = True
-            cls._snapshot(pc)
+            cls.snap_pin = pin
+            cls._snapshot(pc, pin)
+        elif cls.snapped and pin != cls.snap_pin:
+            # A pin placed, moved or removed on the open map: it redraws its route; read it again
+            cls.snap_pin = pin
+            cls.resnap_at = now + RESNAP_DELAY_S
+        elif cls.resnap_at and now >= cls.resnap_at:
+            cls.resnap_at = 0.0
+            cls._snapshot(pc, pin)
 
     @classmethod
     def route_dots(cls, x: float, y: float, spacing: float, reach: float,
@@ -247,7 +313,7 @@ class MapData:
     def objective_texture(cls) -> str | None:
         """The icon the ECHO map last gave the tracked mission's objectives (main / side / DLC)."""
         found = [i["texture"] for i in cls.icons if is_objective(i["texture"])]
-        plain = [t for t in found if "_optnl" not in t]
+        plain = [t for t in found if "_optnl" not in t and "_brdcrmb" not in t]
         return (plain or found or [None])[0]
 
     @classmethod

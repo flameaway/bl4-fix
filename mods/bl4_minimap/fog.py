@@ -11,7 +11,12 @@ render target (a GPU-side copy, cheap), and a moment after the map opens it's sa
 behind the menu (one PNG per character and map, in the SDK settings folder, written by the
 engine's own exporter, with the plane's placement and material). Our own fog plane, with the same material, sits over the
 minimap's map model. A saved mask is loaded when you come back to that map, so the fog carries
-over between sessions; it catches up with new exploring each time you open the map.
+over between sessions.
+
+While the map is closed the mask follows your exploring live: the game keeps what you've explored
+in `GbxDiscoveryFODManagerCPU` (not reflected), a 128x128 byte grid (255 = explored) that the map
+turns into its mask when it opens (mask = 255 - grid, byte for byte). We read that grid every few
+seconds and, when it changed, write it as the saved PNG and draw it into our mask.
 
 Python references don't keep Unreal objects alive (the garbage collector doesn't see them; a
 render target held only by Python crashed the game once it was collected). Everything we make is
@@ -22,7 +27,11 @@ the plane by the level. Python keeps WeakPointers only.
 from __future__ import annotations
 
 import json
+import os
+import struct
+import threading
 import time
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +40,7 @@ from mods_base import SETTINGS_DIR
 from unrealsdk.unreal import IGNORE_STRUCT, UObject, WeakPointer
 
 from . import scene
+from .objectives import _read
 
 FOLDER: Path = SETTINGS_DIR / "minimap_fog"
 CHECK_INTERVAL = 0.5  # s between looks for an open map
@@ -43,6 +53,15 @@ BLEND_OPAQUE = 0
 PLANE_MESH = "/Engine/BasicShapes/Plane.Plane"
 FOG_PARAM = "Fog"
 OPACITY_PARAM = "MaxOpacity"  # 1 hides unexplored land; the ECHO map shows it dimmed (about 0.7 here)
+# The live explored grid in GbxDiscoveryFODManagerCPU (measured in Cowbell_P, 2026-10-27)
+LIVE_CHECK_S = 4.0  # between reads of the live grid while the map is closed
+LIVE_MIN_CHANGE = 4 * 255  # grid sum change worth applying (about 4 cells newly explored)
+FOD_HEADER = 0x100  # bytes of the manager read at once
+FOD_ORIGIN = 0x78  # 2 doubles: the grid's world X/Y corner
+FOD_EXTENT = 0x88  # 2 doubles: its world size
+FOD_DIMS = 0xA8  # 2 int32: width, height
+FOD_CELLS = 0xB0  # TArray<uint8>: data pointer, int32 count (255 = explored)
+INVERT = bytes(255 - i for i in range(256))
 
 
 def _character(pc: UObject) -> str | None:
@@ -58,11 +77,76 @@ def _vector(values: list[float]) -> Any:
     return unrealsdk.make_struct("Vector", X=values[0], Y=values[1], Z=values[2])
 
 
+def _png_gray(width: int, height: int, pixels: bytes) -> bytes:
+    """An 8-bit grayscale PNG (unfiltered rows; zlib does the work in C)."""
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    rows = b"".join(b"\x00" + pixels[r * width:(r + 1) * width] for r in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
 class _Viewer:
     """The open big map's current fog actor (searching for it is slow: once per opening)."""
 
     fog = WeakPointer()
     next_fog_search = 0.0
+
+
+class _Live:
+    """The game's live explored grid (GbxDiscoveryFODManagerCPU, one transient object)."""
+
+    manager = WeakPointer()
+    vtable = 0  # the class's vtable (from its CDO): checked before every read
+    searched: str | None = None  # the world we last searched in (one search per world, or while paused)
+    applied = b""  # the grid last written into our mask
+    next_check = 0.0
+    worker: threading.Thread | None = None  # writing the PNG
+    written: tuple[tuple[str, str], bytes] | None = None  # (key, grid) the worker wrote, to draw
+
+    @classmethod
+    def _find(cls, world: str, paused: bool) -> UObject | None:
+        manager = cls.manager()
+        if manager is not None:
+            return manager
+        if cls.searched == world and not paused:
+            return None
+        cls.searched = world
+        cls.manager = WeakPointer()
+        for candidate in unrealsdk.find_all("GbxDiscoveryFODManagerCPU", exact=True):
+            if "Default__" in candidate._path_name():  # noqa: SLF001
+                head = _read(candidate._get_address(), 8)  # noqa: SLF001
+                cls.vtable = struct.unpack("<Q", head)[0] if head else 0
+            elif manager is None:
+                manager = candidate
+        if manager is not None:
+            cls.manager = WeakPointer(manager)
+        return manager
+
+    @classmethod
+    def grid(cls, world: str, paused: bool, placement: dict[str, Any]) -> bytes | None:
+        """The explored grid, if it's there and covers this world's fog plane (else None)."""
+        manager = cls._find(world, paused)
+        if manager is None or not cls.vtable:
+            return None
+        head = _read(manager._get_address(), FOD_HEADER)  # noqa: SLF001
+        if head is None or struct.unpack_from("<Q", head, 0)[0] != cls.vtable:
+            return None
+        width, height = struct.unpack_from("<ii", head, FOD_DIMS)
+        cells, count = struct.unpack_from("<Qi", head, FOD_CELLS)
+        if width != MASK_SIZE or height != MASK_SIZE or count != width * height:
+            return None
+        # Same square as the fog plane (map units x 100 = world): not another world's grid
+        span = placement["scale"][0] * 10000
+        ox, oy = struct.unpack_from("<dd", head, FOD_ORIGIN)
+        ex, ey = struct.unpack_from("<dd", head, FOD_EXTENT)
+        loc = placement["loc"]
+        expect = (loc[0] * 100 - span / 2, loc[1] * 100 - span / 2, span, span)
+        if any(abs(a - b) > span * 0.01 for a, b in zip((ox, oy, ex, ey), expect)):
+            return None
+        return _read(cells, count)
 
 
 class Fog:
@@ -172,6 +256,55 @@ class Fog:
         cls.unsaved = False
         cls.changed = True
 
+    @classmethod
+    def _follow_live(cls, pc: UObject, world: str, paused: bool) -> None:
+        """While the map is closed: the game's live explored grid into the saved PNG (on a worker:
+        the write can take a few ms) and then into our mask. tiles.py re-films only the tiles whose
+        part of the PNG changed."""
+        done = _Live.written
+        if done is not None:
+            _Live.written = None
+            key, grid = done
+            png, _ = cls._paths()
+            if key == cls.key and cls.mask() is not None:
+                krl = unrealsdk.find_class("KismetRenderingLibrary").ClassDefaultObject
+                texture = krl.ImportFileAsTexture2D(pc, str(png))
+                if texture is not None:
+                    cls._draw(pc, texture)  # used at once, in this same call
+                    _Live.applied = grid
+                    cls.unsaved = False
+                    cls.changed = True
+            return
+        now = time.monotonic()
+        if now < _Live.next_check or _Live.worker is not None or cls.placement is None or cls.key is None:
+            return
+        _Live.next_check = now + LIVE_CHECK_S
+        grid = _Live.grid(world, paused, cls.placement)
+        if grid is None or cls.mask() is None:
+            return
+        # Explored cells only brighten; a few soft-edge steps aren't worth filming tiles again for
+        if _Live.applied and abs(sum(grid) - sum(_Live.applied)) < LIVE_MIN_CHANGE:
+            return
+        key, placement = cls.key, cls.placement
+        png, meta = cls._paths()
+
+        def write() -> None:
+            try:
+                FOLDER.mkdir(parents=True, exist_ok=True)
+                tmp = png.with_suffix(".tmp")
+                tmp.write_bytes(_png_gray(MASK_SIZE, MASK_SIZE, grid.translate(INVERT)))
+                os.replace(tmp, png)  # tiles.py's worker may be reading it: then try again next time
+                if not meta.exists():
+                    meta.write_text(json.dumps(placement, indent=1), encoding="utf-8")
+                _Live.written = (key, grid)
+            except OSError:
+                pass
+            finally:
+                _Live.worker = None
+
+        _Live.worker = threading.Thread(target=write, name="bl4_minimap fog", daemon=True)
+        _Live.worker.start()
+
     # endregion
     # region The game's fog
 
@@ -274,12 +407,14 @@ class Fog:
             cls._save(pc)  # the last map's, if the map closed with the level (travel from the map)
             cls.destroy()
             cls.key = key
+            _Live.applied = b""
             cls._restore(pc)
         elif cls.plane() is None and cls.placement is not None:
             cls._restore(pc)  # our plane went with the world (map change back and forth)
 
         if not cls._map_open(paused):
             cls.was_open = False
+            cls._follow_live(pc, world_name, paused)
             return
         if not cls.was_open:
             cls.was_open = True

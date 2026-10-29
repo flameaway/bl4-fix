@@ -9,7 +9,7 @@ as PNGs, and the minimap's picture is put together from tiles with a few Canvas 
 - Tiles sit on a grid in the north-up frame (the same frame as the pictures). Tile (i, j) covers
   `up` in [i, i+1) * TILE_WORLD and `right` in [j, j+1) * TILE_WORLD.
 - A tile is filmed with the fog plane in it (the ECHO map's look; Canvas can't draw the fog
-  material with its transparency, see CLAUDE.md), and re-filmed while its texture detail streams in
+  material with its transparency), and re-filmed while its texture detail streams in
   (SETTLE_AT_S, measured: 6-8 captures over 2-3 s).
 - Saved only while the game is paused (the export reads the target back from the GPU: a hitch),
   per character, map, fog setting and north; wiped when the game's exe changes (a patch may change
@@ -63,6 +63,15 @@ SETTLE_AT_S = (0.15, 0.35, 0.6, 0.9, 1.3, 1.8, 2.5)  # captures after the first,
 ACTION_GAP_S = 0.05  # at most one tile load or capture per this
 SAVE_GAP_S = 0.25  # while paused: one tile export per this
 FOG_CHECK_S = 2.0  # how often to look whether fog.py saved a new mask
+# Blurry tiles: the map art sometimes doesn't stream in at all while a tile settles (World_P and
+# Cowbell_P tiles were saved at the lowest mip, all 8 captures; filmed again later, sharp within
+# 0.4 s). Each saved or loaded tile is scored on a worker (`_detail`); under DETAIL_LOW it's filmed
+# again, and kept once a refilm isn't DETAIL_GAIN sharper (the art there is that plain) or after
+# DETAIL_TRIES refilms. The verdict is saved in the index ("detail"), so a tile is judged once.
+DETAIL_LOW = 0.9
+DETAIL_FLAT = 0.02  # under this a tile is one flat colour: nothing to stream
+DETAIL_GAIN = 1.25
+DETAIL_TRIES = 2
 GAMMA_CAPTURE = scene.TARGET_GAMMA
 GAMMA_LOADED = 2.2
 BLEND_OPAQUE = 0
@@ -120,6 +129,48 @@ def _png_channel(path: Path) -> tuple[int, int, bytes]:
     return width, height, bytes(out)
 
 
+_RESIDUAL = bytes(min(v, 256 - v) for v in range(256))  # a PNG filter residual byte -> its size
+
+
+def _detail(path: Path) -> float | None:
+    """
+    How much fine detail a saved tile has: the mean size of its PNG filter residuals (how far each
+    byte is from what its neighbours predict), RGB of every 8th row. Sharp map art scores 1-6, a tile
+    filmed before the art streamed in ~0.1, one flat colour (off the map) 0, but so do mostly-black
+    edge tiles and plain ground (0.1-0.9): see `Tiles._apply_checks`. No unfiltering needed, so it's
+    ~5 ms of a worker per tile; zlib and the file read let go of the GIL, and it rests between rows.
+    """
+    data = path.read_bytes()
+    pos, idat = 8, bytearray()
+    width = height = channels = 0
+    while pos + 8 <= len(data):  # Unreal pads its PNGs past IEND
+        length, kind = struct.unpack_from(">I4s", data, pos)
+        if kind == b"IHDR":
+            width, height, depth, color = struct.unpack_from(">IIBB", data, pos + 8)
+            if depth != 8 or color not in (2, 6):
+                return None
+            channels = 3 if color == 2 else 4
+        elif kind == b"IDAT":
+            idat += data[pos + 8:pos + 8 + length]
+        elif kind == b"IEND":
+            break
+        pos += 12 + length
+    if not channels:
+        return None
+    raw = zlib.decompress(bytes(idat))
+    stride = width * channels
+    total = count = 0
+    for n, row in enumerate(range(0, height, 8)):
+        start = row * (stride + 1) + 1
+        line = raw[start:start + stride]
+        rgb = (line[0::channels] + line[1::channels] + line[2::channels]).translate(_RESIDUAL)
+        total += sum(rgb)
+        count += len(rgb)
+        if n % 8 == 7:
+            time.sleep(0.001)
+    return total / count if count else None
+
+
 class _Slot:
     """A render target held by an idle capture actor; holds one tile at a time."""
 
@@ -160,6 +211,12 @@ class Tiles:
     placement: dict[str, Any] | None = None
     worker: threading.Thread | None = None
     worker_result: tuple[float, tuple[int, int, bytes] | None, dict[str, Any] | None] | None = None
+    # Detail checks (see DETAIL_LOW): (folder, tile name) waiting / scored, on their own worker
+    checker: threading.Thread | None = None
+    check_queue: list[tuple[Path, str]] = []
+    check_results: list[tuple[Path, str, float | None]] = []
+    checking: set[str] = set()
+    retries: dict[str, tuple[int, float]] = {}  # tile name -> (refilms so far, score before the last)
     logged = ""
 
     # region Session
@@ -194,6 +251,7 @@ class Tiles:
         cls.mask = cls.placement = None
         cls.mask_stamp = None
         cls.next_fog_check = 0.0
+        cls.check_queue, cls.checking, cls.retries = [], set(), {}
         scene.log(f"tiles: {cls.folder.name}, {len(cls.index['tiles'])} on disk")
 
     @classmethod
@@ -298,6 +356,7 @@ class Tiles:
             i, j = (int(n) for n in name.split("_"))
             if cls.digest((i, j)) != old:
                 del cls.index["tiles"][name]
+                cls.index.get("detail", {}).pop(name, None)
                 if cls.folder is not None:
                     (cls.folder / f"{name}.png").unlink(missing_ok=True)
                 stale += 1
@@ -310,6 +369,66 @@ class Tiles:
             cls._write_index()
             cls.version += 1
             scene.log(f"tiles: fog changed under {stale} tile(s)")
+
+    # endregion
+    # region Detail checks
+
+    @classmethod
+    def _queue_check(cls, name: str) -> None:
+        if cls.folder is None or name in cls.checking:
+            return
+        cls.checking.add(name)
+        cls.check_queue.append((cls.folder, name))
+        if cls.checker is not None:
+            return
+
+        def run() -> None:
+            try:
+                while cls.check_queue:
+                    folder, tile = cls.check_queue.pop(0)
+                    try:
+                        score = _detail(folder / f"{tile}.png")
+                    except Exception as ex:  # noqa: BLE001
+                        scene.log(f"tiles: couldn't score {tile}: {ex!r}")
+                        score = None
+                    cls.check_results.append((folder, tile, score))
+                    time.sleep(0.005)
+            finally:
+                cls.checker = None
+
+        cls.checker = threading.Thread(target=run, name="bl4_minimap tiles detail", daemon=True)
+        cls.checker.start()
+
+    @classmethod
+    def _apply_checks(cls) -> None:
+        """Keeps scored tiles, or drops a blurry one so it's filmed again (see DETAIL_LOW)."""
+        changed = False
+        while cls.check_results:
+            folder, name, score = cls.check_results.pop(0)
+            cls.checking.discard(name)
+            if folder != cls.folder or name not in cls.index["tiles"] or score is None:
+                continue
+            tries, before = cls.retries.get(name, (0, 0.0))
+            if (score >= DETAIL_LOW or score < DETAIL_FLAT or tries >= DETAIL_TRIES
+                    or (tries and score < before * DETAIL_GAIN)):  # fmt: skip
+                cls.index.setdefault("detail", {})[name] = round(score, 3)
+                cls.retries.pop(name, None)
+                if tries:
+                    scene.log(f"tiles: {name} filmed again, detail {before:.2f} -> {score:.2f}, kept")
+            else:
+                scene.log(f"tiles: {name} looks blurry (detail {score:.2f}), filming it again")
+                cls.retries[name] = (tries + 1, score)
+                del cls.index["tiles"][name]
+                cls.index.get("detail", {}).pop(name, None)
+                (folder / f"{name}.png").unlink(missing_ok=True)
+                key = tuple(int(n) for n in name.split("_"))
+                tile = cls.tiles.pop(key, None)  # type: ignore[call-overload]
+                if tile is not None:
+                    tile.slot.key = None
+                    cls.version += 1
+            changed = True
+        if changed:
+            cls._write_index()
 
     # endregion
     # region Slots
@@ -388,6 +507,8 @@ class Tiles:
         slot.key, slot.used = key, time.monotonic()
         cls.tiles[key] = tile
         cls.version += 1
+        if f"{key[0]}_{key[1]}" not in cls.index.get("detail", {}):
+            cls._queue_check(f"{key[0]}_{key[1]}")  # saved before detail checks existed
         return True
 
     @classmethod
@@ -409,7 +530,9 @@ class Tiles:
         krl.ExportRenderTarget(pc, target, str(cls.folder), f"{name}.png")
         tile.saved = True
         cls.index["tiles"][name] = tile.digest
+        cls.index.get("detail", {}).pop(name, None)
         cls._write_index()
+        cls._queue_check(name)
 
     # endregion
     # region Per frame
@@ -434,6 +557,7 @@ class Tiles:
     def paused_tick(cls, pc: UObject) -> None:
         """While the game is paused (a menu is open): saves finished tiles, one at a time."""
         if cls.session is not None:
+            cls._apply_checks()
             cls._save_one(pc)
 
     @classmethod
@@ -453,6 +577,8 @@ class Tiles:
         if session != cls.session:
             cls._open(session)
         cls._check_fog(char, world.lower(), fog_on)
+        if cls.check_results:
+            cls._apply_checks()
         if paused:
             cls._save_one(pc)
             return
