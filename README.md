@@ -314,6 +314,7 @@ Thins out the haze over the world: lower fog density, pushed further away, adjus
 | **Shoot to Open** | Shoot a container or chest to open it. |
 | **Performance Fixes** | Fewer hitches: Python garbage collection without stalls, cheaper mod hooks, and optionally frame generation kept on in menus. |
 | **Tidy Pause Menu** | Moves the pause menu's News panel to the bottom right, under the party list, so it no longer covers Quit Game. Or hide it. |
+| **Crisp Damage Numbers** | Sharper damage numbers with DLSS/FSR. Light (default) turns off the blur the game puts over them, at no measurable cost; Full also draws them at your screen's resolution, which costs 1.3-2 ms of GPU time in big fights. |
 
 **Ports of Yeti's mods.** These are our own GPL-3.0 rewrites of [Yeti's BL4 SDK mods](https://github.com/RedxYeti/yeti-bl4-sdk),
 following this repo's rules (no per-frame cost, everything restored on disable, options in the
@@ -335,7 +336,7 @@ table says so.
 
 | Mod | In co-op |
 |---|---|
-| Mod Menu, Skip Intro, Less Fog, Instant Menu Tabs, ECHO Anywhere, Third Person, Minimap, Item Cards (cards), Performance Fixes, Tidy Pause Menu | Local: works for whoever runs it, host or friend. |
+| Mod Menu, Skip Intro, Less Fog, Instant Menu Tabs, ECHO Anywhere, Third Person, Minimap, Item Cards (cards), Performance Fixes, Tidy Pause Menu, Crisp Damage Numbers | Local: works for whoever runs it, host or friend. |
 | Kairosdex | Local; friends' kills are tracked through the boss health bar. |
 | Carnage Meter | The host's copy counts every player's damage; a friend's screen shows the host's board (both need it). |
 | Easy Respec | Works for a friend on its own; the host needs nothing. |

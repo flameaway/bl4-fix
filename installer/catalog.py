@@ -74,6 +74,7 @@ MODS: tuple[ModInfo, ...] = (
     ModInfo("bl4_backpack_size", "Backpack Size", "Set the backpack, bank and Lost Loot limits."),
     ModInfo("bl4_shoot_open", "Shoot to Open", "Shoot a container or chest to open it."),
     ModInfo("bl4_less_fog", "Less Fog", "Thin out the haze over the world."),
+    ModInfo("bl4_crisp_numbers", "Crisp Damage Numbers", "Sharper damage numbers with DLSS/FSR (Light: free; Full: costs GPU)."),
     ModInfo("bl4_tidy_pause", "Tidy Pause Menu", "Move the pause menu's News panel to the right, or hide it.", ui_dirs=("bl4tidypause",), link=True),
     ModInfo("bl4_perf", "Performance Fixes", "Fewer hitches: no DLSS reload after menus, cheaper mod hooks."),
     ModInfo("bl4_dialog_skipper", "Dialog Skipper", "Skip voice lines by key or automatically.", source="ported"),
