@@ -572,6 +572,28 @@
     color: #a9fff2;
 }
 
+/* Spoiler free: a hidden item's rarity isn't shown */
+.bl4dex_rarity_hidden {
+    background-color: #3d4a50;
+}
+
+.bl4dex_name_hidden {
+    color: #56656a;
+}
+
+/* Spoiler free: a "?" where a hidden item's dark shape would be */
+.bl4dex_unknown {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.bl4dex_root .bl4dex_unknown_mark {
+    font-family: Industry-DemiBold;
+    font-size: 2.4rem;
+    color: rgba(63, 118, 157, 0.6);
+}
+
 .bl4dex_root .bl4dex_empty {
     font-family: Industry-Normal;
     font-size: 2rem;

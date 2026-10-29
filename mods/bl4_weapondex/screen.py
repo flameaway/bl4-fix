@@ -89,6 +89,8 @@ class S:
     unlocked: Callable[[], bool] = lambda: False  # noqa: E731
     # Set by __init__: whether the "Obtained items only" option is on
     obtained: Callable[[], bool] = lambda: True  # noqa: E731
+    # Set by __init__: whether "Spoiler free" is on (hidden items and bosses: no outline, no type)
+    spoiler_free: Callable[[], bool] = lambda: False  # noqa: E731
     # Set by __init__: whether hovering an Items list entry shows its card (boss drop rows always do)
     list_hover: Callable[[], bool] = lambda: False  # noqa: E731
 
@@ -162,6 +164,7 @@ def state() -> dict[str, Any]:
         "hover": roll.hover_state(S.hover),
         # Legendaries the player has had (owned.py): the "Obtained items only" option shows only these
         "obtained": S.obtained(),
+        "spoiler_free": S.spoiler_free(),
         "owned": sorted(owned.items(char)),
         # The page rebuilds its set when this changes: switching account <-> character must too
         "owned_v": f"{owned.S.version}/{char or ''}",

@@ -100,6 +100,16 @@ obtained_option = BoolOption(
     on_change=_changed,
 )
 
+spoiler_free_option = BoolOption(
+    "Spoiler free",
+    False,
+    description=(
+        "An item you haven't unlocked yet shows only as \"?\": no dark outline of its picture, and no type,"
+        " class or rarity, in a boss's drop list too. Unbeaten bosses show a \"?\" instead of their outline."
+    ),
+    on_change=_changed,
+)
+
 per_char_option = BoolOption(
     "Per-character Kairosdex",
     False,
@@ -213,6 +223,7 @@ dev_options = NestedOption(
 
 screen.S.unlocked = lambda: bool(unlock_option.value)
 screen.S.obtained = lambda: bool(obtained_option.value)
+screen.S.spoiler_free = lambda: bool(spoiler_free_option.value)
 screen.S.list_hover = lambda: bool(list_hover_option.value)
 progress.Mode.per_char = lambda: bool(per_char_option.value)
 
@@ -393,6 +404,7 @@ mod = build_mod(
         open_button,
         open_key,
         obtained_option,
+        spoiler_free_option,
         per_char_option,
         reset_char_button,
         list_hover_option,

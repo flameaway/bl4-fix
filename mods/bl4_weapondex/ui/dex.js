@@ -189,6 +189,23 @@
         for (var i = 0; i < item.bosses.length; i++) if (beaten(item.bosses[i])) return true;
         return false;
     }
+    // "Spoiler free" (a mod option, off by default): a hidden item gives nothing away (no outline,
+    // type, class or rarity: "?" and "???"), and an unbeaten boss shows no outline
+    function spoilerFree() {
+        return !!(state && state.spoiler_free);
+    }
+    function bare(item) {
+        return spoilerFree() && !itemShown(item);
+    }
+    function rarityOf(item) {
+        return bare(item) ? "hidden" : item.rarity.toLowerCase();
+    }
+    // A "?" where a hidden picture would be (Spoiler free)
+    function unknownMark(box) {
+        box.classList.add("bl4dex_unknown");
+        box.appendChild(el("p", "bl4dex_unknown_mark", "?"));
+        return box;
+    }
 
     // Lowercase letters and digits only, so "ol thrash", "olthrash" and "Ol' Thrash" all match
     function norm(text) {
@@ -218,7 +235,8 @@
     }
 
     function itemHaystack(item) {
-        var parts = [item.type, item["class"], item.hero, item.world ? "world drop" : "", item.reward ? "mission reward" : ""];
+        var parts = [item.world ? "world drop" : "", item.reward ? "mission reward" : ""];
+        if (!bare(item)) parts.push(item.type, item["class"], item.hero);
         if (itemShown(item)) {
             parts.push(item.name, item.maker, item.rarity);
             (item.bosses || []).forEach(function (id) {
@@ -237,7 +255,7 @@
         return !(view.onlyBoss && !beaten(b.id));
     }
     function itemFiltered(item) {
-        if (view.type && item.type !== view.type) return false;
+        if (view.type && (item.type !== view.type || bare(item))) return false;
         if (view.maker && (item.maker !== view.maker || !itemShown(item))) return false;
         return !(view.onlyItem && !itemShown(item));
     }
@@ -264,13 +282,20 @@
             return itemFiltered(item) && (!words.length || matches(itemHaystack(item), words));
         });
         var by = view.sortItem;
+        // Spoiler free: a hidden item has no type or rarity to sort by (its place would give them away)
+        function rank(item) {
+            return bare(item) ? 1e6 : item.typeRank;
+        }
+        function rarity(item) {
+            return bare(item) ? "" : item.rarity;
+        }
         list.sort(function (a, b) {
             var an = itemShown(a) ? a.name : "~", bn = itemShown(b) ? b.name : "~";
             if (by === "name") return cmp(an, bn);
-            if (by === "maker") return cmp(itemShown(a) ? a.maker || "~" : "~", itemShown(b) ? b.maker || "~" : "~") || a.typeRank - b.typeRank || cmp(an, bn);
-            if (by === "rarity") return cmp(b.rarity, a.rarity) || a.typeRank - b.typeRank || cmp(an, bn);
+            if (by === "maker") return cmp(itemShown(a) ? a.maker || "~" : "~", itemShown(b) ? b.maker || "~" : "~") || rank(a) - rank(b) || cmp(an, bn);
+            if (by === "rarity") return cmp(rarity(b), rarity(a)) || rank(a) - rank(b) || cmp(an, bn);
             if (by === "chance") return b.best - a.best || cmp(an, bn);
-            return a.typeRank - b.typeRank || cmp(an, bn);
+            return rank(a) - rank(b) || cmp(an, bn);
         });
         return list;
     }
@@ -304,8 +329,9 @@
     // A boss's picture: its photo, a dark silhouette of it until it's beaten, or an empty frame.
     // small: a thumbnail (its 128 px copy)
     function portrait(b, cls, small) {
-        var box = el("div", cls + (hasPicture(b.id) ? "" : " bl4dex_no_picture"));
-        if (hasPicture(b.id)) {
+        var pictured = hasPicture(b.id) && (bossShown(b) || !spoilerFree());
+        var box = el("div", cls + (pictured ? "" : " bl4dex_no_picture"));
+        if (pictured) {
             var img = el("div", "bl4dex_picture" + (bossShown(b) ? "" : " bl4dex_silhouette"));
             img.style.backgroundImage = bossPictureUrl(b.id, small);
             box.appendChild(img);
@@ -325,7 +351,7 @@
 
     // An item's picture (the inventory's own thumbnail render), dark until the item is found
     function itemPicture(item, shown) {
-        var url = itemPictureFor(item, shown);
+        var url = bare(item) ? null : itemPictureFor(item, shown);
         var box = el("div", "bl4dex_item_picture" + (url ? "" : " bl4dex_no_picture"));
         if (url) {
             var img = el("div", "bl4dex_picture" + (shown ? "" : " bl4dex_silhouette"));
@@ -884,10 +910,10 @@
         var cls = "bl4dex_entry bl4dex_item_entry" + (shown ? "" : " bl4dex_locked") + (current.items === item.key ? " bl4dex_selected" : "");
         var e = el("div", cls);
         ui.entries[item.key] = e;
-        e.appendChild(el("div", "bl4dex_rarity_bar bl4dex_rarity_" + item.rarity.toLowerCase()));
+        e.appendChild(el("div", "bl4dex_rarity_bar bl4dex_rarity_" + rarityOf(item)));
         var main = el("div", "bl4dex_entry_main");
         var nameRow = el("div", "bl4dex_entry_name_row");
-        nameRow.appendChild(el("p", "bl4dex_entry_name bl4dex_name_" + item.rarity.toLowerCase(), shown ? item.name : "???"));
+        nameRow.appendChild(el("p", "bl4dex_entry_name bl4dex_name_" + rarityOf(item), shown ? item.name : "???"));
         miniItem(nameRow, item, shown);
         main.appendChild(nameRow);
         main.appendChild(el("p", "bl4dex_entry_sub", typeLine(item, shown)));
@@ -906,10 +932,14 @@
         ui.list.appendChild(e);
     }
 
-    // The item's own small picture, right of its name (a silhouette until found)
+    // The item's own small picture, right of its name (a silhouette until found; Spoiler free: "?")
     function miniItem(row, item, shown) {
         var url = itemPictureUrl(item.key, true);
         if (!url) return;
+        if (bare(item)) {
+            row.appendChild(unknownMark(el("div", "bl4dex_mini_item")));
+            return;
+        }
         var pic = el("div", "bl4dex_mini_item" + (shown ? "" : " bl4dex_silhouette"));
         pic.style.backgroundImage = url;
         row.appendChild(pic);
@@ -1016,6 +1046,7 @@
     // endregion
 
     function typeLine(item, shown) {
+        if (bare(item)) return "???";
         var parts = [item.type];
         if (item["class"]) parts.push(item["class"] + (item.hero ? " (" + item.hero + ")" : ""));
         if (shown && item.maker) parts.push(item.maker);
@@ -1086,16 +1117,18 @@
         b.drops.forEach(function (drop) {
             var item = data.itemByKey[drop.item];
             if (!item) return;
-            // Not obtained yet ("Obtained items only" option): "???" and its silhouette
+            // Not obtained yet ("Obtained items only" option): "???" and its silhouette (Spoiler free:
+            // "?", and "???" for its type too)
             var got = itemShown(item);
             var row = el("div", "bl4dex_row bl4dex_row_link" + (got ? "" : " bl4dex_locked"));
             // The item's inventory picture left of its name
             var thumb = el("div", "bl4dex_drop_thumb" + (got ? "" : " bl4dex_silhouette"));
             var thumbUrl = itemPictureUrl(item.key, true);
-            if (thumbUrl) thumb.style.backgroundImage = thumbUrl;
+            if (bare(item)) thumb = unknownMark(el("div", "bl4dex_drop_thumb"));
+            else if (thumbUrl) thumb.style.backgroundImage = thumbUrl;
             row.appendChild(thumb);
             var name = el("div", "bl4dex_cell_name");
-            name.appendChild(el("p", "bl4dex_cell_title bl4dex_name_" + item.rarity.toLowerCase(), got ? item.name : "???"));
+            name.appendChild(el("p", "bl4dex_cell_title bl4dex_name_" + rarityOf(item), got ? item.name : "???"));
             name.appendChild(el("p", "bl4dex_cell_sub", typeLine(item, true)));
             row.appendChild(name);
             row.appendChild(el("p", "bl4dex_cell_num", pct(drop.uvh0)));
@@ -1554,8 +1587,8 @@
             ui.rollView = rv;
         }
         var names = el("div", "bl4dex_item_names");
-        names.appendChild(el("p", "bl4dex_detail_no", item.rarity.toUpperCase()));
-        names.appendChild(el("p", "bl4dex_detail_title bl4dex_name_" + item.rarity.toLowerCase(), shown ? item.name : "???"));
+        names.appendChild(el("p", "bl4dex_detail_no", bare(item) ? "???" : item.rarity.toUpperCase()));
+        names.appendChild(el("p", "bl4dex_detail_title bl4dex_name_" + rarityOf(item), shown ? item.name : "???"));
         names.appendChild(el("p", "bl4dex_detail_meta", typeLine(item, shown)));
         if (shown) {
             // Its unique effect, then its red text (the card on the right repeats both)
@@ -1809,7 +1842,7 @@
         }
         if (!view.open) return;
         // Only the shown item's roll changed: patch its card in place (patchRoll), else redraw it all
-        var base = JSON.stringify([next.defeated, next.unlock, next.search, next.typing, next.character, next.outdated, next.fills, next.owned_v, next.obtained, next.uvh, next.trip]);
+        var base = JSON.stringify([next.defeated, next.unlock, next.search, next.typing, next.character, next.outdated, next.fills, next.owned_v, next.obtained, next.spoiler_free, next.uvh, next.trip]);
         var sig = base + "|" + JSON.stringify(next.roll || null);
         if (sig !== dex.sig) {
             var onlyRoll = !!dex.sig && base === dex.sigBase;
