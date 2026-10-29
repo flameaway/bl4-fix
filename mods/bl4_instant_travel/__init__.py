@@ -28,7 +28,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type
 from unrealsdk.unreal import BoundFunction, FGameDataHandle, UObject, WeakPointer, WrappedStruct
 
-from . import land, stations
+from . import health, land, stations
 
 try:
     from bl4_direct import coop
@@ -174,6 +174,10 @@ def _tick(*_: Any) -> None:
     if not S.checked:
         S.checked = True
         stations.start_check(GAME_DIR)  # on a worker thread
+    try:
+        health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
+    except Exception:  # noqa: BLE001 - never let it break the game's tick
+        pass
     if not S.queue and not land.S.settling:
         return
     try:

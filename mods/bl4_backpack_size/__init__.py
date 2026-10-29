@@ -23,7 +23,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import limits
+from . import health, limits
 
 try:
     from bl4_direct import coop
@@ -137,6 +137,7 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
         return
     _next_check = now + INTERVAL
     try:
+        health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
         if coop is not None and coop.is_client():
             if coop.host_has(FEATURE) and _Co.host_sizes is not None:
                 limits.apply(_Co.host_sizes)

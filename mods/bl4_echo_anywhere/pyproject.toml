@@ -1,6 +1,6 @@
 [project]
 name = "BL4 ECHO Anywhere"
-version = "0.1.1"
+version = "0.1.2"
 description = "Open the ECHO menu at any time, even when the game normally won't let you."
 authors = [{ name = "flame" }]
 

@@ -24,7 +24,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import native
+from . import health, native
 
 __version__ = "0.1.1"
 __version_info__ = (0, 1, 1)
@@ -208,6 +208,10 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
     if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
         return
     _ticked_at = started
+    try:
+        health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
+    except Exception:  # noqa: BLE001 - never let it break the game's tick
+        pass
     pc = get_pc(possibly_loading=True)
     if pc is None or pc.Pawn is None:
         return

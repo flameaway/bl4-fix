@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Backpack Size"
-version = "0.2.0"
+version = "0.2.1"
 description = "Set how many items your backpack, bank and Lost Loot hold."
 authors = [{ name = "flame" }]
 
