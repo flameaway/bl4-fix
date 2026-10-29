@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Mod Profiler"
+version = "0.1.0"
+description = "Benchmarks every loaded mod (other modders' too) for a few seconds of play: Python time per frame, worst calls, background threads, frame times. Results on its Mod Menu page and in a text report."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]
