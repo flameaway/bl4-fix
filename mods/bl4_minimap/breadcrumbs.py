@@ -28,6 +28,8 @@ from unrealsdk.unreal import UObject, WeakPointer
 from .objectives import _read
 
 NODE_SIZE = 0x38
+# A node's position (3 doubles at +8) and its on/off byte (+0x21), read for every node at once
+NODE = struct.Struct("<8x3d1xB" + f"{NODE_SIZE - 0x22}x")
 NODES_OFFSET = 0x38  # TArray<node> in BreadcrumbRuntimeGraph
 MAX_NODES = 100000
 LINKS_PER_CALL = 300  # link lists read per call while loading (~15 us each)
@@ -38,8 +40,18 @@ REPLAN_MIN_S = 1.0
 # like the Speakeasy have no nodes (the nearest was 686 m away). The ECHO map's route is used there.
 OFF_GRAPH = 10000.0
 FLAGS_REFRESH_S = 5.0  # nodes switch on and off with mission progress
+PRELOAD_RETRY_S = 1.0
 GRID = 5000.0  # world units per cell of the nearest-node lookup grid
 MAX_RINGS = 40  # cells around the start the nearest-node lookup searches (200 m)
+# The way back onto a route you stepped off (`reconnect`): a search this far around you (world units)
+# and over at most this many nodes. A whole plan across World_P took 5 ms typically, 31 ms at worst
+# (offline, its 11966 nodes), too slow to redo as often as you leave the line.
+RECONNECT_RADIUS = 30000.0
+RECONNECT_MAX_NODES = 800
+RECONNECT_OFF = 1000.0  # further than this from the way back, look for a new one
+RECONNECT_MIN_S = 0.5
+BACK_CHECK_POINTS = 60  # the part of the way back checked each update (you're near its start)
+ON_NODE = 100.0  # a route point this close to a node is that node (the map's line runs through them)
 
 
 class Breadcrumbs:
@@ -50,7 +62,7 @@ class Breadcrumbs:
     nodes_addr = 0
     count = 0
     pos: list[tuple[float, float, float]] = []  # noqa: RUF012
-    enabled: list[bool] = []  # noqa: RUF012
+    enabled: bytes = b""  # per node: 0 = switched off
     links: list[list[int]] = []  # noqa: RUF012
     grid: dict[tuple[int, int], list[int]] = {}  # noqa: RUF012  # cell -> nodes
     loaded = 0  # nodes whose links are read
@@ -61,16 +73,22 @@ class Breadcrumbs:
     planned_at = 0.0
     planned_from: tuple[float, float, float] = (0.0, 0.0, 0.0)
     reaches_goal = False  # the route's last node is near the goal (not just the node nearest it)
+    preload_at = 0.0  # `preload`: look for a missing graph again at this time
+    # `reconnect`'s last answer: (the route it was for, the way, when)
+    back_line: Any = None
+    back_way: list[tuple[float, float]] | None = None
+    back_at = 0.0
 
     @classmethod
     def clear(cls) -> None:
         cls.graph = WeakPointer()
         cls.world = ""
         cls.count = cls.loaded = 0
-        cls.pos, cls.enabled, cls.links, cls.grid = [], [], [], {}
+        cls.pos, cls.enabled, cls.links, cls.grid = [], b"", [], {}
         cls.route, cls.goal = [], None
         cls.flags_at = cls.planned_at = 0.0
         cls.reaches_goal = False
+        cls.back_line, cls.back_way, cls.back_at = None, None, 0.0
 
     @classmethod
     def _fail(cls, why: str) -> None:
@@ -80,20 +98,24 @@ class Breadcrumbs:
         cls.route = []
 
     @classmethod
-    def _read_nodes(cls) -> bool:
-        """Positions and flags of every node (one read)."""
+    def _read_nodes(cls, *, flags_only: bool = False) -> bool:
+        """
+        Positions and flags of every node (one read). flags_only: just the on/off bytes, for the
+        refresh every FLAGS_REFRESH_S (positions don't move). Both run in C, not per node in Python:
+        a loop over World_P's 11966 nodes took ~20 ms, a hitch every 5 s (Mod Profiler, 2026-10-29).
+        """
         blob = _read(cls.nodes_addr, cls.count * NODE_SIZE) if cls.count else b""
         if blob is None:
             return False
-        pos, enabled = [], []
-        for k in range(cls.count):
-            x, y, z = struct.unpack_from("<3d", blob, k * NODE_SIZE + 8)
-            if not all(v == v and abs(v) < 1e7 for v in (x, y, z)):  # noqa: PLR0124 - NaN check
+        enabled = blob[0x21::NODE_SIZE]  # the +0x21 byte of each node
+        if not flags_only:
+            pos = [row[:3] for row in NODE.iter_unpack(blob)]
+            # NaN fails the comparison too
+            if not all(map((1e7).__gt__, map(abs, (v for p in pos for v in p)))):
                 cls._fail("node positions look wrong")
                 return False
-            pos.append((x, y, z))
-            enabled.append(blob[k * NODE_SIZE + 0x21] != 0)
-        cls.pos, cls.enabled = pos, enabled
+            cls.pos = pos
+        cls.enabled = enabled
         cls.flags_at = time.monotonic()
         return True
 
@@ -148,8 +170,25 @@ class Breadcrumbs:
                 cls._build_grid()
             return False
         if time.monotonic() - cls.flags_at > FLAGS_REFRESH_S:
-            cls._read_nodes()
+            cls._read_nodes(flags_only=True)
         return True
+
+    @classmethod
+    def preload(cls, pc: UObject, world_name: str) -> None:
+        """
+        Reads the graph ahead of need, a part per call. It was read only once a route was asked
+        for: World_P's 11966 nodes take ~40 calls, so a pin set just before closing the map had no
+        line for seconds (2026-10-29). Looks for a missing graph at most once a second.
+        """
+        if cls.broken:
+            return
+        if cls.world == world_name and cls.graph() is not None and cls.loaded >= cls.count:
+            return
+        now = time.monotonic()
+        if cls.world == world_name and cls.graph() is None and now < cls.preload_at:
+            return
+        cls.preload_at = now + PRELOAD_RETRY_S
+        cls._load(pc, world_name)
 
     @classmethod
     def _build_grid(cls) -> None:
@@ -212,14 +251,88 @@ class Breadcrumbs:
         return []
 
     @classmethod
+    def _node_at(cls, x: float, y: float) -> int | None:
+        """The node a route point sits on (within `ON_NODE`), if any."""
+        for k in cls.grid.get((int(x // GRID), int(y // GRID)), ()):
+            nx, ny, _ = cls.pos[k]
+            if abs(nx - x) <= ON_NODE and abs(ny - y) <= ON_NODE:
+                return k
+        return None
+
+    @classmethod
+    def reconnect(cls, me: tuple[float, float, float],
+                  line: list[tuple[float, float]]) -> list[tuple[float, float]] | None:  # fmt: skip
+        """
+        `line` (world x, y, ending at the goal) from where you rejoin it: the way from you over the
+        graph to the node of the line that makes the whole trip shortest (the way there + the rest
+        of the line), then the line on from there. A small search around you instead of a whole new
+        plan; the line ahead stays the map's own. None if the graph isn't read yet, you're off it,
+        or no node of the line is within reach. The answer is kept until you're `RECONNECT_OFF`
+        from it (or the line changes), looked for again at most every `RECONNECT_MIN_S`.
+        """
+        if cls.loaded < cls.count or not cls.grid or len(line) < 2:  # noqa: PLR2004
+            return None
+        now = time.monotonic()
+        if line is cls.back_line and (now - cls.back_at < RECONNECT_MIN_S or (
+            cls.back_way is not None and _off(cls.back_way[:BACK_CHECK_POINTS], me[0], me[1]) <= RECONNECT_OFF
+        )):  # fmt: skip
+            return cls.back_way
+        cls.back_line, cls.back_at, cls.back_way = line, now, None
+        start = cls._nearest(*me)
+        if start is None or math.dist(cls.pos[start], me) > OFF_GRAPH:
+            return None
+        # The line's nodes, with the length of the line left after each
+        left = [0.0] * len(line)
+        for i in range(len(line) - 2, -1, -1):
+            left[i] = left[i + 1] + math.dist(line[i], line[i + 1])
+        on_line: dict[int, int] = {}  # node -> index of its point on the line
+        for i, (x, y) in enumerate(line):
+            if (x - me[0]) ** 2 + (y - me[1]) ** 2 > RECONNECT_RADIUS**2:
+                continue
+            k = cls._node_at(x, y)
+            if k is not None and k not in on_line:
+                on_line[k] = i
+        if not on_line:
+            return None
+        # Dijkstra from you, bounded in reach and size
+        pos, links, enabled = cls.pos, cls.links, cls.enabled
+        cost, came = {start: 0.0}, {}
+        frontier = [(0.0, start)]
+        done = 0
+        best, best_total = None, math.inf
+        while frontier and done < RECONNECT_MAX_NODES:
+            c, k = heapq.heappop(frontier)
+            if c > cost.get(k, math.inf) or c >= best_total:
+                continue
+            done += 1
+            if k in on_line:
+                total = c + left[on_line[k]]
+                if total < best_total:
+                    best, best_total = k, total
+            kx, ky, kz = pos[k]
+            for n in links[k]:
+                if not enabled[n]:
+                    continue
+                nx, ny, nz = pos[n]
+                if (nx - me[0]) ** 2 + (ny - me[1]) ** 2 > RECONNECT_RADIUS**2:
+                    continue
+                nc = c + math.dist((kx, ky, kz), (nx, ny, nz))
+                if nc < cost.get(n, math.inf):
+                    cost[n] = nc
+                    came[n] = k
+                    heapq.heappush(frontier, (nc, n))
+        if best is None:
+            return None
+        way = [best]
+        while way[-1] in came:
+            way.append(came[way[-1]])
+        cls.back_way = [(pos[k][0], pos[k][1]) for k in reversed(way)] + line[on_line[best] + 1 :]
+        return cls.back_way
+
+    @classmethod
     def _off_route(cls, x: float, y: float) -> float:
-        best = math.inf
-        for (ax, ay), (bx, by) in zip(cls.route, cls.route[1:]):
-            dx, dy = bx - ax, by - ay
-            length2 = dx * dx + dy * dy
-            t = 0.0 if length2 == 0 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / length2))
-            best = min(best, (ax + dx * t - x) ** 2 + (ay + dy * t - y) ** 2)
-        return math.sqrt(best)
+        return _off(cls.route, x, y)
+
 
     @classmethod
     def update(cls, pc: UObject, world_name: str, me: tuple[float, float, float],
@@ -252,3 +365,14 @@ class Breadcrumbs:
                 cls.route = [*route, (goal[0], goal[1])] if route else []
                 cls.reaches_goal = math.dist(cls.pos[end], goal) <= OFF_GRAPH
         return cls.route or None
+
+
+def _off(line: list[tuple[float, float]], x: float, y: float) -> float:
+    """How far (x, y) is from a polyline."""
+    best = math.inf
+    for (ax, ay), (bx, by) in zip(line, line[1:]):
+        dx, dy = bx - ax, by - ay
+        length2 = dx * dx + dy * dy
+        t = 0.0 if length2 == 0 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / length2))
+        best = min(best, (ax + dx * t - x) ** 2 + (ay + dy * t - y) ** 2)
+    return math.sqrt(best)

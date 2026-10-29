@@ -152,7 +152,8 @@ rifts_option = BoolOption(
     False,
     description=(
         "Shows rift events (Rift Champions, rift bosses, Digi-Rifts) and the other world events"
-        " whenever there are any, even when you aren't tracking them. A tracked one always shows."
+        " whenever there are any, even when you aren't tracking them, on the rim when they're out of"
+        " range. A tracked one always shows."
     ),
 )
 loot_option = BoolOption(
@@ -295,6 +296,9 @@ class State:
     giver_key: tuple[Any, ...] = ()  # (live givers, map data version) `givers` was made for
     givers: list[dict[str, Any]] = []  # noqa: RUF012  # live mission givers as map icons
     covered: set[str] = set()  # noqa: RUF012  # ECHO-map giver textures the live list stands for
+    route_color = mapdata.DEFAULT_ROUTE_COLOR  # the colour `route` is drawn in (`_route` picks it)
+    events_version = -1  # the map data version `events` was made from
+    events: list[dict[str, Any]] = []  # noqa: RUF012  # the ECHO map's rift / world event icons
 
 
 def _north_yaw(pc: UObject) -> float:
@@ -378,7 +382,8 @@ def _route(pc: UObject, world_name: str, loc: Any, radius: float,
     - the ECHO map's own route (copied while it was open), when it ends at that goal: it's the game's
       own way there. Our plan over the same graph can differ: the game doesn't take the shortest
       way (World_P, 2026-10-28: its route was 2413 m where the shortest over the graph is 1744 m,
-      from the same node), and we don't know its costs;
+      from the same node), and we don't know its costs. It starts where the map was opened, so
+      once you're off it, the way from you to it is planned over the graph (`MapData.joined`);
     - planned live over the level's breadcrumb graph, when it gets there (a new goal, until the map
       is opened again);
     - the ECHO map's route when it leads to that same goal another way: the graph doesn't cover
@@ -391,6 +396,11 @@ def _route(pc: UObject, world_name: str, loc: Any, radius: float,
     data = mapdata.MapData
     spacing, reach = radius / ROUTE_DOTS_PER_RANGE, radius * 1.5
     pins = [m for m in State.markers if m.kind == "waypoint"]
+    # The map colours its line by where it goes (a bounty's was orange, the pin's white-blue,
+    # 2026-10-29). The map's own line keeps its colour; a line we plan gets the map's last colour for
+    # that kind of goal
+    planned_color = data.pin_color if pins else data.mission_color
+    State.route_color = data.route_color
     goal = None
     if pins:
         goal = (pins[0].x, pins[0].y, pins[0].z if pins[0].z is not None else loc.Z)
@@ -399,13 +409,34 @@ def _route(pc: UObject, world_name: str, loc: Any, radius: float,
     if goal is None:
         # Nowhere to go; with live objectives broken the map's copy is all we know
         return data.route_dots(loc.X, loc.Y, spacing, reach) if live is None else []
-    if any((r[-1][0] - goal[0]) ** 2 + (r[-1][1] - goal[1]) ** 2 <= ROUTE_END_SLACK**2 for r in data.routes if r):
+    me = (loc.X, loc.Y, loc.Z)
+    graph = breadcrumbs.Breadcrumbs
+    to_goal = [r for r in data.routes if r and (r[-1][0] - goal[0]) ** 2 + (r[-1][1] - goal[1]) ** 2 <= ROUTE_END_SLACK**2]
+    if to_goal:
+        if data.on_route(loc.X, loc.Y):
+            return data.route_dots(loc.X, loc.Y, spacing, reach)
+        # Off the game's line: the way back onto it ahead of you (a small search, redone as you go)
+        way = graph.reconnect(me, to_goal[0])
+        if way:
+            return data.route_dots(loc.X, loc.Y, spacing, reach, [way])
+        # Too far from it for that: a whole plan from you, joined to the game's line where they meet
+        planned = graph.update(pc, world_name, me, goal)
+        joined = data.joined(planned) if planned else None
+        if joined:
+            return data.route_dots(loc.X, loc.Y, spacing, reach, [joined])
+        if planned and graph.reaches_goal:
+            State.route_color = planned_color
+            return data.route_dots(loc.X, loc.Y, spacing, reach, [planned])
         return data.route_dots(loc.X, loc.Y, spacing, reach)
-    planned = breadcrumbs.Breadcrumbs.update(pc, world_name, (loc.X, loc.Y, loc.Z), goal)
-    if planned and breadcrumbs.Breadcrumbs.reaches_goal:
-        return data.route_dots(loc.X, loc.Y, spacing, reach, [planned])
+    planned = graph.update(pc, world_name, me, goal)
+    if planned and graph.reaches_goal:
+        State.route_color = planned_color
+        # Stepped off it: back onto it ahead (a whole new plan only once you're 40 m off)
+        way = graph.reconnect(me, planned) if not mapdata.near_line(planned, loc.X, loc.Y) else None
+        return data.route_dots(loc.X, loc.Y, spacing, reach, [way or planned])
     if data.routes and _copy_leads_to(goal, pinned=bool(pins), live=live):
         return data.route_dots(loc.X, loc.Y, spacing, reach)
+    State.route_color = planned_color
     return data.route_dots(loc.X, loc.Y, spacing, reach, [planned]) if planned else []
 
 
@@ -646,15 +677,21 @@ def _frame(pc: UObject, full: bool) -> None:
         icons = [
             i for i in icons
             if not mapdata.is_objective(i["texture"]) and not mapdata.is_live(i["texture"])
-            and (rifts or not mapdata.is_rift(i["texture"]))
+            and not mapdata.is_rift(i["texture"])
         ]  # fmt: skip
-        if rifts and shown:
-            # The map's copy of a rift event a live marker already stands for
+        if rifts:
+            # Rift / world events aren't in the game's live waypoint list (World_P 2026-10-29: two
+            # ico_world_events on the map, only contracts listed), so the map's icons become markers
+            # that stay on the rim like objectives (they showed only within range before). Not the
+            # ones a live marker already stands for.
+            if State.events_version != data.version:
+                State.events_version = data.version
+                State.events = [i for i in data.icons if mapdata.is_rift(i["texture"])]
             slack = ROUTE_END_SLACK**2
-            icons = [
-                i for i in icons
-                if not mapdata.is_rift(i["texture"])
-                or not any((i["x"] - x) ** 2 + (i["y"] - y) ** 2 <= slack for x, y, _, _ in shown)
+            State.markers += [
+                markers.Marker("event", i["x"], i["y"], True, i.get("z"), i["texture"])
+                for i in State.events
+                if not any((i["x"] - x) ** 2 + (i["y"] - y) ** 2 <= slack for x, y, _, _ in shown)
             ]  # fmt: skip
         if icons_option.value and not live.broken and live.read_ok:
             icons = _givers(icons, loc.X, loc.Y, radius * 1.5)
@@ -672,7 +709,11 @@ def _frame(pc: UObject, full: bool) -> None:
         if icons_option.value:
             services.Services.scan(pc, str(world.Name), paused)
             State.icons = State.icons + services.Services.near(loc.X, loc.Y, radius * 1.5, State.icons)
+        graph = breadcrumbs.Breadcrumbs
+        before = (graph.world, graph.loaded)
         State.route = _route(pc, str(world.Name), loc, radius, None if live.broken else tracked)
+        if route_option.value and (graph.world, graph.loaded) == before:
+            graph.preload(pc, str(world.Name))  # one part per update, not on top of what _route read
 
     # Icons only need moving when the view moved (or the full update changed what's shown)
     view_key = (round(loc.X), round(loc.Y), round(map_yaw, 1), radius, square, Minimap.size, Minimap.icon_scale)
@@ -690,7 +731,7 @@ def _frame(pc: UObject, full: bool) -> None:
         dz = z - loc.Z
         return 1 if dz > VERTICAL_GAP else -1 if dz < -VERTICAL_GAP else 0
 
-    color = mapdata.MapData.route_color
+    color = State.route_color
     route_items = []
     for x, y in State.route:
         where = place(x, y)

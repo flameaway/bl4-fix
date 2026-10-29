@@ -28,7 +28,7 @@ from typing import Any
 
 import unrealsdk
 from mods_base import SETTINGS_DIR
-from unrealsdk.unreal import UObject
+from unrealsdk.unreal import UObject, WeakPointer
 
 from . import scene
 
@@ -42,6 +42,20 @@ MAP_TO_WORLD = 100.0
 ROUTE_START_SLACK = 5000.0  # world units: a route starting this close to the player is the live one
 ROUTE_END_SLACK = 3000.0  # world units: a route ending this close to the waypoint pin leads to it
 RESNAP_DELAY_S = 0.5  # after the waypoint pin changes with the map open: let it redraw the route
+# While the map is open: look whether its route line changed this often. The game redraws it some
+# time after a pin moves; the one read 0.5 s after the pin change could still be the old line.
+ROUTE_POLL_S = 0.25
+REFIND_S = 1.0  # search for new route actors (find_all, ~10 ms) at most this often, only when needed
+REFIND_FOR_S = 10.0  # ... and only this long after the map opened or the pin moved
+# World units: closer than this to the ECHO map's route, you're on it; further, it was copied from
+# somewhere else and the way from you to it is planned over the graph (`joined`)
+JOIN_SLACK = 1500.0
+CURVE_STEP = 5.0  # map units (5 m) between the points a curved route segment is copied as
+CURVE_MIN_BEND = 1.0  # map units: a segment bending less than this from straight stays one line
+CURVE_MAX_POINTS = 16
+# World units: a route line no longer than this is one the game has reset (as the map closes, its
+# lines all sit at the map's origin for a moment: World_P 2026-10-29)
+EMPTY_ROUTE = 100.0
 PIN_CUSTOM_WAYPOINT = 1
 DEFAULT_ROUTE_COLOR = (0.565, 0.804, 0.859, 1.0)
 # The tracked mission's objective icons on the map: ico_main_mission, ico_side_mission_dlc, a
@@ -119,17 +133,108 @@ def _params(material: UObject | None) -> tuple[dict[str, Any], dict[str, float]]
     return textures, scalars
 
 
+def _name_number(actor: UObject) -> int:
+    """The number in an actor's name (OakMapViewerWaypointPath_2147354118): smaller is newer."""
+    tail = str(actor.Name).rsplit("_", 1)[-1]
+    return int(tail) if tail.isdigit() else 1 << 62
+
+
+def _nearest_on(points: list[tuple[float, float]], x: float, y: float) -> tuple[float, int, float]:
+    """The point of a polyline nearest (x, y): (squared distance, segment, fraction along it)."""
+    best, best_i, best_t = math.inf, 0, 0.0
+    for i, ((ax, ay), (bx, by)) in enumerate(zip(points, points[1:])):
+        dx, dy = bx - ax, by - ay
+        length2 = dx * dx + dy * dy
+        t = 0.0 if length2 == 0 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / length2))
+        d = (ax + dx * t - x) ** 2 + (ay + dy * t - y) ** 2
+        if d < best:
+            best, best_i, best_t = d, i, t
+    return best, best_i, best_t
+
+
+# Per line (by identity): where on it the player was last, and its segment lengths. A whole line
+# was walked twice per update (on it? + where the dots go): 0.35 ms with the curves' 378 points.
+_LINES: dict[int, list[Any]] = {}  # id(line) -> [line, last segment, calls, lengths]
+WINDOW_BACK, WINDOW_AHEAD = 20, 60  # segments searched around the last spot
+FULL_EVERY = 30  # calls between whole-line searches (you might have jumped: a teleport)
+
+
+def _line_info(points: list[tuple[float, float]]) -> list[Any]:
+    info = _LINES.get(id(points))
+    if info is None or info[0] is not points:
+        if len(_LINES) > 32:  # noqa: PLR2004
+            _LINES.clear()
+        lengths = [math.hypot(bx - ax, by - ay) for (ax, ay), (bx, by) in zip(points, points[1:])]
+        info = _LINES[id(points)] = [points, -1, 0, lengths]
+    return info
+
+
+def _nearest_near(points: list[tuple[float, float]], x: float, y: float) -> tuple[float, int, float]:
+    """`_nearest_on`, searching only around where you were on this line last time (mostly)."""
+    info = _line_info(points)
+    info[2] += 1
+    last = info[1]
+    if last < 0 or info[2] % FULL_EVERY == 0:
+        found = _nearest_on(points, x, y)
+    else:
+        lo = max(0, last - WINDOW_BACK)
+        found = _nearest_on(points[lo : last + WINDOW_AHEAD + 2], x, y)
+        found = (found[0], found[1] + lo, found[2])
+    info[1] = found[1]
+    return found
+
+
+def near_line(points: list[tuple[float, float]], x: float, y: float) -> bool:
+    """Whether (x, y) is on a route line (within `JOIN_SLACK`)."""
+    return len(points) >= 2 and _nearest_near(points, x, y)[0] <= JOIN_SLACK**2  # noqa: PLR2004
+
+
+def _curve(start: Any, start_tangent: Any, end: Any, end_tangent: Any) -> list[tuple[float, float]]:
+    """
+    The points after `start` along one spline mesh segment of the map's route (map units). A spline
+    mesh bends along the Hermite curve of its ends and tangents (UE's CubicInterp); the ends alone
+    cut every corner. A segment that's nearly straight stays one line (fewer points per update).
+    """
+    p0, t0 = (start.X, start.Y), (start_tangent.X, start_tangent.Y)
+    p1, t1 = (end.X, end.Y), (end_tangent.X, end_tangent.Y)
+
+    def at(a: float) -> tuple[float, float]:
+        a2, a3 = a * a, a * a * a
+        h00, h10, h01, h11 = 2 * a3 - 3 * a2 + 1, a3 - 2 * a2 + a, -2 * a3 + 3 * a2, a3 - a2
+        return (h00 * p0[0] + h10 * t0[0] + h01 * p1[0] + h11 * t1[0],
+                h00 * p0[1] + h10 * t0[1] + h01 * p1[1] + h11 * t1[1])  # fmt: skip
+
+    mid = at(0.5)
+    bend = math.hypot(mid[0] - (p0[0] + p1[0]) / 2, mid[1] - (p0[1] + p1[1]) / 2)
+    length = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+    if not math.isfinite(bend) or bend < CURVE_MIN_BEND:
+        return [p1]
+    n = max(2, min(CURVE_MAX_POINTS, math.ceil(length / CURVE_STEP)))
+    return [*(at(k / n) for k in range(1, n)), p1]
+
+
 class MapData:
     key: tuple[str, str] | None = None  # (character, world)
     icons: list[dict[str, Any]] = []  # noqa: RUF012  # {"x", "y", "texture", "blip", "pinned"} world units
     routes: list[list[tuple[float, float]]] = []  # noqa: RUF012  # world-unit polylines
     route_pin: tuple[float, float] | None = None  # your waypoint pin when the route was copied (x, y)
-    route_color = DEFAULT_ROUTE_COLOR
+    route_color = DEFAULT_ROUTE_COLOR  # the copied line's colour (the map colours it by mission)
+    # The map's line to your waypoint pin, learned when a copy reaches the pin. A line we plan to the
+    # pin ourselves used `route_color`: the tracked bounty's orange (2026-10-29)
+    pin_color = DEFAULT_ROUTE_COLOR
+    mission_color = DEFAULT_ROUTE_COLOR  # the map's last line to a mission (not to your pin)
     opened_at = 0.0  # when we saw the map open (0: closed)
     snapped = False  # read this opening already
     snap_pin: tuple[float, float, float] | None = None  # the pin when we last read (or None)
     resnap_at = 0.0  # read again at this time (the pin changed with the map open); 0: no
     version = 0  # bumped when icons or routes change
+    paths: list[WeakPointer] = []  # noqa: RUF012  # the open map's route actors
+    route_sig: tuple[Any, ...] = ()  # what the route actors showed when last read (`_signature`)
+    poll_at = 0.0  # next look at the route line while the map is open
+    refind_at = 0.0  # next search for route actors allowed
+    changed_at = 0.0  # when the map opened or the pin last moved
+    join_key: tuple[Any, int] | None = None  # (planned route, version) `joined` last worked out
+    join_result: list[tuple[float, float]] | None = None
 
     @classmethod
     def _path(cls) -> Path:
@@ -146,6 +251,8 @@ class MapData:
             pin = data.get("route_pin")
             cls.route_pin = (float(pin[0]), float(pin[1])) if pin else None
             cls.route_color = tuple(data.get("route_color", DEFAULT_ROUTE_COLOR))
+            cls.pin_color = tuple(data.get("pin_color", DEFAULT_ROUTE_COLOR))
+            cls.mission_color = tuple(data.get("mission_color", cls.route_color))
         except (OSError, ValueError):
             pass
         cls.version += 1
@@ -154,7 +261,8 @@ class MapData:
     def _save(cls) -> None:
         FOLDER.mkdir(parents=True, exist_ok=True)
         tmp = cls._path().with_suffix(".tmp")
-        data = {"icons": cls.icons, "routes": cls.routes, "route_color": cls.route_color, "route_pin": cls.route_pin}
+        data = {"icons": cls.icons, "routes": cls.routes, "route_color": cls.route_color,
+                "pin_color": cls.pin_color, "mission_color": cls.mission_color, "route_pin": cls.route_pin}
         tmp.write_text(json.dumps(data), encoding="utf-8")
         tmp.replace(cls._path())
 
@@ -185,37 +293,12 @@ class MapData:
                     "pinned": scalars.get(str(comp.MaterialPinOpacityParamName), 0.0) > 0.5,
                     "area": bool(comp.bIsAreaComponent),
                 })
-        routes: list[list[tuple[float, float]]] = []
-        for path_actor in unrealsdk.find_all("OakMapViewerWaypointPath", exact=True):
-            if path_actor.Outer is not level or path_actor.bHidden:
-                continue
-            points: list[tuple[float, float]] = []
-            for segment in path_actor.PathSplines:
-                mesh = segment.SplineMesh
-                if mesh is None or not mesh.bVisible:
-                    continue
-                start, end = mesh.GetStartPosition(), mesh.GetEndPosition()
-                if not points:
-                    points.append((start.X * MAP_TO_WORLD, start.Y * MAP_TO_WORLD))
-                points.append((end.X * MAP_TO_WORLD, end.Y * MAP_TO_WORLD))
-                material = segment.Material
-                for p in getattr(material, "VectorParameterValues", []):
-                    if str(p.ParameterInfo.Name) == "LineColor":
-                        c = p.ParameterValue
-                        cls.route_color = (c.R, c.G, c.B, 1.0)
-            if len(points) >= 2:  # noqa: PLR2004
-                routes.append(points)
-        # The live route starts where the player stands; paths left from earlier openings start
-        # elsewhere (keeping those drew two routes)
-        pawn = pc.Pawn if pc is not None else None
-        if pawn is not None and routes:
-            loc = pawn.K2_GetActorLocation()
-            live = [r for r in routes if (r[0][0] - loc.X) ** 2 + (r[0][1] - loc.Y) ** 2 <= ROUTE_START_SLACK**2]
-            routes = live or routes
-        if pin is not None and routes:
-            # With a pin the map routes to it; a path still left from before the pin leads elsewhere
-            to_pin = [r for r in routes if (r[-1][0] - pin[0]) ** 2 + (r[-1][1] - pin[1]) ** 2 <= ROUTE_END_SLACK**2]
-            routes = to_pin or routes
+        actors = [a for a in unrealsdk.find_all("OakMapViewerWaypointPath", exact=True) if a.Outer is level]
+        cls.paths = [WeakPointer(a) for a in actors]
+        cls.route_sig = cls._signature(actors)
+        routes = cls._read_routes(actors, pc, pin)
+        if routes is None:
+            routes = cls.routes  # lines the game has just reset: keep what we read before
         if icons:
             cls.icons = icons
         cls.routes = routes
@@ -223,6 +306,68 @@ class MapData:
         cls._save()
         cls.version += 1
         scene.log(f"map data: {len(icons)} icons, {len(routes)} route(s)")
+
+    @classmethod
+    def _read_routes(cls, actors: list[UObject], pc: UObject | None,
+                     pin: tuple[float, float, float] | None) -> list[list[tuple[float, float]]] | None:  # fmt: skip
+        """
+        The map's live route line (world units), as a list of one (or none), and its colour.
+
+        The map keeps every line it drew while it's open (World_P 2026-10-29: 6 at once, 4 white-blue
+        to the tracked bounty and 2 orange from a mission before), all visible to us. The live one is
+        the newest: each redraw makes a new actor, and the game names it with a smaller number than
+        the one before (2147391455 -> 2147362869 -> 2147354118 over the day; the newest was the line
+        the map showed). The pin can't pick it: a pin moved or removed on the open map isn't in
+        `PinnedDatas` until the map closes, so the line to the old pin was kept (and its colour).
+        None when every line read was one the game had reset (all at the map's origin, as the map
+        closes); keep the previous copy then.
+        """
+        lines: list[tuple[int, list[tuple[float, float]], tuple[float, float, float, float] | None]] = []
+        reset = 0
+        for path_actor in actors:
+            if path_actor.bHidden:
+                continue
+            points: list[tuple[float, float]] = []
+            color = None
+            for segment in path_actor.PathSplines:
+                mesh = segment.SplineMesh
+                if mesh is None or not mesh.bVisible:
+                    continue
+                start, end = mesh.GetStartPosition(), mesh.GetEndPosition()
+                if not points:
+                    points.append((start.X * MAP_TO_WORLD, start.Y * MAP_TO_WORLD))
+                bent = _curve(start, mesh.GetStartTangent(), end, mesh.GetEndTangent())
+                points.extend((x * MAP_TO_WORLD, y * MAP_TO_WORLD) for x, y in bent)
+                if color is None:
+                    for p in getattr(segment.Material, "VectorParameterValues", []):
+                        if str(p.ParameterInfo.Name) == "LineColor":
+                            c = p.ParameterValue
+                            color = (c.R, c.G, c.B, 1.0)
+            if len(points) < 2:  # noqa: PLR2004
+                continue
+            if max(abs(x - points[0][0]) + abs(y - points[0][1]) for x, y in points) < EMPTY_ROUTE:
+                reset += 1
+                continue
+            lines.append((_name_number(path_actor), points, color))
+        if reset and not lines:
+            return None
+        if not lines:
+            return []
+        # The live line starts where the player stands (the map was opened from here)
+        pawn = pc.Pawn if pc is not None else None
+        if pawn is not None:
+            loc = pawn.K2_GetActorLocation()
+            here = [ln for ln in lines if (ln[1][0][0] - loc.X) ** 2 + (ln[1][0][1] - loc.Y) ** 2 <= ROUTE_START_SLACK**2]
+            lines = here or lines
+        _, points, color = min(lines, key=lambda ln: ln[0])  # the newest
+        if color is not None:
+            cls.route_color = color
+            at_pin = pin is not None and (points[-1][0] - pin[0]) ** 2 + (points[-1][1] - pin[1]) ** 2 <= ROUTE_END_SLACK**2
+            if at_pin:
+                cls.pin_color = color
+            else:
+                cls.mission_color = color
+        return [points]
 
     @classmethod
     def sync(cls, pc: UObject, world_name: str) -> None:
@@ -241,21 +386,74 @@ class MapData:
             cls.opened_at = 0.0
             cls.snapped = False
             cls.resnap_at = 0.0
+            cls.paths, cls.route_sig = [], ()  # its actors go with it
             return
         if cls.opened_at == 0.0:
-            cls.opened_at = now
+            cls.opened_at = cls.changed_at = now
         pin = pin_location(pc, world_name)
         if not cls.snapped and now - cls.opened_at >= SNAPSHOT_DELAY_S:
             cls.snapped = True
             cls.snap_pin = pin
             cls._snapshot(pc, pin)
+            cls.poll_at = now + ROUTE_POLL_S
         elif cls.snapped and pin != cls.snap_pin:
             # A pin placed, moved or removed on the open map: it redraws its route; read it again
             cls.snap_pin = pin
             cls.resnap_at = now + RESNAP_DELAY_S
+            cls.changed_at = now
         elif cls.resnap_at and now >= cls.resnap_at:
             cls.resnap_at = 0.0
             cls._snapshot(pc, pin)
+            cls.poll_at = now + ROUTE_POLL_S
+        elif cls.snapped and now >= cls.poll_at:
+            cls.poll_at = now + ROUTE_POLL_S
+            cls._poll_route(pc, pin, now)
+
+    @staticmethod
+    def _signature(actors: list[UObject]) -> tuple[Any, ...]:
+        """Each shown route's segment count, start and end: a cheap look at whether it changed."""
+        sig = []
+        for actor in actors:
+            if actor.bHidden:
+                continue
+            shown = [s.SplineMesh for s in actor.PathSplines if s.SplineMesh is not None and s.SplineMesh.bVisible]
+            if shown:
+                start, end = shown[0].GetStartPosition(), shown[-1].GetEndPosition()
+                sig.append((len(shown), round(start.X), round(start.Y), round(end.X), round(end.Y)))
+        return tuple(sig)
+
+    @classmethod
+    def _poll_route(cls, pc: UObject, pin: tuple[float, float, float] | None, now: float) -> None:
+        """
+        While the map is open: copy its route line again once it changed. After a pin moves the game
+        redraws the line later than our re-read 0.5 s on, sometimes (user report 2026-10-29: the
+        minimap only got the new line when they stayed in the map a while, or not at all).
+        """
+        actors = [a for a in (w() for w in cls.paths) if a is not None]
+        reaches_pin = pin is None or any(
+            (r[-1][0] - pin[0]) ** 2 + (r[-1][1] - pin[1]) ** 2 <= ROUTE_END_SLACK**2 for r in cls.routes if r
+        )
+        if (not actors or not reaches_pin) and now >= cls.refind_at and now - cls.changed_at <= REFIND_FOR_S:
+            # The line may be drawn by an actor that wasn't there at the last read
+            cls.refind_at = now + REFIND_S
+            viewer = scene.Viewer.get()
+            if viewer is None:
+                return
+            level = viewer.Outer
+            actors = [a for a in unrealsdk.find_all("OakMapViewerWaypointPath", exact=True) if a.Outer is level]
+            cls.paths = [WeakPointer(a) for a in actors]
+        sig = cls._signature(actors)
+        if sig == cls.route_sig:
+            return
+        cls.route_sig = sig
+        routes = cls._read_routes(actors, pc, pin)
+        if routes is None or routes == cls.routes:
+            return
+        cls.routes = routes
+        cls.route_pin = (pin[0], pin[1]) if pin is not None else None
+        cls._save()
+        cls.version += 1
+        scene.log(f"map data: route redrawn {now - cls.changed_at:.1f} s after the map opened / the pin moved")
 
     @classmethod
     def route_dots(cls, x: float, y: float, spacing: float, reach: float,
@@ -271,15 +469,9 @@ class MapData:
         for points in cls.routes if routes is None else routes:
             if len(points) < 2:  # noqa: PLR2004
                 continue
-            lengths = [math.hypot(bx - ax, by - ay) for (ax, ay), (bx, by) in zip(points, points[1:])]
+            lengths = _line_info(points)[3]
             # The point of the route nearest the player: the route goes on from there
-            best, best_i, best_t = math.inf, 0, 0.0
-            for i, length in enumerate(lengths):
-                (ax, ay), (bx, by) = points[i], points[i + 1]
-                t = 0.0 if length == 0 else max(0.0, min(1.0, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / length**2))
-                d = (ax + (bx - ax) * t - x) ** 2 + (ay + (by - ay) * t - y) ** 2
-                if d < best:
-                    best, best_i, best_t = d, i, t
+            best, best_i, best_t = _nearest_near(points, x, y)
             (ax, ay), (bx, by) = points[best_i], points[best_i + 1]
             px, py = ax + (bx - ax) * best_t, ay + (by - ay) * best_t
             # Lead-in: from the player towards the route, when off it (only the part in range: the
@@ -308,6 +500,38 @@ class MapData:
                     break  # far off: the rest won't come back in range soon
                 along += spacing
         return dots
+
+    @classmethod
+    def on_route(cls, x: float, y: float) -> bool:
+        """Whether (x, y) is on the ECHO map's copied route (within `JOIN_SLACK`)."""
+        return any(near_line(r, x, y) for r in cls.routes)
+
+    @classmethod
+    def joined(cls, planned: list[tuple[float, float]]) -> list[tuple[float, float]] | None:
+        """
+        `planned` (your route over the graph) up to where it meets the ECHO map's copied route, then
+        the copy on to the goal; None if they never meet. The copy is the game's own way, but from
+        where the map was opened: walk away from it and only a straight line led back to it (World_P
+        2026-10-29: copied 208 m from the player; the game re-plans from where you are). Worked out
+        once per planned route and copy (~60 x 80 segment checks).
+        """
+        key = (planned, cls.version)
+        if cls.join_key is not None and cls.join_key[0] is planned and cls.join_key[1] == cls.version:
+            return cls.join_result
+        result = None
+        for copy in cls.routes:
+            if len(copy) < 2:  # noqa: PLR2004
+                continue
+            for k, (x, y) in enumerate(planned):
+                d, i, t = _nearest_on(copy, x, y)
+                if d <= JOIN_SLACK**2:
+                    (ax, ay), (bx, by) = copy[i], copy[i + 1]
+                    result = [*planned[: k + 1], (ax + (bx - ax) * t, ay + (by - ay) * t), *copy[i + 1 :]]
+                    break
+            if result:
+                break
+        cls.join_key, cls.join_result = key, result
+        return result
 
     @classmethod
     def objective_texture(cls) -> str | None:

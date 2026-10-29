@@ -71,6 +71,8 @@ MARKER_LOOKS = {
     "friend_class": (DOT_TEXTURE, 36.0, (1, 1, 1, 1)),
     "waypoint": (_DISCOVERY + "ico_Custom_Waypoint.ico_Custom_Waypoint", 40.0, (1, 1, 1, 1)),
     "objective": (_DISCOVERY + "ico_main_mission.ico_main_mission", 40.0, (1, 1, 1, 1)),
+    # A rift / world event from the ECHO map (its texture is the map's icon for it)
+    "event": (_DISCOVERY + "ico_world_events.ico_world_events", 36.0, (1, 1, 1, 1)),
     "legendary": (_DISCOVERY + "ico_misc_legendaries.ico_misc_legendaries", 34.0, (1, 1, 1, 1)),
     "pearl": ("/Game/DLC/Common/uiresources/dlc_rarity_pips/assets/ico_misc_pearl.ico_misc_pearl", 34.0, (1, 1, 1, 1)),
 }

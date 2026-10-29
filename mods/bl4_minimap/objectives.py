@@ -69,12 +69,13 @@ MISSION_TYPES = (
     "DigispaceBoss", "Takedown", "Takedown_Hardcore", "Takedown_Timer", "FuelSiphon", "TedioreGrotto",
     "TedioreLockdown", "Airship", "Meteor", "RiftBoss", "DahlBunker",
 )  # fmt: skip
-# The waypoint's own +0x40 holds flags. With three accepted bounties listed (World_P, 2026-10-28) the
-# tracked one (where the ECHO map's route ended, the only one on the compass) read 0 there and the
-# other two 4; mission givers 0 (one 12). So 4 = a mission you have but aren't tracking (one sample;
-# the tracked one also read +0x44 = 0x20 and +0xD8 = 1, the others 0).
-WAYPOINT_FLAGS = 0x40
-FLAG_UNTRACKED = 0x4
+# The waypoint's own +0x44 holds flags; 0x20 = the mission you're tracking. Two samples, World_P:
+# 2026-10-28 three accepted bounties, the tracked one (where the ECHO map's route ended, the only one
+# on the compass) read 0x20 there and +0xD8 = 1, the others 0 and 0. 2026-10-29 two bounties, the
+# same again. (+0x40 bit 4 was used first: 0 on the tracked one the first time, but 4 on both the
+# second, which hid the tracked bounty and its route.)
+WAYPOINT_FLAGS = 0x44
+FLAG_TRACKED = 0x20
 MAX_COORD = 2e7  # world units: anything further out isn't a position
 SAME_SPOT = 500.0  # waypoints closer than this (5 m) show as one
 
@@ -291,7 +292,7 @@ class Objectives:
                 points.append(where)
                 objective = struct.unpack_from("<Q", data, 0)[0] == cls.objective_vtable
                 types.append(cls.type_names.get(data[DATA_TYPE : DATA_TYPE + 8], "") if objective else "")
-                other = bool(struct.unpack_from("<I", head, WAYPOINT_FLAGS)[0] & FLAG_UNTRACKED)
+                other = not struct.unpack_from("<I", head, WAYPOINT_FLAGS)[0] & FLAG_TRACKED
                 untracked.append(other)
                 found = data_kind if data_kind in (KIND_SIDE, KIND_MAIN) else 0
                 if other:
