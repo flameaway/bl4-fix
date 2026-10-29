@@ -9,8 +9,8 @@
 //
 //     [T] Reroll Legendary (100 Eridium)   a fresh roll of the whole item (after asking)
 //
-// The BL4 Mod Menu runs this file in the game's menu page (its extensions.js) and runs it again
-// when it changes, so it tears its last copy down first. Python (bl4_reroll/card.py) does the
+// The BL4 UI Link (or, until its pak loads, the BL4 Mod Menu) runs this file in the game's menu
+// page and runs it again when it changes, so it tears its last copy down first. Python (bl4_reroll/card.py) does the
 // work: we tell it which card is showing (the card has no item id, so we send what it shows: name,
 // level, rarity, modifier texts) and it finds the backpack item, reads the keys from Windows (no
 // key events reach this page) and rerolls. Its state, polled through GET /ext?k=reroll, says
@@ -22,12 +22,13 @@
 //
 // To know which item a card is, Python also sends every rerollable item's card details, and we
 // match them here, drawing the prompts and highlights from the card's own update (like the
-// Detailed Item Cards mod) inside the card's layout. The game's rows are never moved; they get a
-// class for the highlight, their text is hidden while a reel covers them, and only the slot
-// machine is drawn in our own layer on top of the card.
+// Detailed Item Cards mod) inside the card's layout. The game's rows are never moved in the page
+// (its data binding owns them); they get a class for the highlight, their text is hidden while a
+// reel covers them, after a reroll they may be shifted with a transform to keep the card's order
+// (see "Keeping the card's order"), and only the slot machine is drawn in our own layer on top.
 
 (function () {
-    var ns = window.bl4ModMenu;
+    var ns = (typeof bl4linkNs !== "undefined" && bl4linkNs) || window.bl4ModMenu;
     if (!ns || !ns.ext) return;
     var ext = ns.ext;
     var KEY = "reroll";
@@ -191,14 +192,27 @@
             rarity: String(d.rarityident || ""),
             type: d.itemtype,
             banner: String(d.bannertype || ""),
-            secondary: list(d.secondary_stat_entries).map(function (e) { return String(e.value || ""); }),
+            // In the order the card shows them (which may be kept from before a reroll)
+            secondary: shownOrder(card, gameTexts(card)),
             // Class mod skills: "<graph>,<node>" and "+N", to tell apart mods with the same stats
             skills: list(d.primary_stat_entries).map(function (e) { return [String(e.loc_text || ""), String(e.value || "")]; }),
         };
     }
 
-    function rows(card) {
+    // The modifier rows in the game's order
+    function gameRows(card) {
         return card.querySelectorAll(".item_card_secondary_stats_enhance");
+    }
+
+    function gameTexts(card) {
+        var d = card && card.DataModel;
+        return d ? list(d.secondary_stat_entries).map(function (e) { return String(e.value || ""); }) : [];
+    }
+
+    // The modifier rows top to bottom as the card shows them: every index into rows (Python's
+    // line rows, the pick, the reels) counts in this order
+    function rows(card) {
+        return shownOrder(card, gameRows(card));
     }
 
     function rowText(row) {
@@ -322,9 +336,9 @@
         return out;
     }
 
-    // As card.py's _name_key: letters and digits only
-    function nameKey(text) {
-        return String(text || "").replace(TAGS, " ").toLowerCase().replace(/[^a-z0-9]/g, "");
+    // As card.py's _name_words: lowercase words, no markup
+    function nameWords(text) {
+        return String(text || "").replace(TAGS, " ").toLowerCase().split(/\s+/).filter(function (w) { return w; });
     }
 
     function sameSkills(a, b) {
@@ -362,19 +376,145 @@
         return found[0];
     }
 
-    // A legendary / pearl: the backpack legendary with its name, level and equipped state
+    // A legendary / pearl: the backpack legendary with its name, level and equipped state. The
+    // card shows rolled prefixes in front of the name ("Jobbed Down-Bad Ripple"): drop leading
+    // words until it's one of the item's names (as card.py, and the Detailed Item Cards mod)
     function matchLegend(info) {
-        var name = nameKey(info.name);
+        var words = nameWords(info.name);
+        var tails = {};
+        for (var w = 0; w < words.length; w++) tails[words.slice(w).join(" ")] = true;
         var level = firstNumber(info.level);
         var equipped = info.banner === "equipped";
         var found = [];
         state.items.forEach(function (item) {
-            if (item.kind !== "legendary" || item.level !== level || item.equipped !== equipped || !item.name) return;
-            if (name === item.name || (item.name.length >= 4 && name.indexOf(item.name) >= 0)) found.push({ item: item, rows: [] });
+            if (item.kind !== "legendary" || item.level !== level || item.equipped !== equipped) return;
+            for (var a = 0; a < item.aliases.length; a++) {
+                if (tails[item.aliases[a]]) {
+                    found.push({ item: item, rows: [] });
+                    return;
+                }
+            }
         });
         if (!found.length) return null;
         for (var i = 1; i < found.length; i++) if (found[i].item.serial !== found[0].item.serial) return { ambiguous: true };
         return found[0];
+    }
+
+    // endregion
+    // region Keeping the card's order
+    //
+    // The game sorts a card's modifiers by each stat's priority (ui_stat sortingpriority: Gun
+    // Damage 1, Assault Rifle Equip Speed 12.1, ...), so once a reroll changes the item the new
+    // modifier can jump to another row, and the picked box with it (player report 2026-10-28).
+    // While the card stays on the rerolled item we keep every modifier in the row it was in when
+    // the roll started: the game's rows are shifted with a transform (moving them in the page
+    // would fight its data binding), and everything we count in rows uses that shown order.
+    // Hovering something else shows the game's own order again.
+
+    // How long a landed roll may take to show up on the card
+    var KEEP_WAIT_MS = 10000;
+    // A card that's gone this long (not a flicker) ends the kept order
+    var KEEP_GONE_MS = 250;
+    // {card, basics, names (plain, by shown row), next (after the roll), roll, landedAt, goneAt}
+    var keep = null;
+
+    function basics(d) {
+        return [d.itemtype, d.level, d.rarityident, d.bannertype].join("|");
+    }
+
+    // A list in the game's row order, put in the shown order
+    function shownOrder(card, items) {
+        var v = card && card.bl4rrView;
+        if (!v || v.perm.length !== items.length || v.sig !== gameTexts(card).join("\n")) return items;
+        return v.perm.map(function (g) { return items[g]; });
+    }
+
+    // Remember the shown order as the roll starts: its old names now, its new names once it lands
+    function keepOrder(card, roll) {
+        var count = rows(card).length;
+        if (roll.kind === "legendary" || !roll.lines || roll.lines.length !== count || !card.DataModel) return;
+        var names = [], next = [];
+        roll.lines.forEach(function (line) {
+            names[line.row] = plain(line.old);
+            next[line.row] = plain(line["new"]);
+        });
+        for (var r = 0; r < count; r++) if (names[r] === undefined || next[r] === undefined) return;
+        if (keep && keep.card !== card) dropKeep();
+        keep = { card: card, basics: basics(card.DataModel), names: names, next: next, roll: roll.id, landedAt: 0, goneAt: 0 };
+    }
+
+    function dropKeep() {
+        var card = keep && keep.card;
+        keep = null;
+        if (card) {
+            card.bl4rrView = null;
+            layoutRows(card, null);
+        }
+    }
+
+    // Each frame while a card is up: which game row shows on each shown row, and shift them there
+    function updateView(card) {
+        if (!keep) return;
+        var now = Date.now();
+        if (!card) {
+            if (!keep.goneAt) keep.goneAt = now;
+            else if (now - keep.goneAt > KEEP_GONE_MS) dropKeep();
+            return;
+        }
+        keep.goneAt = 0;
+        if (card !== keep.card) {
+            dropKeep();
+            return;
+        }
+        var texts = gameTexts(card);
+        var rowTexts = texts.map(plain);
+        var perm = null;
+        if (card.DataModel && basics(card.DataModel) === keep.basics) {
+            // Once landed the card is about to show the new modifiers: look for those first
+            var tries = keep.landedAt ? [keep.next, keep.names] : [keep.names, keep.next];
+            for (var t = 0; t < tries.length && !perm; t++) {
+                if (tries[t] && tries[t].length === rowTexts.length) perm = rowsFor(tries[t], rowTexts);
+            }
+        }
+        var waiting = (anim && anim.card === card) || (keep.landedAt && now - keep.landedAt < KEEP_WAIT_MS);
+        if (!perm && !waiting) {
+            // Another item (or the roll never showed up): the game's order from here on
+            dropKeep();
+            return;
+        }
+        var identity = !perm || perm.every(function (g, p) { return g === p; });
+        card.bl4rrView = identity ? null : { sig: texts.join("\n"), perm: perm };
+        layoutRows(card, identity ? null : perm);
+    }
+
+    // Shift the game's rows (a transform: the page's layout stays the game's) so the row for
+    // shown position p sits in slot p. Rows may differ in height (wrapped text)
+    function layoutRows(card, perm) {
+        var all = gameRows(card);
+        var dy = [];
+        if (perm && perm.length === all.length) {
+            var scale = cardScale(card);
+            var top = [], h = [];
+            for (var g = 0; g < all.length; g++) {
+                var r = rect(all[g]);
+                if (!r || r.height <= 0) return;  // not laid out yet: next frame
+                h.push(r.height / scale);
+                top.push(r.top / scale - (all[g].bl4rrDy || 0));
+            }
+            var at = top[0];
+            for (var p = 0; p < perm.length; p++) {
+                // The game's gap after each slot stays where it was
+                if (p > 0) at += h[perm[p - 1]] + (top[p] - top[p - 1] - h[p - 1]);
+                dy[perm[p]] = at - top[perm[p]];
+            }
+        }
+        for (var i = 0; i < all.length; i++) {
+            // Rounded: measuring every frame mustn't rewrite the transform every frame
+            var want = Math.round((dy[i] || 0) * 100) / 100;
+            if ((all[i].bl4rrDy || 0) === want) continue;
+            all[i].bl4rrDy = want;
+            all[i].style.transform = want ? "translateY(" + want + "px)" : "";
+        }
     }
 
     // endregion
@@ -580,6 +720,7 @@
         stopAnim(true);
         var at = placer(card);
         if (!at) return;
+        keepOrder(card, roll);
         var now = Date.now();
         var reels = [];
         var order = 0;
@@ -642,7 +783,14 @@
             var parts = [anim.banner, anim.sub];
             for (var i = 0; i < anim.reels.length; i++) parts.push(anim.reels[i].win);
             for (var j = 0; j < parts.length; j++) if (parts[j] && parts[j].parentNode) parts[j].parentNode.removeChild(parts[j]);
-            for (var k = 0; k < anim.reels.length; k++) hideRow(anim.card, anim.reels[k].line.row, false);
+            // The text each reel hid (by element: the shown order may have changed since)
+            for (var k = 0; k < anim.reels.length; k++) {
+                var p = anim.reels[k].hidden;
+                if (p && p.bl4rrHidden) {
+                    p.style.visibility = "";
+                    p.bl4rrHidden = false;
+                }
+            }
         }
         anim = null;
     }
@@ -713,6 +861,7 @@
             if (p) {
                 at.place(reel.win, rect(p), 0);
                 hideRow(card, reel.line.row, true);
+                reel.hidden = p;
             }
             var t = Math.min(1, (now - reel.start) / reel.duration);
             var pos = reel.steps * easeOut(t);
@@ -762,6 +911,7 @@
             // Python makes the item once the reels have landed; that replaces the card's item
             if (!anim.landedSent && now - anim.finished > LANDED_MS) {
                 anim.landedSent = true;
+                if (keep && keep.roll === anim.roll.id) keep.landedAt = now;
                 ext.send(KEY, { do: "landed", id: anim.roll.id });
             }
             if (now - anim.finished > BANNER_MS) {
@@ -808,6 +958,12 @@
     // card may have closed or moved on by then)
     function applied(roll) {
         var result = roll.applied;
+        if (keep && keep.roll === roll.id) {
+            // Made: the new modifiers keep the rows; failed: the old ones stay
+            if (result.ok) keep.names = keep.next;
+            keep.next = null;
+            keep.landedAt = 0;
+        }
         if (anim && anim.roll && anim.roll.id === roll.id && anim.sub) {
             anim.sub.textContent = result.ok ? "-" + roll.cost + " Eridium, " + result.left + " left" : result.error;
         }
@@ -855,6 +1011,7 @@
     function watchOnce() {
         try {
             var card = currentCard();
+            updateView(card);
             var info = cardInfo(card);
             var fp = info ? JSON.stringify(info) : null;
             if (card !== shown.card) {
@@ -894,6 +1051,7 @@
             later(watchOnce, 2 * FRAME_MS);
             return;
         }
+        updateView(card);
         var info = cardInfo(card);
         var fp = info ? JSON.stringify(info) : null;
         card.bl4rrFp = fp;
@@ -924,7 +1082,9 @@
             var original = proto.Event_DataUpdated;
             proto.Event_DataUpdated = function () {
                 original.apply(this, arguments);
-                var page = window.bl4ModMenu && window.bl4ModMenu.reroll;
+                // Whichever link runs this script now (the other copy's onCard is null)
+                var page = window.bl4link && window.bl4link.reroll;
+                if (!page || !page.onCard) page = window.bl4ModMenu && window.bl4ModMenu.reroll;
                 if (page && page.onCard) {
                     try {
                         page.onCard(this);
@@ -982,6 +1142,7 @@
         rr.onCard = null;
         timers.forEach(clearTimeout);
         stopAnim(true);
+        dropKeep();
         var box = document.getElementById("bl4rr_toast");
         if (box) box.parentNode.removeChild(box);
         var cards = document.querySelectorAll("widget-item-card");

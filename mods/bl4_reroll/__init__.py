@@ -18,7 +18,8 @@ rerolled item is one the game could have dropped.
 The quickest way is from the item card (card.py): hover a class mod or enhancement in your
 backpack and press T to reroll all its modifiers, or G to pick one (G again for the next) and then T
 to replace just that one. On a legendary or pearl, T (twice) rerolls the whole item. The card plays
-it as a slot machine. This needs the BL4 Mod Menu, whose page the card is in.
+it as a slot machine. The card's script runs in the game's menu page through the BL4 UI Link
+(uilink/, no Mod Menu needed).
 
 Or open it from the mod menu (F7, or MODS in the pause menu): each class mod, enhancement,
 legendary and pearl you carry has a page (a legendary class mod has both). Or from the console:
@@ -368,7 +369,6 @@ def reroll_legendary(handle: int, serial: str | None = None) -> None:
 class S:
     signature: Any = None
     refreshed_at = 0.0
-    card_registered = False
     errors: set[str] = set()  # noqa: RUF012
     # Whether the mod menu's screen was showing last tick (the options are only rebuilt then)
     showing = False
@@ -550,9 +550,6 @@ def _tick(*_: Any) -> None:
         return
     _ticked_at = started
     try:
-        if not S.card_registered:
-            # The Mod Menu may load (or reload) after us
-            S.card_registered = card.register(GAME_DIR)
         card.tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         _report(ex)
@@ -703,14 +700,11 @@ card.S.blocked = _blocked
 
 def _enable() -> None:
     start_data_check()
-    S.card_registered = card.register(GAME_DIR)
-    if not S.card_registered:
-        log("Rerolling from item cards needs the BL4 Mod Menu (the cards' page is its page); the console command still works.")
+    card.register(GAME_DIR)
 
 
 def _disable() -> None:
     card.unregister()
-    S.card_registered = False
 
 
 # endregion

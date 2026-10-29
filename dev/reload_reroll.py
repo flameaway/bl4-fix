@@ -13,6 +13,11 @@ old = sys.modules.get("bl4_reroll")
 if old is None:
     new = importlib.import_module("bl4_reroll")
 else:
+    # Take the old copy's page script back from whichever link holds it (the new one registers again)
+    try:
+        old.card.unregister()
+    except Exception as ex:  # noqa: BLE001
+        print("old unregister failed:", repr(ex))
     for old_hook in old.mod.hooks:
         old_hook.disable()
     for old_cmd in old.mod.commands:

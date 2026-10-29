@@ -11,9 +11,10 @@ and press a key.
   whole item, after asking. Its card is matched by name, level and equipped (its stats aren't
   lines we know), so two copies of one legendary at one level are "use the mod menu".
 
-The card lives in the game's menu page, the same page as the BL4 Mod Menu, so this borrows the
-Mod Menu's link (bl4_mod_menu.extensions): the menu loads ui/card.js into the page, the script
-tells us which card is showing (its name, level, rarity, skills and modifier texts: the card has
+The card lives in the game's menu page. The BL4 UI Link (uilink/, shared by our mods; no Mod Menu
+needed) runs ui/card.js there and re-runs it whenever it changes; until the link's pak loads (the
+first start after installing), the BL4 Mod Menu's own link carries the script if it's installed.
+The script tells us which card is showing (its name, level, rarity, skills and modifier texts: the card has
 no item id), and we find the backpack item that matches. No key events reach page scripts, so the keys are
 read from Windows here, and only count while the script says a matching card is up. Each reroll
 goes back to the script in the state, with the old and new modifiers and some of the other
@@ -24,7 +25,6 @@ from __future__ import annotations
 
 import random
 import re
-import sys
 import time
 from collections.abc import Callable
 from importlib import resources
@@ -33,7 +33,7 @@ from typing import Any
 
 from unrealsdk import logging
 
-from . import game, legendary, reroll
+from . import game, health, legendary, reroll, uilink
 
 KEY = "reroll"
 UI_DIR = "OakGame/Content/uiresources/bl4reroll"
@@ -58,10 +58,6 @@ SLACK_S = 2.0
 _TAGS = re.compile(r"\[/?\w+\]|<[^>]*>")
 _NUMBERS = re.compile(r"[-+]?\d[\d,.]*\s*%?")
 _TRAILER = re.compile(r"\b(?:is|are) (?:increased|decreased|reduced) by\b")
-
-
-def _menu_module(name: str) -> Any:
-    return sys.modules.get(f"bl4_mod_menu.{name}")
 
 
 class S:
@@ -95,15 +91,12 @@ class S:
 
 
 def _changed() -> None:
-    if (exts := _menu_module("extensions")) is not None:
-        exts.changed(KEY)
+    uilink.changed(KEY)
 
 
 def _polling() -> bool:
     """The menu page is running our script (one of the game's menus is up)."""
-    exts = _menu_module("extensions")
-    polling = getattr(exts, "polling", None)
-    return polling is not None and bool(polling(KEY))
+    return uilink.polling(KEY)
 
 
 # region Matching the card to an item
@@ -136,9 +129,14 @@ def _rows_for(item: reroll.Item, rows: list[str]) -> list[int] | None:
     return [by_line[i] for i in range(len(names))]
 
 
-def _name_key(text: Any) -> str:
-    """An item name to compare: letters and digits only ("Juliet's Sparkle" -> "julietssparkle")."""
-    return re.sub(r"[^a-z0-9]", "", _TAGS.sub(" ", str(text or "")).lower())
+def _name_words(text: Any) -> list[str]:
+    """An item name's words, lowercase, no markup."""
+    return _TAGS.sub(" ", str(text or "")).lower().split()
+
+
+def _aliases(item: legendary.Legend) -> list[str]:
+    """The names a legendary's card may show: a two-mode item has two ("Convergence / Hellhound")."""
+    return [" ".join(_name_words(n)) for n in item.name.split(" / ") if n.strip()]
 
 
 def _level(text: Any) -> int | None:
@@ -170,18 +168,22 @@ def match(card: dict[str, Any]) -> tuple[game.Slot | None, list[int], str | None
     return slot, rows, why
 
 
-def _legend_matches(item: legendary.Legend, card_name: str) -> bool:
-    name = _name_key(item.name)
-    return bool(name) and (card_name == name or (len(name) >= 4 and name in card_name))  # noqa: PLR2004
+def _legend_matches(item: legendary.Legend, words: list[str]) -> bool:
+    """
+    The card shows the name with rolled prefixes in front ("Jobbed Down-Bad Ripple"), so drop
+    leading words until it's one of the item's names (as the Detailed Item Cards mod does).
+    """
+    aliases = _aliases(item)
+    return any(" ".join(words[i:]) in aliases for i in range(len(words)))
 
 
 def _match_legend(slots: list[game.Slot], card: dict[str, Any]) -> tuple[game.Slot | None, list[int], str | None]:
     """A legendary / pearl card: the backpack legendary with its name, level and equipped state."""
-    name = _name_key(card.get("name"))
+    words = _name_words(card.get("name"))
     level = _level(card.get("level"))
     equipped = card.get("banner") == "equipped"
     found = [s for s in slots if isinstance(s.item, legendary.Legend) and s.item.level == level
-             and s.equipped == equipped and _legend_matches(s.item, name)]  # fmt: skip
+             and s.equipped == equipped and _legend_matches(s.item, words)]  # fmt: skip
     if not found:
         return None, [], "not in your backpack"
     if len({s.item.serial for s in found}) > 1:
@@ -277,7 +279,7 @@ def _items_state() -> list[dict[str, Any]]:
                 "level": item.level,
                 "rarity": item.rarity,
                 "equipped": slot.equipped,
-                "name": _name_key(item.name),
+                "aliases": _aliases(item),
                 "title": item.name,
                 "pearl": item.pearl,
                 "plain": [], "names": [], "locked": [], "skills": {},
@@ -371,21 +373,17 @@ def act(action: dict[str, Any]) -> None:
             pass
 
 
-def register(game_dir: Path) -> bool:
+def register(game_dir: Path) -> None:
     S.game_dir = game_dir
-    exts = _menu_module("extensions")
-    if exts is None:
-        return False
     publish(force=True)
-    exts.register(KEY, SCRIPT_URL, state, act)
-    return True
+    uilink.register(KEY, SCRIPT_URL, state, act, views=(uilink.MENUS,), mod="Reroll")
 
 
 def unregister() -> None:
     S.hover = None
     S.pending = None  # a spin cut short by disabling mustn't go through on the next enable
-    if (exts := _menu_module("extensions")) is not None:
-        exts.unregister(KEY)
+    uilink.unregister(KEY)
+    uilink.stop()
 
 
 def publish(*, force: bool = False) -> None:
@@ -516,15 +514,16 @@ def _apply() -> None:
 
 
 def _pressed(name: str, key: str | None) -> bool:
-    keys = _menu_module("keys")
-    down = keys is not None and keys.key_down(key)
+    down = uilink.key_down(key)
     was = S.keys_down.get(name, True)
     S.keys_down[name] = down
     return down and not was
 
 
 def tick() -> None:
-    """Every frame: publishes the page's files and handles the keys, while a menu is up."""
+    """Every frame: the link; while a menu is up, the page's files and the keys."""
+    uilink.tick()
+    health.tick()
     if S.pending is None and not _polling():
         # No menu is up, so no card and nothing to publish for: read no keys either. A key held
         # from now on must be let go and pressed again to count once a card is up.
@@ -573,7 +572,7 @@ def tick() -> None:
 
 def _why(reason: str) -> str:
     if reason == "ambiguous":
-        return "Another item looks just like this one; reroll it from the mod menu (F7) instead."
+        return "Another item looks just like this one; reroll it from the mod menu (F7) or the reroll console command instead."
     return reason
 
 

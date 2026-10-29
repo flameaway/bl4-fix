@@ -3,8 +3,7 @@ Rolls a legendary or pearl the way the game drops one, and writes its serial. A 
 Kairosdex's serialgen.py (mods/bl4_weapondex), so Reroll works without it; keep the two in step.
 
 The rules come from legendaries.json (tools/gen_reroll_legendaries.py, from the game's inv data;
-the rules and how they were checked against 393 real drops are in mods/bl4_weapondex/CLAUDE.md
-"Rolling our own serials"): per slot of the item type, how many parts (min/max, or min + one per
+checked against 393 real drops, see tools/gen_weapondex_rolls.py): per slot of the item type, how many parts (min/max, or min + one per
 success of a chance), which parts (an allowlist, the tags each part needs or excludes, caps on
 parts carrying a tag), weighted picks, and level gates. Weights, gates and chances that name an
 attribute or a data table cell are asked from the game through `resolve` (game.Values caches them).
