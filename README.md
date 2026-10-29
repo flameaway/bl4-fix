@@ -67,11 +67,19 @@ The setup app:
   ([oak2-mod-manager](https://github.com/bl-sdk/oak2-mod-manager) 0.3);
 - installs **BL4 Direct Connect** and the **Mod Menu** (always on) plus every mod you ticked,
   already enabled;
-- sets up the game pages the mods replace, so item cards, the MODS screen and the co-op page
-  work on your first launch;
-- adds a Windows Firewall rule so that only friends you've added can reach a game you host;
+- sets up the BL4 UI Link (one small shared pak that runs the mods' page scripts without
+  replacing any game page), so item cards, the MODS screen and the co-op page work on your
+  first launch;
+- offers a Windows Firewall rule so that only friends you've added can reach a game you host
+  (**Firewall rule for hosting**: off unless you turn it on, strongly recommended if you host);
 - adds **Start menu > BL4 Fix Setup**, so you can come back any time to add or remove mods,
-  repair, manage friends or uninstall.
+  repair, manage friends or uninstall;
+- checks GitHub for a newer release each time it starts: **Update App** at the top of its menu
+  downloads the new version, replaces itself and restarts (your mods, friends and settings stay);
+- has an optional **Disk Space** page, never part of Install: it removes the voice languages you
+  don't use (Steam installs all 8, ~9 GB each) and blanks the old patch data the game never reads
+  (NTFS sparse files). Keeping English, it finds 133 GB of a 190 GB install. Undo with
+  Steam's **Verify integrity of game files**; scan again after a game update.
 
 <details>
 <summary><b>More of the setup app</b> (Co-op, System, finished install)</summary>
@@ -84,7 +92,8 @@ The setup app:
 <p align="center"><img src="docs/images/setup-celebrate.jpg" alt="Setup app after an install: INSTALLED" width="60%"></p>
 
 Command line: `BL4FixSetup.exe --list-mods`, `--mods <ids>`, `--add-mod <id>`,
-`--remove-mod <id>`, `--prepare-pages`.
+`--remove-mod <id>`, `--prepare-pages`, `--disk-scan [--keep <languages>]`,
+`--disk-free --keep <languages>|all [--old-patches on|off]`.
 
 </details>
 
@@ -146,8 +155,14 @@ see the same values.
   nothing.
 - The setup app's firewall rule blocks UDP 7777 from everyone except your friends (and,
   optionally, your local network or Tailscale). Steam's own rule would otherwise let anyone reach
-  it. If you host after changing your friend list, Windows asks once for permission to update
-  the rule.
+  it. With the rule on, if you host after changing your friend list, Windows asks once for
+  permission to update the rule.
+- The rule only ever blocks; it never opens a port. It's **off until you turn it on**
+  (**Firewall rule for hosting** on the Loadout or Co-op page, or `BL4FixSetup.exe --firewall on`).
+  Turned off, the setup app removes any rule it added before and never touches your firewall,
+  and hosting never asks Windows for permission.
+- The setup app runs without admin rights. Windows asks for admin only for the firewall rule, the
+  Visual C++ runtime (if it's missing), or a game folder your account can't write to.
 - Co-op uses very little bandwidth: about 2-4 KB/s each way in testing.
 
 <details>
@@ -395,9 +410,10 @@ bosses you've already beaten, and mods keep their own settings in `sdk_mods/sett
 
 Every mod is plain Python running inside the game through the
 [bl-sdk Python SDK](https://github.com/bl-sdk/oak2-mod-manager) (unrealsdk 3.2, pyunrealsdk 1.10,
-Python 3.14 in game). Menus are the game's own HTML pages (Coherent Gameface) with thin shims that
-load our JS and CSS from loose files, so almost every change reloads live without restarting the
-game.
+Python 3.14 in game). Menus are the game's own HTML pages (Coherent Gameface). One shared pak, the BL4 UI Link
+(`shared/uilink/`), adds a single line to the script every page loads last; that line runs our JS
+and CSS from loose files, hooked into the game's widgets at runtime, so no game page is replaced
+and almost every change reloads live without restarting the game.
 
 | Path | What |
 |---|---|
@@ -432,6 +448,8 @@ two-instance testing, the installer).
 - [bl-sdk](https://github.com/bl-sdk) for unrealsdk, pyunrealsdk and oak2-mod-manager, which all
   of this runs on.
 - [Yeti](https://github.com/RedxYeti) for the original mods behind the ports in `ported/`.
+- [nanafy](https://github.com/nanafy) for [bl4-slim](https://github.com/nanafy/bl4-slim) (MIT),
+  the idea and methods behind the setup app's Disk Space page (our own implementation).
 - The BL4 modding community, whose mods and notes pointed the way.
 
 ## License
