@@ -63,7 +63,12 @@ def main() -> None:
         timeout = 0.002 if queue else 0.05
         ready, _, _ = select.select([front, back], [], [], timeout)
         for sock in ready:
-            data, addr = sock.recvfrom(65535)
+            try:
+                data, addr = sock.recvfrom(65535)
+            except ConnectionResetError:
+                # Windows reports an ICMP "port unreachable" (a game closed its socket: a client
+                # left, the host reloaded) as a reset on the next recvfrom. UDP has no connection.
+                continue
             if sock is front:
                 client = addr
                 window["c2s_pkts"] += 1
