@@ -6,13 +6,14 @@ player's damage in this fight and this session: total, damage per second, kills,
 biggest hit, share of the team's damage, and each player's top damage sources, named the way the
 game names them: the gun ("Hellwalker"), the grenade, the shield, an element's damage over time
 ("Burning", "Bleed"...), melee, ground slams, skills, companions. A boss kill shows a results pop-up
-on the HUD (popup_page) and fills the report's Boss Report tab.
+on the HUD (popup_page, run in the HUD page by the BL4 UI Link) and fills the report's Boss
+Report tab.
 
 How: the host's damage pipeline tells each character about every hit it deals
 (`DamageCauserData.OnCausedAnyDamage`); this mod listens on that (native.py) and counts
 (tracker.py). In co-op the host counts everyone; a friend running the mod sees the host's board
-(share.py, through BL4 Direct). The screen is HTML in the game's menu page through the BL4 Mod
-Menu (page.py, ui/meter.js), which must be installed.
+(share.py, through BL4 Direct). The screen is HTML in the game's menu page, run there by the BL4
+UI Link (page.py, ui/meter.js, uilink/; no Mod Menu needed).
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import naming, native, page, popup_page, share, tracker
+from . import naming, native, page, popup_page, share, tracker, uilink
 
 __version__ = "0.1.0"
 __version_info__ = (0, 1, 0)
@@ -81,7 +82,7 @@ report_option = BoolOption(
     description=(
         "When a boss dies, a results panel shows on screen for a few seconds: each player's damage to"
         " the boss, their top damage source and the MVP. The full report is on the Carnage Report's"
-        " Boss Report tab either way. The first time it's turned on it needs one game restart."
+        " Boss Report tab either way."
     ),
     on_change=_popup_changed,
 )
@@ -89,6 +90,20 @@ report_option = BoolOption(
 
 _popup_lock = threading.Lock()
 _popup = {"wanted": False, "queued": False, "done": None}
+
+
+# The pop-up's loader, run in the HUD page by the BL4 UI Link while the option is on and the
+# game's loot feed page is the one it was written for (popup_page.page_current)
+POPUP_KEY = "carnagepopup"
+POPUP_SCRIPT = "coui://uiresources/bl4carnage/popup.js"
+
+
+def _link_popup(on: bool) -> None:
+    if on:
+        uilink.register(POPUP_KEY, POPUP_SCRIPT, dict, lambda _action: None, views=(uilink.HUD,), mod="Carnage Meter")
+    else:
+        uilink.unregister(POPUP_KEY)
+        uilink.stop()  # the link's server goes once no script of any mod is left
 
 
 def _sync_popup(enabled: bool) -> None:
@@ -114,6 +129,7 @@ def _sync_popup(enabled: bool) -> None:
                 log(popup_page.sync(GAME_DIR, wanted))
             except Exception as ex:  # noqa: BLE001
                 logging.error(f"[Carnage Meter] pop-up page: {ex!r}")
+            _link_popup(wanted and popup_page.page_current is True)
             _popup["done"] = wanted
 
     threading.Thread(target=run, name="bl4_damage_meter.popup", daemon=True).start()
@@ -182,7 +198,6 @@ carnage_command.add_argument("rest", nargs="*")
 class S:
     pending_open = 0.0
     key_was_down = True
-    registered = False
     ticked_at = last_call = 0.0
     setup_failed = False
     session: tuple[int, int, int, int] | None = None  # the game session the board belongs to
@@ -215,8 +230,6 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
 
 
 def _tick() -> None:
-    if not S.registered:
-        S.registered = page.register(GAME_DIR)  # the Mod Menu may load after us
     if not tracker.S.ok and not S.setup_failed and share.role() != "client":
         S.setup_failed = not tracker.setup()
     _check_session()
@@ -226,9 +239,8 @@ def _tick() -> None:
     if S.pending_open and time.monotonic() > S.pending_open:
         S.pending_open = 0.0
         page.request_open()
-    keys = page._menu_module("keys")  # noqa: SLF001
-    if keys is not None and get_pc(possibly_loading=True) is not None and open_key.value:
-        down = keys.key_down(open_key.value)
+    if get_pc(possibly_loading=True) is not None and open_key.value:
+        down = uilink.key_down(open_key.value)
         if down and not S.key_was_down:
             page.toggle()
         S.key_was_down = down
@@ -262,18 +274,16 @@ def _enable() -> None:
     naming.start_check(GAME_DIR)
     share.install(lambda: mod.is_enabled)
     _sync_popup(bool(report_option.value))
-    S.registered = page.register(GAME_DIR)
-    if not S.registered:
-        log("Waiting for BL4 Mod Menu: the Carnage Report lives in its page.")
+    page.register(GAME_DIR)
 
 
 def _disable() -> None:
+    _link_popup(False)  # at once: the worker below only removes files
     _sync_popup(False)
     tracker.unbind_all()
     tracker.S.ok = False
     page.unregister()
     share.uninstall()
-    S.registered = False
 
 
 # endregion

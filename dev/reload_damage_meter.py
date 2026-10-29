@@ -23,6 +23,11 @@ if old is not None:
     kept_page = {k: getattr(old.page.S, k) for k in PAGE_KEEP if hasattr(old.page.S, k)}
     # The new copy syncs the pop-up page when it's enabled: the old one mustn't remove it meanwhile
     old._sync_popup = lambda _enabled: None  # noqa: SLF001
+    # The pop-up's loader runs in the HUD page through the link (since 0.2.0): drop the old copy's
+    # registration first (the page tears its loader down; the new copy registers it again)
+    link = sys.modules.get(f"{PKG}.uilink")
+    if link is not None:
+        link.unregister("carnagepopup")
     try:
         old._disable()  # noqa: SLF001
     except Exception as ex:  # noqa: BLE001

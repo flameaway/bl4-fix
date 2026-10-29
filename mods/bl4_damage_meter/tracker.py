@@ -11,14 +11,16 @@ the instigator (their character), the source from the causer:
 - a damage-over-time tick (`bIsDamageOverTime`): the element's status ("Bleed", "Burning"...);
 - the character itself: a ground slam (`IsPerformingAnyTypeOfGroundSlam`, or a kinetic splash),
   melee (a single-target hit within MELEE_RANGE of the character), otherwise its skills;
-- any other pawn the player owns: companions; vehicles; the world (burning ground): environment.
+- any other pawn the player owns: companions; vehicles; the world (burning ground): environment;
+- a hit whose instigator isn't a player but something a player owns (a summon: its own character
+  instigates its hits): that player's companions.
 
 Only damage to hostile targets counts, minus the overkill (the last hit's damage past the target's
 health). Causers are classified once each (`S.causers`, keyed by address + object index) since
 projectiles die before the next frame; everything else is dict lookups.
 
-Scopes: "fight" (team-wide: hits more than FIGHT_GAP_S apart start a new one, never while a boss
-bar is up; a boss's death ends it; the last fight is kept until the next begins) and "session" (since the game started or
+Scopes: "fight" (team-wide: hits more than FIGHT_GAP_S apart start a new one, unless a boss this
+fight has hit is still up; a boss's death ends it; the last fight is kept until the next begins) and "session" (since the game started or
 the last reset). Bosses: every player's boss bars (`BossState.VisibleBosses`) are watched; damage
 to a watched boss is also counted per boss, and when it dies `S.report` holds the boss report
 (page.py opens it). The board (`board()`) is built on demand: a mod menu poll or a co-op request.
@@ -135,8 +137,11 @@ class S:
     order: list[int] = []  # noqa: RUF012 - players in join order
     types: dict[bytes, tuple[str, bool]] = {}  # noqa: RUF012 - DamageType handle bytes -> (element, DoT)
     causers: dict[tuple[int, int], tuple[str, str | int | None]] = {}  # noqa: RUF012
+    # Instigators that aren't players (summons) -> the owning player's character address, or 0
+    minions: dict[tuple[int, int], int] = {}  # noqa: RUF012
     direct: set[int] = set()  # noqa: RUF012 - characters and equipped gear actors (no classifying)
-    pending: list[tuple[bytes, tuple[int, int] | None]] = []  # noqa: RUF012 - hits for drain()
+    # Hits for drain(): (raw block, causer key, minion key)
+    pending: list[tuple[bytes, tuple[int, int] | None, tuple[int, int] | None]] = []  # noqa: RUF012
     # Offsets the hook reads (from S.off)
     attitude_at = causer_at = instigator_at = type_at = 0
     bosses: dict[int, Boss] = {}  # noqa: RUF012 - watched boss address -> boss
@@ -258,6 +263,20 @@ def _classify_causer(player: Player, causer: Any) -> tuple[str, str | int | None
     return ("other", names[0])
 
 
+def _minion_owner(actor: Any) -> int:
+    """The character address of the player who owns a non-player instigator (a summon), else 0."""
+    depth = 0
+    while actor is not None and depth < 5:
+        try:
+            actor = actor.Owner or actor.Instigator
+        except AttributeError:
+            return 0
+        if actor is not None and actor._get_address() in S.by_pawn:
+            return actor._get_address()
+        depth += 1
+    return 0
+
+
 def record(args: Any) -> None:
     """
     One hit, inside the hook: copy the hit's details and queue them (drain() counts them on the
@@ -273,18 +292,24 @@ def record(args: Any) -> None:
         if raw[S.attitude_at] != HOSTILE:
             return
         (causer,) = _U64(raw, S.causer_at)
-        key = None
+        (instigator,) = _U64(raw, S.instigator_at)
+        key = minion = None
+        if instigator and instigator not in S.direct:
+            # Not a player's character: a summon? Its owner is read now (it may die before the tick)
+            minion = (instigator, ctypes.c_int32.from_address(instigator + native.INDEX_OFFSET).value)
+            if minion not in S.minions:
+                S.minions[minion] = _minion_owner(args.Details.DamageInstigator)
         if causer and causer not in S.direct:
             # A live actor during the broadcast: its object index is safe to read
             key = (causer, ctypes.c_int32.from_address(causer + native.INDEX_OFFSET).value)
             if key not in S.causers:
-                player = S.by_pawn.get(_U64(raw, S.instigator_at)[0])
+                player = S.by_pawn.get(instigator)
                 if player is not None:
                     S.causers[key] = _classify_causer(player, args.Details.DamageCauser)
         if raw[S.type_at : S.type_at + 8] not in S.types:
             _element(raw, args)
         if len(S.pending) < MAX_PENDING:
-            S.pending.append((raw, key))
+            S.pending.append((raw, key, minion))
     except Exception as ex:  # noqa: BLE001 - never break the game's damage
         S.errors += 1
         if S.errors <= 5:
@@ -353,8 +378,16 @@ def _source(player: Player, raw: bytes, key: tuple[int, int] | None, dot: bool, 
     return kind
 
 
-def _count(raw: bytes, key: tuple[int, int] | None, now: float, own: dict[int, tuple[bool, Any]]) -> bool:
+def _boss_engaged() -> bool:
+    """A watched boss was hit during this fight (its fight goes on through pauses, e.g. immune phases)."""
+    return any(boss.last and boss.last >= S.fight_start for boss in S.bosses.values())
+
+
+def _count(raw: bytes, key: tuple[int, int] | None, minion: tuple[int, int] | None, now: float,
+           own: dict[int, tuple[bool, Any]]) -> bool:  # fmt: skip
     player = S.by_pawn.get(_U64(raw, S.instigator_at)[0])
+    if player is None and minion is not None:
+        player = S.by_pawn.get(S.minions.get(minion, 0))
     if player is None:
         S.unknown += 1
         return False
@@ -365,10 +398,15 @@ def _count(raw: bytes, key: tuple[int, int] | None, now: float, own: dict[int, t
     if not dmg > 0:  # also NaN
         return False
     elem, dot = S.types.get(raw[S.type_at : S.type_at + 8], ("normal", False))
-    src = _source(player, raw, key, dot, elem, own)
+    if minion is not None:
+        src = "dot:" + elem if dot else "companion"
+    else:
+        src = _source(player, raw, key, dot, elem, own)
     crit = _flag(raw, "bWasCrit")
     kill = _flag(raw, "bCausedDeath")
-    if (S.fight_closed or now - S.fight_last > FIGHT_GAP_S) and not S.bosses:
+    # A boss bar alone doesn't hold a fight open: in boss runs the next boss's bar is up before
+    # the first shot, and every run piled into one fight
+    if S.fight_closed or (now - S.fight_last > FIGHT_GAP_S and not _boss_engaged()):
         _new_fight(now)
     S.fight_last = S.session_last = now
     if not S.session_start:
@@ -393,9 +431,9 @@ def drain(now: float) -> None:
     batch, S.pending = S.pending, []
     own: dict[int, tuple[bool, Any]] = {}
     counted = 0
-    for raw, key in batch:
+    for raw, key, minion in batch:
         try:
-            counted += _count(raw, key, now, own)
+            counted += _count(raw, key, minion, now, own)
         except Exception as ex:  # noqa: BLE001
             S.errors += 1
             if S.errors <= 5:
@@ -405,6 +443,8 @@ def drain(now: float) -> None:
         S.revision += 1
     if len(S.causers) > MAX_CAUSERS:
         S.causers.clear()
+    if len(S.minions) > MAX_CAUSERS:
+        S.minions.clear()
     took = time.perf_counter() - start
     S.drains += 1
     S.drain_busy += took
@@ -798,7 +838,7 @@ def _tally(player: Player, tally: Tally, duration: float) -> dict[str, Any]:
 def board() -> dict[str, Any]:
     """Everything the screen shows (also what a host sends its friends)."""
     now = time.monotonic()
-    fight_live = bool(S.fight_last) and not S.fight_closed and (now - S.fight_last <= FIGHT_GAP_S or bool(S.bosses))
+    fight_live = bool(S.fight_last) and not S.fight_closed and (now - S.fight_last <= FIGHT_GAP_S or _boss_engaged())
     fight_dur = max(0.0, S.fight_last - S.fight_start)
     session_dur = max(0.0, S.session_last - S.session_start)
     players = []

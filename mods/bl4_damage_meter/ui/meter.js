@@ -3,14 +3,14 @@
 // Carnage Report: every player's damage, kills and top damage sources, as a screen in the game's
 // menu page (the page the pause menu lives in).
 //
-// The BL4 Mod Menu runs this file (its extensions.js) and runs it again when it changes, so it
-// tears its last copy down first. Python (bl4_damage_meter/page.py) serves the board through
+// The BL4 UI Link (or, until its pak loads, the BL4 Mod Menu) runs this file and runs it again
+// when it changes, so it tears its last copy down first. Python (bl4_damage_meter/page.py) serves the board through
 // GET /ext?k=carnage: polled every 250 ms while the screen shows, once a second otherwise. Clicks
 // go back as {op: "ext", ext: "carnage", do: ...}. The DOM is built once per player and updated in
 // place; numbers count up to their new value.
 
 (function () {
-    var ns = window.bl4ModMenu;
+    var ns = (typeof bl4linkNs !== "undefined" && bl4linkNs) || window.bl4ModMenu;
     if (!ns || !ns.ext) return;
     var ext = ns.ext;
     var KEY = "carnage";
@@ -682,8 +682,8 @@
         });
     }
 
-    // The page just woke up (a game menu opened): the Mod Menu keeps it hidden until this answers,
-    // so the open key's screen shows without the pause menu first (menu.js, ns.wake)
+    // The page just woke up (a game menu opened): the link (hub.js) or the Mod Menu (menu.js) keeps
+    // it hidden until this answers, so the open key's screen shows without the pause menu first
     function onWake(done) {
         if (pollTimer !== null) {
             clearTimeout(pollTimer);

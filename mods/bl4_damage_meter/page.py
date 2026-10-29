@@ -1,9 +1,10 @@
 """
 The link between the Carnage Report screen (ui/meter.js, in the game's menu page) and Python.
 
-Same arrangement as the Kairosdex (bl4_weapondex/screen.py): the screen is a BL4 Mod Menu
-extension. The Mod Menu loads ui/meter.js into the page and serves state() to it; the page's
-clicks come back through act(). The open key posts Esc (the page only runs while a game menu
+The BL4 UI Link (uilink/, shared by our mods; no Mod Menu needed) runs ui/meter.js in the game's
+menu page and serves state() to it; the page's clicks come back through act(). Until the link's
+pak loads (the first start after installing), the BL4 Mod Menu's own link carries the script if
+it's installed. The open key posts Esc (the page only runs while a game menu
 shows), and the screen covers the pause menu; Close shuts the pause menu again.
 
 state() is only built when the page polls (about 4 times a second with the screen open, once a
@@ -15,7 +16,6 @@ to click) and the Carnage Report switches to its Boss Report tab for the next ti
 
 from __future__ import annotations
 
-import sys
 import time
 from importlib import resources
 from pathlib import Path
@@ -24,7 +24,7 @@ from typing import Any
 from mods_base import get_pc
 from unrealsdk import logging
 
-from . import popup_page, share, tracker
+from . import health, popup_page, share, tracker, uilink
 
 KEY = "carnage"
 UI_DIR = "OakGame/Content/uiresources/bl4carnage"
@@ -60,13 +60,9 @@ class S:
     report_due = 0.0
 
 
-def _menu_module(name: str) -> Any:
-    return sys.modules.get(f"bl4_mod_menu.{name}")
-
-
 def available() -> bool:
-    web = _menu_module("web")
-    return _menu_module("extensions") is not None and web is not None and web.Link.server is not None
+    """The screen can show this session (the link is live, or the Mod Menu carries it until then)."""
+    return uilink.reachable(KEY)
 
 
 def say(text: str) -> None:
@@ -76,15 +72,13 @@ def say(text: str) -> None:
 
 
 def changed() -> None:
-    if (exts := _menu_module("extensions")) is not None:
-        exts.changed(KEY)
+    uilink.changed(KEY)
 
 
 # region Page link
 
 
 def state() -> dict[str, Any]:
-    web = _menu_module("web")
     role = share.role()
     if role == "client":
         board = share.client_board(screen_open())
@@ -96,7 +90,7 @@ def state() -> dict[str, Any]:
         "report": _report(),
         "open": {**S.open_request, "fresh": _open_pending()},
         "close": S.close_request,
-        "menus_closed": getattr(getattr(web, "Link", None), "menus_closed", 0),
+        "menus_closed": uilink.menus_closed(),
         "toast": S.toast,
         "role": role,
         "host": host,
@@ -126,19 +120,15 @@ def act(action: dict[str, Any]) -> None:
             pass
 
 
-def register(game_dir: Path) -> bool:
+def register(game_dir: Path) -> None:
     S.game_dir = game_dir
-    exts = _menu_module("extensions")
-    if exts is None:
-        return False
     publish(force=True)
-    exts.register(KEY, SCRIPT_URL, state, act)
-    return True
+    uilink.register(KEY, SCRIPT_URL, state, act, views=(uilink.MENUS,), mod="Carnage Meter")
 
 
 def unregister() -> None:
-    if (exts := _menu_module("extensions")) is not None:
-        exts.unregister(KEY)
+    uilink.unregister(KEY)
+    uilink.stop()
 
 
 def publish(*, force: bool = False) -> None:
@@ -196,12 +186,11 @@ def publish(*, force: bool = False) -> None:
 
 
 def screen_open() -> bool:
-    exts = _menu_module("extensions")
-    return exts is not None and exts.page_open(KEY, OPEN_POLL_S)
+    return uilink.page_open(KEY, OPEN_POLL_S)
 
 
 def _menus_closed() -> int:
-    return getattr(getattr(_menu_module("web"), "Link", None), "menus_closed", 0)
+    return uilink.menus_closed()
 
 
 def _open_pending() -> bool:
@@ -213,8 +202,7 @@ def _open_pending() -> bool:
 
 
 def _menu_showing(pc: Any) -> bool:
-    exts = _menu_module("extensions")
-    return bool(pc.bShowMouseCursor) and exts is not None and exts.polling(KEY, MENU_POLL_S)
+    return bool(pc.bShowMouseCursor) and uilink.polling(KEY, MENU_POLL_S)
 
 
 def _report() -> dict[str, Any] | None:
@@ -228,17 +216,28 @@ def request_open(scope: str | None = None) -> None:
         logging.info("[Carnage Meter] The Carnage Report opens in game, not at the title screen.")
         return
     if not available():
-        logging.error("[Carnage Meter] The Carnage Report needs the BL4 Mod Menu mod (it shows in the same page).")
+        logging.error(f"[Carnage Meter] {_unavailable()}")
         return
     own = not _menu_showing(pc)
-    if own and (menu := _menu_module("menu")) is not None:
-        menu.press_escape()
+    if own:
+        uilink.press_escape()
     S.open_request = {"id": S.open_request["id"] + 1, "own": own, "scope": scope}
     S.open_requested_at = time.monotonic()
     S.open_pending = True
     S.open_menus_closed = _menus_closed()
     S.waiting_until = S.open_requested_at + OPEN_WAIT_S
     changed()
+
+
+def _unavailable() -> str:
+    link = uilink.status()
+    match link.get("state"):
+        case "next_start":
+            return "The Carnage Report shows from the next game start (its page link was just set up)."
+        case "game_changed" | "conflict" | "error":
+            return f"The Carnage Report can't show: {link.get('detail') or link.get('state')}"
+        case _:
+            return "The Carnage Report isn't ready yet; try again in a moment."
 
 
 def request_close() -> None:
@@ -336,12 +335,14 @@ def _tick_report() -> None:
 
 
 def tick() -> None:
+    uilink.tick()
+    health.tick()
     publish()
     _tick_report()
     if S.waiting_until and time.monotonic() > S.waiting_until:
         S.waiting_until = 0.0
         if not screen_open():
-            logging.error("[Carnage Meter] The screen didn't open. Is BL4 Mod Menu enabled (it adds the screen to the pause menu)?")
+            logging.error("[Carnage Meter] The screen didn't open (the game's menu page didn't run it).")
     elif S.waiting_until and screen_open():
         S.waiting_until = 0.0
 
