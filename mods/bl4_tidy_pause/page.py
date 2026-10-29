@@ -1,14 +1,14 @@
 """
 The pause menu's page script.
 
-The pause menu lives in the game's menu page, the same page as the BL4 Mod Menu, so this borrows
-the Mod Menu's link (bl4_mod_menu.extensions): the menu loads ui/pause.js into the page and re-runs
-it whenever it changes. Our state says where the News panel goes; the script does the moving.
+The pause menu lives in the game's menu page. The BL4 UI Link (uilink/, shared by our mods; no Mod
+Menu needed) runs ui/pause.js there and re-runs it whenever it changes; until the link's pak has
+loaded (the first start after installing) the BL4 Mod Menu's own link carries it if installed.
+Our state says where the News panel goes; the script does the moving.
 """
 
 from __future__ import annotations
 
-import sys
 import time
 from collections.abc import Callable
 from importlib import resources
@@ -17,15 +17,13 @@ from typing import Any
 
 from unrealsdk import logging
 
+from . import uilink
+
 KEY = "tidypause"
 UI_DIR = "OakGame/Content/uiresources/bl4tidypause"
 SCRIPT_URL = "coui://uiresources/bl4tidypause/pause.js"
 UI_FILES = ("pause.js",)
 PUBLISH_S = 1.0
-
-
-def _menu_module(name: str) -> Any:
-    return sys.modules.get(f"bl4_mod_menu.{name}")
 
 
 class S:
@@ -37,8 +35,7 @@ class S:
 
 
 def changed() -> None:
-    if (exts := _menu_module("extensions")) is not None:
-        exts.changed(KEY)
+    uilink.changed(KEY)
 
 
 def state() -> dict[str, Any]:
@@ -49,19 +46,15 @@ def act(_action: dict[str, Any]) -> None:
     """The script only reads our state."""
 
 
-def register(game_dir: Path) -> bool:
+def register(game_dir: Path) -> None:
     S.game_dir = game_dir
-    exts = _menu_module("extensions")
-    if exts is None:
-        return False
     publish(force=True)
-    exts.register(KEY, SCRIPT_URL, state, act)
-    return True
+    uilink.register(KEY, SCRIPT_URL, state, act, views=(uilink.MENUS,), mod="Tidy Pause Menu")
 
 
 def unregister() -> None:
-    if (exts := _menu_module("extensions")) is not None:
-        exts.unregister(KEY)
+    uilink.unregister(KEY)
+    uilink.stop()
 
 
 def publish(*, force: bool = False) -> None:

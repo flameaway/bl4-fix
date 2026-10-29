@@ -4,15 +4,16 @@
 // or hides it. The game puts it at the bottom left (left 12rem, bottom 9rem), where it covers the
 // last entries of a pause list that mods made longer (Quit Game ended up under it).
 //
-// The BL4 Mod Menu runs this file in the game's menu page (its extensions.js) and runs it again
-// when it changes, so it tears its last copy down first. Python (bl4_tidy_pause/page.py) says
+// The BL4 UI Link (uilink/ui/hub.js, as `new Function("bl4linkNs", js)(ns)`) runs this file in the
+// game's menu page, or the BL4 Mod Menu's extensions.js does until the link's pak has loaded; either
+// runs it again when it changes, so it tears its last copy down first. Python (bl4_tidy_pause/page.py) says
 // where the panel goes: state {news: "right" | "hidden" | "default"}. No answer (the mod is off or
-// the Mod Menu's server is gone) puts the panel back where the game had it.
+// the server is gone) puts the panel back where the game had it.
 //
 // We only set inline styles on the panel's own box (.news_mini) and clear exactly those to restore.
 
 (function () {
-    var ns = window.bl4ModMenu;
+    var ns = (typeof bl4linkNs !== "undefined" && bl4linkNs) || window.bl4ModMenu;
     if (!ns || !ns.ext) return;
     var ext = ns.ext;
     var KEY = "tidypause";

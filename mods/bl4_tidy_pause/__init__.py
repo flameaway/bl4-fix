@@ -3,9 +3,11 @@ Tidy Pause Menu for Borderlands 4: the pause menu's News panel moves to the righ
 party list, so it no longer covers the bottom of the menu (with BL4 Fix's Mods, Kairosdex and
 Carnage Report entries added, Quit Game ended up under it). Or hide the panel altogether.
 
-The panel is moved by a page script that runs in the pause menu's page through the BL4 Mod Menu
-(its extensions), so this mod needs the Mod Menu and ships no pak. Turning it off (or picking
-"Game default") puts the panel back where the game had it, at once.
+The panel is moved by a page script that runs in the pause menu's page through the BL4 UI Link
+(uilink/: a pak our mods share that replaces none of the game's pages), so no other mod is needed.
+It works from the game start after the first one with this mod (sooner if the BL4 Mod Menu is
+installed). Turning it off (or picking "Game default") puts the panel back where the game had it,
+at once.
 
 Everything but this file can be hot-reloaded (dev/reload_tidy_pause.py), and the page's script and
 styles reload themselves in the page.
@@ -20,15 +22,15 @@ from mods_base import SETTINGS_DIR, DropdownOption, build_mod, hook
 from unrealsdk import logging
 from unrealsdk.hooks import Type
 
-from . import page
+from . import health, page
 
-__version__ = "0.1.0"
-__version_info__ = (0, 1, 0)
+__version__ = "0.2.0"
+__version_info__ = (0, 2, 0)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-# Nothing here needs every frame: register with the Mod Menu (it may load after us) and, from a
-# source folder, copy the page's files when they change
+# The link's own work runs once a frame (uilink.tick); ours (copying the page's files from a source
+# folder when they change) once a second
 CHECK_S = 1.0
 
 NEWS_CHOICES = {"Right side": "right", "Hidden": "hidden", "Game default": "default"}
@@ -59,13 +61,16 @@ class S:
 
 @hook(TICK_FUNC, Type.POST)
 def _tick(*_: Any) -> None:
-    now = time.monotonic()
-    if now - S.checked_at < CHECK_S:
-        return
-    S.checked_at = now
     try:
+        page.uilink.tick()  # cheap; its own once-a-frame gate
+        health.tick()  # a clock compare most calls
+        now = time.monotonic()
+        if now - S.checked_at < CHECK_S:
+            return
+        S.checked_at = now
         if not S.registered:
-            S.registered = page.register(GAME_DIR)
+            page.register(GAME_DIR)
+            S.registered = True
         else:
             page.publish()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
