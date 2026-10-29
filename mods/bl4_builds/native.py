@@ -74,6 +74,8 @@ _kernel32.ReadProcessMemory.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes
 _kernel32.ReadProcessMemory.restype = ctypes.c_int
 _process = _kernel32.GetCurrentProcess()
 SCAN_CHUNK = 0x1000000  # the code section is ~160 MB: search it in pieces
+OWNER_WEAK_PTR = 0x1D8  # the component's owner: FWeakObjectPtr (index, serial), see "the owner check"
+OBJECT_INDEX = 0xC  # UObjectBase::InternalIndex
 
 _Equip = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
                           ctypes.c_void_p, ctypes.c_int)  # fmt: skip
@@ -159,6 +161,11 @@ def _check_slot_layout() -> None:
         raise NotFound("the backpack's slot layout changed")
 
 
+def _object_index(obj: UObject) -> int:
+    """UObjectBase::InternalIndex (its slot in GUObjectArray)."""
+    return ctypes.c_uint32.from_address(obj._get_address() + OBJECT_INDEX).value
+
+
 class Equipper:
     def __init__(self, func: int, component_offset: int, module: tuple[int, int]) -> None:
         self.func_addr = func
@@ -171,10 +178,10 @@ class Equipper:
         component = _u64(pc._get_address() + self.component_offset)
         if not component:
             raise NotFound("the player has no inventory transaction component")
-        # A C++ object: its vtable is in the game's exe. Anything else isn't the component.
-        vtable = _u64(component)
-        lo, hi = self.module
-        if vtable is None or not lo <= vtable < hi:
+        # The component is a plain struct (no vtable). The equip method's first check is its owner
+        # weak pointer (object index, serial): it must name this controller, or it isn't the component.
+        owner = _u64(component + OWNER_WEAK_PTR)
+        if owner is None or (owner & 0xFFFFFFFF) != _object_index(pc) or not owner >> 32:
             raise NotFound("the inventory transaction component isn't what it was")
         # The interface pointers (object + its interface's vtable), as reflection computes them
         owners = WrappedStruct(unrealsdk.find_object("ScriptStruct", TRANSACTION))

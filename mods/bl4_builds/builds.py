@@ -344,6 +344,7 @@ def _serve_load(req: Any) -> dict[str, Any]:
         try:
             raw = _apply(build, skills=skills is not None, specializations=bool(data.get("specs", True)))
         except Refused as ex:
+            logging.warning(f"[Build Presets] a friend's build wasn't loaded: {ex}")
             return {"ok": False, "error": str(ex)}
     raw["missing"] = raw["missing"] + missing
     logging.info(f"[Build Presets] loaded a build for a friend ({len(gear)} item(s))")
