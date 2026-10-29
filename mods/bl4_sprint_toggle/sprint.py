@@ -117,18 +117,20 @@ def tick(pawn: Any, now: float, resume_s: float, *, always: bool, input_busy: bo
         return
     if mode != WALKING:
         return  # swimming, ladders, custom moves (grapple...): the game's business
-    if _busy(pawn, cmc, input_busy):
+    a = cmc.Acceleration
+    moving = a.X != 0 or a.Y != 0
+    # Standing still there's nothing to ask for (it would only be cleared again), so the weapon
+    # checks in _busy (every slot's state: the costly part, 0.17 ms a frame with the toggle on while
+    # standing, 2026-10-29) wait until you move. The fire / aim keys still hold the resume delay.
+    if (_busy(pawn, cmc, input_busy) if moving else input_busy):
         State.busy_until = now + resume_s
         if State.asked_at and cmc.bWantsToStartSprinting:
             # Our request, still pending: the game would start the sprint the moment the shot ends,
             # skipping the resume delay
             cmc.bWantsToStartSprinting = False
         return
-    if now < State.busy_until or now - State.asked_at < ASK_EVERY_S:
+    if not moving or now < State.busy_until or now - State.asked_at < ASK_EVERY_S:
         return
-    a = cmc.Acceleration
-    if a.X == 0 and a.Y == 0:
-        return  # standing still: asking would only be cleared again
     _ask(cmc, now)
 
 
