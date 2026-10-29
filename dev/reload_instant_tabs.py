@@ -8,7 +8,7 @@ import mods_base.mod_list
 
 old = sys.modules.get("bl4_instant_tabs")
 if old is not None:
-    old.mod.disable()  # restores the original bytes
+    old.mod.disable()  # restores the original bytes (and takes the fade skip off the link)
     if old.mod in mods_base.mod_list.mod_list:
         mods_base.mod_list.mod_list.remove(old.mod)
     for name in ("pak", "pages", "patch"):

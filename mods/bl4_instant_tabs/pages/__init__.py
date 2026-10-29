@@ -1,24 +1,23 @@
 """
-The inventory and map pages with our loader, which skips the ECHO menu's page fade-in.
+Checks that the game's inventory and map pages are still the ones our fade skip was made for, and
+removes our old copies of them.
 
-BL4's menus are HTML pages (Coherent Gameface) stored in the game's paks, and a pak in
-`Paks/~mods/` can replace any of them. We ship two replaced pages, menu_equip.html and
-menu_bigmap.html, made from the game's own copies by tools/gen_instant_tabs_pages.py: they only add
-a <script> for uiresources/bl4instanttabs/loader.js. All ECHO menu pages share one JS context, so
-one of them loading the script is enough. The fade skip itself is in loose files the loader pulls
-in and reloads when they change (see ../ui), so updating it needs no restart. Paks are only read
-at startup, so the pages themselves (and the first install) apply the next time the game starts.
+The fade skip (../ui/fade.js, loaded by ../ui/loader.js) runs in the ECHO menu's page; all ECHO
+menu pages share one JS context there. Since 0.2.0 the BL4 UI Link (../uilink, shared by our mods)
+runs loader.js in that page, without replacing any game page. Until 0.1.x it got there through our
+own copies of menu_equip.html and menu_bigmap.html in a pak (pakchunk0-Windows_4246_P.pak), which
+clashed with any other mod replacing those pages. sync() now only removes that pak: the game reads
+a pak's index once at startup and keeps reading file data at those offsets, so an existing pak is
+only removed after the game exits (a `.remove` marker and a hidden helper; with no game running,
+as in the setup app, at once).
 
-To never undo a game update, the pak is only installed while the game's own copies of both pages
-are still exactly the ones ours were made from (vanilla.json). If a patch changes either, or
-another mod also replaces one, the pak is removed and the pages fade in as usual until the mod is
-updated. The tab delay patch doesn't depend on any of this.
+`page_current` says whether the game still ships exactly the copies of both pages the script was
+checked with (vanilla.json, tools/gen_instant_tabs_pages.py). After a game update that changed
+either, the fade skip steps aside until the mod is updated (health shows "Needs update"). The tab
+delay and the other code patches don't depend on any of this.
 
-The game reads a pak's index once at startup and keeps reading file data at those offsets, but
-doesn't keep the file open the whole time, so a pak changed under a running game gets read at the
-old offsets (garbage on screen). So an existing pak is only ever changed after the game exits.
-
-Plain Python only (file I/O, no unreal calls), so this is safe to run from any thread.
+Plain Python only (file I/O, no unreal calls), so this is safe to run from any thread, and the
+setup app imports it (installer/core.py PAGE_MODULES): keep it plain Python 3.11.
 """
 
 from __future__ import annotations
@@ -31,26 +30,26 @@ from pathlib import Path
 from .. import pak
 
 ASSETS = resources.files(__name__)
+# The old pages pak (until 0.1.x), removed after exit
 PAK_NAME = "pakchunk0-Windows_4246_P.pak"
 UI_PREFIX = "OakGame/Content/uiresources/"
+
+# Whether the game's own pages are still the ones fade.js was checked with: None until sync()
+# looked (read by the health probes, shared/health)
+page_current: bool | None = None
 
 # Whether this game session already started the helper that applies staged pak changes
 _helper_started = False
 
 
 def _vanilla() -> dict[str, str]:
-    """Each page we replace -> the SHA1 of the game's copy ours was made from."""
+    """Each page the fade skip was checked with -> the SHA1 of the game's copy."""
     data = json.loads((ASSETS / "vanilla.json").read_text(encoding="utf-8"))
     return {page: info["sha1"] for page, info in data["pages"].items()}
 
 
 def pak_path(game_dir: Path) -> Path:
     return game_dir / "OakGame" / "Content" / "Paks" / "~mods" / PAK_NAME
-
-
-def build_pak() -> bytes:
-    files = {page: (ASSETS / Path(page).name).read_bytes() for page in _vanilla()}
-    return pak.build_pak("../../../" + UI_PREFIX, files, PAK_NAME)
 
 
 def _staged(target: Path) -> tuple[Path, Path]:
@@ -98,64 +97,44 @@ def _apply_after_exit(target: Path) -> bool:
     return True
 
 
-def _install(path: Path, data: bytes) -> str:
-    replacement, removal = _staged(path)
-    removal.unlink(missing_ok=True)
-    path.with_suffix(".tmp").unlink(missing_ok=True)  # staged by older versions
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        # Nothing mounted it yet, so it's safe to put in place now
-        replacement.unlink(missing_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(path)
-        return "Page fade skip installed: it starts working the next time the game starts."
-    if path.read_bytes() == data:
-        replacement.unlink(missing_ok=True)
-        return "Page fade skip is installed."
-    replacement.write_bytes(data)
-    if _apply_after_exit(path):
-        return "Page fade skip updated: the new pages load the next time the game starts."
-    return "Couldn't update the page fade skip while the game is running."
-
-
-def _remove(path: Path, reason: str) -> str:
+def _retire(path: Path) -> str:
+    """Removes the old pages pak (after the game exits if it's there). Returns a note, "" if none."""
     replacement, removal = _staged(path)
     replacement.unlink(missing_ok=True)
     path.with_suffix(".tmp").unlink(missing_ok=True)
     if not path.exists():
         removal.unlink(missing_ok=True)
-        return reason
+        return ""
     removal.write_bytes(b"")
     if _apply_after_exit(path):
-        return f"{reason} The game's own pages come back the next time the game starts."
-    return f"{reason} Couldn't remove {path.name} while the game is running."
+        return f" The old pages pak ({path.name}) goes when the game exits."
+    return f" Couldn't remove the old {path.name} while the game is running."
 
 
-def sync(game_dir: Path) -> str:
-    """Installs our pak if the installed game still matches it, or removes it. Returns a status line."""
-    ours = pak_path(game_dir)
-    paks_dir = ours.parent.parent
-    game_paks = sorted(paks_dir.glob("*.pak"))
+def check_pages(game_dir: Path) -> str | None:
+    """The first page of ours the game changed (its paks, not ~mods), or None if both are current."""
+    global page_current
+    game_paks = sorted((game_dir / "OakGame" / "Content" / "Paks").glob("*.pak"))
+    changed = None
     for page, sha1 in _vanilla().items():
         game_copy = pak.winning_entry(game_paks, UI_PREFIX + page)
         if game_copy is None or game_copy.sha1 != sha1:
-            return _remove(
-                ours,
-                f"Page fade skip paused: this game version changed {page}, so the mod needs an update."
-                " Tabs still switch without the delay.",
-            )
+            changed = page
+            break
+    page_current = changed is None
+    return changed
 
-        others = [
-            other.name
-            for other in sorted(ours.parent.glob("*.pak"))
-            if other.name.lower() != ours.name.lower() and pak.winning_entry([other], UI_PREFIX + page) is not None
-        ]
-        if others:
-            return _remove(
-                ours,
-                f"Page fade skip paused: {', '.join(others)} in Paks/~mods also changes {page}."
-                " Tabs still switch without the delay.",
-            )
 
-    return _install(ours, build_pak())
+def sync(game_dir: Path) -> str:
+    """
+    Removes the old pak and checks the game's pages; the caller runs the fade skip through the
+    link while `page_current`. Returns a status line.
+    """
+    note = _retire(pak_path(game_dir))
+    changed = check_pages(game_dir)
+    if changed is not None:
+        return (
+            f"Page fade skip paused: this game version changed {changed}, so the mod needs an update."
+            " Tabs still switch without the delay." + note
+        )
+    return "Page fade skip is on." + note
