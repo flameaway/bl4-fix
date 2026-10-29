@@ -6,8 +6,9 @@
 //   saved square   click: load it        (hover: what's in it; the bar under the row: Save over
 //                  it / Name / Clear; or right-click it to save over it, after a prompt)
 //
-// The BL4 Mod Menu runs this file in the game's menu page (its extensions.js) and runs it again
-// when it changes, so it tears its last copy down first. Python (bl4_builds/page.py) does the
+// The BL4 UI Link (uilink/ui/hub.js, as `new Function("bl4linkNs", js)(ns)`) runs this file in the
+// game's menu page, or the BL4 Mod Menu's extensions.js does until the link's pak has loaded; either
+// runs it again when it changes, so it tears its last copy down first. Python (bl4_builds/page.py) does the
 // work: we poll GET /ext?k=builds for what each square holds and post clicks back. When saving we
 // also send each equipped item's name: the game names items natively, so we focus each equip
 // slot in turn (what a hover does, with the card kept hidden) and read the name off its item card.
@@ -19,7 +20,7 @@
 // look and hover like it, and they play the inventory's own UI sounds.
 
 (function () {
-    var ns = window.bl4ModMenu;
+    var ns = (typeof bl4linkNs !== "undefined" && bl4linkNs) || window.bl4ModMenu;
     if (!ns || !ns.ext) return;
     var ext = ns.ext;
     var KEY = "builds";

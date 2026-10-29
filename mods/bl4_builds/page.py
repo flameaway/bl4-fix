@@ -1,11 +1,12 @@
 """
 The five build squares in the inventory, under the Reward Center button.
 
-The inventory lives in the game's menu page, the same page as the BL4 Mod Menu, so this borrows
-the Mod Menu's link (bl4_mod_menu.extensions): the menu loads ui/builds.js into the page and
-re-runs it whenever it changes, the script polls our state (what's in each square) and posts
-clicks back here. No pak of our own, nothing to restart for: edit ui/builds.js or builds.css and
-the page picks it up within a couple of seconds.
+The inventory lives in the game's menu page. The BL4 UI Link (uilink/, shared by our mods; no
+Mod Menu needed) runs ui/builds.js there and re-runs it whenever it changes; the script polls our
+state (what's in each square) and posts clicks back here. Until the link's pak loads (the first
+start after installing), the BL4 Mod Menu's own link carries the script if it's installed.
+Nothing to restart for: edit ui/builds.js or builds.css and the page picks it up within a couple
+of seconds.
 
 Clicks: a saved square loads its build, an empty one saves into it; the small buttons under a
 square save over it, name it or clear it. When saving, the script also sends each equipped item's
@@ -23,7 +24,6 @@ the menu.
 
 from __future__ import annotations
 
-import sys
 import time
 from collections.abc import Callable
 from importlib import resources
@@ -32,17 +32,13 @@ from typing import Any
 
 from unrealsdk import logging
 
-from . import builds, keyboard
+from . import builds, health, keyboard, uilink
 
 KEY = "builds"
 UI_DIR = "OakGame/Content/uiresources/bl4builds"
 SCRIPT_URL = "coui://uiresources/bl4builds/builds.js"
 UI_FILES = ("builds.js", "builds.css")
 PUBLISH_S = 1.0
-
-
-def _menu_module(name: str) -> Any:
-    return sys.modules.get(f"bl4_mod_menu.{name}")
 
 
 class S:
@@ -62,8 +58,7 @@ class S:
 
 
 def _changed() -> None:
-    if (exts := _menu_module("extensions")) is not None:
-        exts.changed(KEY)
+    uilink.changed(KEY)
 
 
 def say(title: str, details: list[str] | None = None, *, error: bool = False) -> None:
@@ -116,9 +111,8 @@ def _poll_naming() -> None:
         stop_naming(keep=False)
         say("Couldn't read the keyboard for typing; use `build rename` in the console.", error=True)
         return
-    exts = _menu_module("extensions")
     # The menu closed (the page stopped polling): don't keep swallowing keys
-    if exts is None or not exts.polling(KEY):
+    if not uilink.polling(KEY):
         stop_naming(keep=False)
         return
     if typing.poll():
@@ -135,12 +129,15 @@ VK_RBUTTON = 0x02
 
 def _poll_right_click() -> None:
     """A right-click on a square (pressed, not held) asks the page to confirm saving over it."""
-    keys = _menu_module("keys")
-    exts = _menu_module("extensions")
-    down = keys is not None and keys.vk_down(VK_RBUTTON) and keys.game_focused()
+    # Read only while the script says the mouse is on a square. Off a square the button counts as
+    # held, so a press needs a release first (a key's first read after a pause also says held)
+    if not S.hover:
+        S.right_down = True
+        return
+    down = uilink.vk_down(VK_RBUTTON)
     pressed = down and not S.right_down
     S.right_down = down
-    if not pressed or not S.hover or S.typing is not None or exts is None or not exts.polling(KEY):
+    if not pressed or not S.hover or S.typing is not None or not uilink.polling(KEY):
         return
     S.prompt = {"id": S.prompt["id"] + 1, "n": S.hover}
     _changed()
@@ -177,25 +174,23 @@ def act(action: dict[str, Any]) -> None:
         say(str(ex), error=True)
 
 
-def register(game_dir: Path) -> bool:
+def register(game_dir: Path) -> None:
     S.game_dir = game_dir
-    exts = _menu_module("extensions")
-    if exts is None:
-        return False
     publish(force=True)
-    exts.register(KEY, SCRIPT_URL, state, act)
-    return True
+    uilink.register(KEY, SCRIPT_URL, state, act, views=(uilink.MENUS,), mod="Build Presets")
 
 
 def unregister() -> None:
     stop_naming(keep=False)
     S.hover = 0
-    if (exts := _menu_module("extensions")) is not None:
-        exts.unregister(KEY)
+    uilink.unregister(KEY)
+    uilink.stop()
 
 
 def tick() -> None:
-    """Every frame: publishes the page's files, keeps the squares' cache fresh, reads the typing."""
+    """Every frame: the link, the page's files, the squares' cache, the typing."""
+    uilink.tick()
+    health.tick()
     publish()
     if builds.watch():
         _changed()

@@ -15,8 +15,10 @@ only where they differ (free, like the skill screen's own reset).
 Hotkeys (none bound by default; set them in this mod's options): load build 1-5, next / previous
 saved build. They work in gameplay too, where a notice at the top of the screen says what loaded.
 
-The squares need the BL4 Mod Menu (they live in its page). Or use the console: `build` lists the
-slots, `build save 2`, `build load 2`, `build clear 2`, `build rename 2 Boss killer`.
+The squares need no other mod: they run through the BL4 UI Link (uilink/, a pak our mods share
+that replaces none of the game's pages). They show from the game start after the first one with
+this mod (paks only load at startup), sooner if the BL4 Mod Menu is installed. Or use the console:
+`build` lists the slots, `build save 2`, `build load 2`, `build clear 2`, `build rename 2 Boss killer`.
 
 Co-op: saving works anywhere. Equipping and respeccing belong to the host, so a client's load is
 done by the host's copy of this mod (BL4 Direct's co-op channel): the host needs Build Presets for
@@ -38,8 +40,8 @@ from unrealsdk.hooks import Type
 
 from . import builds, hotkeys, page
 
-__version__ = "0.1.0"
-__version_info__ = (0, 1, 0)
+__version__ = "0.2.0"
+__version_info__ = (0, 2, 0)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
@@ -48,7 +50,6 @@ TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 FRAME_GAP_S = 0.004
 MAX_WAIT_S = 0.012
 _last_call = _ticked_at = 0.0
-REGISTER_S = 1.0
 
 
 def log(msg: str) -> None:
@@ -89,8 +90,6 @@ hotkeys.S.keys = lambda: [
 
 
 class S:
-    registered = False
-    checked_at = 0.0
     errors: set[str] = set()  # noqa: RUF012
 
 
@@ -103,11 +102,6 @@ def _tick(*_: Any) -> None:
         return
     _ticked_at = started
     try:
-        now = time.monotonic()
-        if not S.registered and now - S.checked_at > REGISTER_S:
-            # The Mod Menu may load (or reload) after us
-            S.checked_at = now
-            S.registered = page.register(GAME_DIR)
         page.tick()
         hotkeys.tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
@@ -152,15 +146,12 @@ build_command.add_argument("name", nargs="*", help="rename: the new name (nothin
 
 
 def _enable() -> None:
-    S.registered = page.register(GAME_DIR)
-    if not S.registered:
-        log("The inventory squares need the BL4 Mod Menu; the `build` console command still works.")
+    page.register(GAME_DIR)
 
 
 def _disable() -> None:
     page.unregister()
     hotkeys.stop()
-    S.registered = False
 
 
 mod = build_mod(

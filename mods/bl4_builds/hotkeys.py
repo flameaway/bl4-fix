@@ -2,7 +2,8 @@
 Loading builds from hotkeys: one per build, plus next / previous saved build. None are bound by
 default; set them in the mod's options (the BL4 Mod Menu, F7).
 
-Keys are read from Windows each frame like our other mods' keys (bl4_mod_menu.keys), so they work
+Keys come from a worker thread's snapshot (uilink.key_down: the BL4 Mod Menu's key thread when it's
+loaded, else the link's own), never read on the game thread, so they work
 in gameplay and in the game's menus, only while the game window is in front, and not while a
 build's name is being typed. In gameplay a notice at the top of the screen says what loaded
 (notice.py); with the inventory open its own notice does.
@@ -10,13 +11,11 @@ build's name is being typed. In gameplay a notice at the top of the screen says 
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
-from typing import Any
 
 from mods_base import get_pc
 
-from . import builds, page
+from . import builds, page, uilink
 from .notice import Notice
 
 NEXT, PREVIOUS = "next", "previous"
@@ -31,18 +30,11 @@ class S:
     last = 0
 
 
-def _keys() -> Any:
-    return sys.modules.get("bl4_mod_menu.keys")
-
-
 def tick() -> None:
     Notice.tick()
-    keys = _keys()
-    if keys is None:
-        return
     pressed = []
     for action, key in S.keys():
-        down = bool(key) and keys.key_down(key)
+        down = bool(key) and uilink.key_down(key)
         # Held when the game started (or the key was just bound) doesn't count as a press
         was = S.down.get(action, True)
         S.down[action] = down
@@ -69,9 +61,8 @@ def _target(action: str) -> int | None:
 
 def _tell(title: str, details: list[str] | None = None, *, error: bool = False) -> None:
     page.say(title, details, error=error)
-    exts = sys.modules.get("bl4_mod_menu.extensions")
     # With the inventory open, its own notice shows it; otherwise ours, over the game
-    if exts is None or not exts.page_open(page.KEY):
+    if not uilink.page_open(page.KEY):
         pc = get_pc()
         if pc is not None:
             Notice.show(pc, title, details, error=error)
