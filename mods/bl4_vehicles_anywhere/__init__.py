@@ -55,7 +55,14 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
     try:
         rules.apply(zones=zones_option.value)
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
-        logging.error(f"[Vehicles Anywhere] {ex!r}")
+        # Each distinct error once: a game patch renaming something this reads would fail every second
+        text = repr(ex)[:300]
+        if text not in _logged_errors and len(_logged_errors) < 20:  # noqa: PLR2004
+            _logged_errors.add(text)
+            logging.error(f"[Vehicles Anywhere] {text} (logged once)")
+
+
+_logged_errors: set[str] = set()
 
 
 def _enable() -> None:
