@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Mod Menu"
-version = "0.2.0"
+version = "0.2.1"
 description = "An in-game settings menu for every SDK mod. Press F7 in game (or type modmenu in the console)."
 authors = [{ name = "flame" }]
 

@@ -103,11 +103,24 @@
     overflow-y: scroll;
 }
 
-.bl4mm_options {
+/* Holds the page column and the game's scrollbar (OAKScroll puts it next to the column, absolute) */
+.bl4mm_options_wrap {
+    position: relative;
+    display: flex;
+    flex-direction: row;
     flex: 1 1;
     height: 100%;
     max-height: 100%;
     margin-right: 3rem;
+}
+
+.bl4mm_options {
+    flex: 1 1;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    /* Room for the scrollbar on the right */
+    padding-right: 2.6rem;
     flex-direction: column;
     flex-wrap: nowrap;
     align-items: stretch;
@@ -432,7 +445,13 @@
 .bl4mm_update_actions {
     display: flex;
     flex-direction: row;
-    margin: 1rem 2rem 2rem 2rem;
+    /* A row with more buttons than fit goes on to a second line instead of off the screen */
+    flex-wrap: wrap;
+    margin: 1rem 2rem 1rem 2rem;
+}
+
+.bl4mm_update_actions .bl4mm_update_btn.list_btn {
+    margin-bottom: 1rem;
 }
 
 .bl4mm_update_btn.list_btn {
@@ -635,3 +654,80 @@
 }
 
 /* endregion */
+
+/* Repositories: small buttons on a repository's row (GitHub / Edit / Remove) */
+.bl4mm_row_btn.list_btn {
+    flex: 0 0 auto;
+    width: 10.5rem;
+    height: 3.8rem;
+    min-height: 3.8rem;
+    margin-left: 0.6rem;
+}
+
+.bl4mm_row_btn .button_txt {
+    font-size: 1.7rem;
+}
+
+/* Repositories: the link box (Python reads the keys and sends the text) */
+.bl4mm_textbox {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 42rem;
+    height: 4rem;
+    padding: 0 1rem;
+    background-color: rgba(0, 0, 0, 0.45);
+    border: 0.15rem solid rgba(228, 217, 206, 0.35);
+    overflow: hidden;
+}
+
+.bl4mm_textbox.bl4mm_typing {
+    border-color: #ffbb00;
+}
+
+.bl4mm_textbox_text {
+    font-family: Industry-Normal;
+    font-size: 1.8rem;
+    color: #e4d9ce;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.bl4mm_textbox_hint {
+    color: #7d8a8d;
+}
+
+.bl4mm_caret {
+    flex: 0 0 auto;
+    width: 0.2rem;
+    height: 2.4rem;
+    margin-left: 0.2rem;
+    background-color: #ffbb00;
+    animation: bl4mm_blink 1s steps(1) infinite;
+}
+
+@keyframes bl4mm_blink {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0;
+    }
+}
+
+/* The game's scrollbar on our page column: the game's look, but brighter and wider than its
+   default (5 px at half opacity was easy to miss) */
+.bl4mm_options_wrap .oakscroll-v.is-active {
+    opacity: 0.9;
+}
+
+.bl4mm_options_wrap .oakscroll-v.is-active .oakscroll-vtrackVisual {
+    opacity: 1;
+    width: 1rem;
+}
+
+.bl4mm_options_wrap .oakscroll-v.is-active:hover .oakscroll-vtrackVisual,
+.bl4mm_options_wrap .oakscroll-v.is-active.trackDragging .oakscroll-vtrackVisual {
+    opacity: 1;
+    width: 1.4rem;
+}

@@ -104,6 +104,9 @@ class R:
     loaded = False  # the sources file was read
     # Saved: what the player added, in order. {"key", "url", "added"}
     sources: list[dict[str, Any]] = []
+    # Saved: the player removed BL4 Fix's built-in repository (its mods leave Discover; installed
+    # ones still update through updates.py)
+    official_hidden = False
     # key -> {"status": checking/ok/error, "message", "name", "description", "homepage", "release", "mode"}
     info: dict[str, dict[str, Any]] = {}
     # key -> {mod id: entry}, entries cleaned by _entry()
@@ -232,7 +235,7 @@ def _load(game_dir: Path) -> None:
         for k, v in (data.get("installed") or {}).items()
         if isinstance(v, dict) and hotload.MOD_ID.match(str(k))
     }
-    _set(sources=sources[:MAX_SOURCES], installed=installed, loaded=True)
+    _set(sources=sources[:MAX_SOURCES], installed=installed, official_hidden=data.get("official_hidden") is True, loaded=True)
 
 
 def _save() -> None:
@@ -241,6 +244,8 @@ def _save() -> None:
         return
     with _lock:
         data = {"format": 1, "sources": [dict(s) for s in R.sources], "installed": {k: dict(v) for k, v in R.installed.items()}}
+        if R.official_hidden:
+            data["official_hidden"] = True
     updates._write(settings_file(game_dir), json.dumps(data, indent=4).encode("utf-8"))
 
 
@@ -414,19 +419,45 @@ def _official() -> tuple[dict[str, Any], dict[str, dict[str, Any]]] | None:
     return info, mods
 
 
-def refresh_async(keys: list[str] | None = None) -> bool:
-    """Checks the added repositories (or just these) on the worker. False if a check is running."""
+def refresh_async(keys: list[str] | None = None, *, announce: bool = False) -> bool:
+    """
+    Checks the added repositories (or just these) on the worker. False if a check is running.
+    announce: the player asked (Check all): say what the check found when it's done, including
+    BL4 Fix's own release (updates.py checks that one; start its check first).
+    """
     with _lock:
         if R.refreshing:
             return False
         R.refreshing = True
         R.revision += 1
         R.events += 1
-    _net.put(lambda: _refresh(keys))
+    _net.put(lambda: _refresh(keys, announce=announce))
     return True
 
 
-def _refresh(keys: list[str] | None) -> None:
+# Check all waits this long at most for updates.py's check of BL4 Fix's release, to report it too
+ANNOUNCE_WAIT_S = 20.0
+
+
+def _announce() -> None:
+    end = time.monotonic() + ANNOUNCE_WAIT_S
+    while updates.U.busy and time.monotonic() < end:
+        time.sleep(0.25)
+    _recompute()  # with BL4 Fix's release as just read
+    with _lock:
+        checked = len(R.sources) + (0 if R.official_hidden else 1)
+        failed = [s["key"] for s in R.sources if R.info.get(s["key"], {}).get("status") == "error"]
+        new, waiting = len(R.discover), len(R.updates)
+    parts = [f"{new} new mod{'s' if new != 1 else ''} on Discover"]
+    if waiting:
+        parts.append(f"{waiting} update{'s' if waiting != 1 else ''} on Updates")
+    text = f"Refreshed {checked} repositor{'ies' if checked != 1 else 'y'}: {', '.join(parts)}."
+    if failed:
+        text += f" Couldn't read {', '.join(failed)} (see its row)."
+    _say(text, error=bool(failed))
+
+
+def _refresh(keys: list[str] | None, *, announce: bool = False) -> None:
     try:
         targets = [s["key"] for s in R.sources if keys is None or s["key"] in keys]
         for key in targets:
@@ -448,6 +479,8 @@ def _refresh(keys: list[str] | None) -> None:
                     R.events += 1
                 _log(f"repository {key}: {_reason(ex)}")
         _recompute()
+        if announce:
+            _announce()
     finally:
         _set(refreshing=False)
 
@@ -462,22 +495,36 @@ def _reason(ex: BaseException) -> str:
     return str(ex)
 
 
-def add_async(text: str) -> None:
-    """Checks a repository the player gave; on success it waits in R.pending for their OK."""
+def add_async(text: str, replace: str | None = None) -> None:
+    """
+    Checks a repository the player gave; on success it waits in R.pending for their OK.
+    replace: an added repository's key this one takes the place of (the player edited its link).
+    """
     key = normalize(text)
     if key is None:
         _say("That isn't a repository link: use owner/name, a github.com link, or an https link to an index.", error=True)
         return
     if key == official_key():
-        _say(f"{OFFICIAL_NAME} is built in already.", error=True)
+        if replace is not None:
+            _say(f"That's {OFFICIAL_NAME}'s repository, which is built in.", error=True)
+        elif R.official_hidden:
+            show_official()
+        else:
+            _say(f"{OFFICIAL_NAME} is built in already.", error=True)
+        return
+    if replace is not None and key == replace:
+        set_url(key, text.strip())
         return
     if any(s["key"] == key for s in R.sources):
         _say(f"{key} is added already.", error=True)
         return
-    if len(R.sources) >= MAX_SOURCES:
+    if replace is not None and source_url(replace) is None:
+        replace = None  # removed meanwhile: add it as a new one
+    if replace is None and len(R.sources) >= MAX_SOURCES:
         _say(f"That's {MAX_SOURCES} repositories already: remove one first.", error=True)
         return
-    _set(pending={"key": key, "url": text.strip(), "status": "checking", "name": key, "count": 0, "description": ""})
+    _set(pending={"key": key, "url": text.strip(), "status": "checking", "name": key, "count": 0, "description": "",
+                  "replace": replace})  # fmt: skip
 
     def run() -> None:
         try:
@@ -490,7 +537,8 @@ def add_async(text: str) -> None:
             if R.pending is None or R.pending["key"] != key:
                 return  # cancelled
             R.pending = {"key": key, "url": text.strip(), "status": "ready", "name": info.get("name") or key,
-                         "count": len(mods), "description": info.get("description", ""), "mods": [m["name"] for m in mods.values()][:12]}  # fmt: skip
+                         "count": len(mods), "description": info.get("description", ""), "mods": [m["name"] for m in mods.values()][:12],
+                         "replace": replace, "replace_name": _source_name(replace) if replace else ""}  # fmt: skip
             R.info[key] = {**info, "status": "ok", "message": f"{len(mods)} mod{'s' if len(mods) != 1 else ''}"}
             R.catalog[key] = mods
             R.revision += 1
@@ -510,24 +558,69 @@ def add_from_clipboard_async() -> None:
     _net.put(run)
 
 
-def confirm_add() -> None:
+def confirm_add() -> bool:
+    """Adds the checked repository (or puts it in place of the one edited). True if it did."""
     with _lock:
         pending = R.pending
         if pending is None or pending.get("status") != "ready":
-            return
-        R.sources.append({"key": pending["key"], "url": pending["url"], "added": int(time.time())})
+            return False
+        new = {"key": pending["key"], "url": pending["url"], "added": int(time.time())}
+        old = pending.get("replace")
+        at = next((i for i, s in enumerate(R.sources) if s["key"] == old), None) if old else None
+        if at is None:
+            R.sources.append(new)
+        else:
+            R.sources[at] = {**new, "added": R.sources[at].get("added", new["added"])}
+            R.catalog.pop(old, None)
+            R.info.pop(old, None)
+            # The same modder's repository at a new link: what was installed from it updates from there
+            for record in R.installed.values():
+                if record["repo"] == old:
+                    record["repo"] = new["key"]
         R.pending = None
         R.revision += 1
         R.events += 1
     _net.put(lambda: (_save(), _recompute()))
-    _say(f"Added {pending['name']}: its mods are on Discover.")
+    _say(f"Saved {pending['name']} in place of {old}." if at is not None else f"Added {pending['name']}: its mods are on Discover.")
+    return True
 
 
 def cancel_add() -> None:
     _set(pending=None)
 
 
+def source_url(key: str) -> str | None:
+    """The link an added repository was given as (None: not added)."""
+    with _lock:
+        return next((s["url"] for s in R.sources if s["key"] == key), None)
+
+
+def set_url(key: str, url: str) -> None:
+    """The player edited a repository's link into another spelling of the same one."""
+    with _lock:
+        for source in R.sources:
+            if source["key"] == key:
+                source["url"] = url
+        R.revision += 1
+        R.events += 1
+    _net.put(_save)
+    _say(f"Saved: that's still {key}.")
+
+
+def show_official() -> None:
+    _set(official_hidden=False)
+    _net.put(lambda: (_save(), _recompute()))
+    _say(f"{OFFICIAL_NAME}'s mods are back on Discover.")
+
+
 def remove_source(key: str) -> None:
+    if key == official_key():
+        # Built in: hidden, not forgotten (updates.py still keeps BL4 Fix's installed mods current)
+        if not R.official_hidden:
+            _set(official_hidden=True)
+            _net.put(lambda: (_save(), _recompute()))
+            _say(f"Removed {OFFICIAL_NAME} from Discover. Its installed mods still update on the Updates page.")
+        return
     with _lock:
         before = len(R.sources)
         R.sources = [s for s in R.sources if s["key"] != key]
@@ -590,7 +683,7 @@ def _recompute() -> None:
         return
     official = _official()
     with _lock:
-        sources = [(official_key(), official[1])] if official else []
+        sources = [(official_key(), official[1])] if official and not R.official_hidden else []
         if official:
             R.info[official_key()] = {**official[0], "status": "ok", "message": f"{len(official[1])} mods"}
             R.catalog[official_key()] = official[1]
@@ -1003,7 +1096,7 @@ def snapshot_json() -> tuple[int, bytes]:
             return R.cached[1], R.cached[2]
         rev = next(_revs)
         official = official_key()
-        sources = [{"key": official, "name": OFFICIAL_NAME, "official": True,
+        sources = [{"key": official, "name": OFFICIAL_NAME, "official": True, "hidden": R.official_hidden,
                     **{k: R.info.get(official, {}).get(k, "") for k in ("status", "message", "homepage", "release")}}]  # fmt: skip
         for s in R.sources:
             info = R.info.get(s["key"], {})

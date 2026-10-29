@@ -112,7 +112,8 @@ def main() -> int:  # noqa: PLR0915
         check("bl4_dialog_skipper" in fresh, "new: a never-installed mod is announced")
         check(fresh == new_ids - {"bl4_ground_loot"}, f"new: every other mod not installed is announced ({len(fresh)})")
         check(snap["updates"] == 1 and snap["count"] == 1 + len(fresh), f"new: badge = 1 update + {len(fresh)} new ({snap['count']})")
-        check("new mods" in snap["message"], f"new: the message counts them ({snap['message']})")
+        # Updates is for updates: new mods are announced on Discover (its "!" and NEW tags), not here
+        check("new mod" not in snap["message"] and "update" in snap["message"], f"new: the message is about updates only ({snap['message']})")
         blurbs = {i["id"]: i["blurb"] for i in snap["new"]}
         check(blurbs["bl4_dialog_skipper"] == manifest["mods"]["bl4_dialog_skipper"]["blurb"] != "", "new: carries the setup app's description")
         updates.set_announce(False)

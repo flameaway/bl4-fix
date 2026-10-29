@@ -1,7 +1,7 @@
 # Mod repositories (for modders)
 
-Players of the BL4 Mod Menu can add your repository once (MODS > Repositories > Add from
-clipboard, or `modrepo add <link>` in the console). From then on your mods show on their
+Players of the BL4 Mod Menu can add your repository once (MODS > Repositories: type or paste
+the link, or `modrepo add <link>` in the console). From then on your mods show on their
 Discover page with your pictures, install with one click, and update from their Updates page,
 all **without restarting the game**. Any SDK mod works: it doesn't need to know about the Mod Menu.
 

@@ -363,18 +363,9 @@ def check(game_dir: Path, repo: str | None = None) -> None:
     fresh = [i["name"] for i in new if i["state"] == "new" and i["fresh"] and i["id"] not in seen] if U.announce else []
     if problem:
         status, message = "error", problem
-    elif waiting or fresh:
-        release = manifest["release"]
-        if len(fresh) > 3:
-            news = f"{len(fresh)} new mods"
-        elif fresh:
-            news = f"new mod{'s' if len(fresh) > 1 else ''}: {', '.join(fresh)}"
-        if waiting and fresh:
-            message = f"{len(waiting)} mod update(s) and {news} ({release})."
-        elif waiting:
-            message = f"{len(waiting)} mod update(s) available ({release})."
-        else:
-            message = f"{news[0].upper()}{news[1:]} ({release})."
+    elif waiting:
+        # Updates only: mods you don't have are announced on Discover (its "!" and NEW tags)
+        message = f"{len(waiting)} mod update(s) available ({manifest['release']})."
         status = "available"
     elif staged:
         status, message = "ready", "Updates are downloaded: they install when the game closes."
@@ -383,6 +374,8 @@ def check(game_dir: Path, repo: str | None = None) -> None:
     _set(status=status, message=message, items=items, new=new, release=str(manifest["release"]),
          manifest=manifest, checked_at=time.monotonic(), seen=seen)  # fmt: skip
     _log(message)
+    if fresh:
+        _log(f"New on Discover: {', '.join(fresh)} ({manifest['release']}).")
     if staged:
         start_helper(game_dir)
 

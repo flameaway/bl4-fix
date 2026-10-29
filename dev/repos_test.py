@@ -157,6 +157,14 @@ def wait(cond, what: str, timeout: float = 10.0) -> bool:  # noqa: ANN001
     return False
 
 
+def flush_worker() -> None:
+    """Waits until the repositories' worker ran everything queued so far (reading the settings file
+    while it replaces it would make Windows refuse the replace)."""
+    done = threading.Event()
+    repos._net.put(done.set)
+    done.wait(10)
+
+
 def manifest_for(mods: dict[str, tuple[str, bytes]], base_url: str, **extra: object) -> dict:
     return {
         "format": 1, "release": "v1", **extra,
@@ -405,6 +413,40 @@ def main() -> int:  # noqa: PLR0915
         repos.remove_source("tester/mods")
         wait(lambda: repos.snapshot_json()[0] != rev, "a new revision")
         check(repos.snapshot_json()[0] != rev and not repos.R.sources, "removing a repository changes the revision")
+        # endregion
+
+        # region Editing a repository's link, removing the built-in one
+        index = f"{base}/idx/index.json"
+        repos.add_async(index)
+        wait(lambda: repos.R.pending and repos.R.pending.get("status") == "ready", "the index pending")
+        check(repos.confirm_add(), "index added")
+        repos.R.installed["gamma_mod"] = {"repo": index, "version": "0.1.0", "sha256": ""}
+        repos.add_async("https://github.com/tester/mods", replace=index)
+        wait(lambda: repos.R.pending and repos.R.pending.get("status") == "ready", "the edited link pending")
+        check(repos.R.pending["replace"] == index and repos.R.pending["replace_name"], "the edit says what it replaces")
+        check(repos.confirm_add(), "edit saved")
+        check([s["key"] for s in repos.R.sources] == ["tester/mods"], "edited repository replaced in place")
+        check(repos.R.installed["gamma_mod"]["repo"] == "tester/mods", "mods installed from it follow the new link")
+        repos.add_async("github.com/tester/mods", replace="tester/mods")
+        check(repos.R.pending is None and repos.source_url("tester/mods") == "github.com/tester/mods",
+              "editing into the same repository just saves the link")  # fmt: skip
+        check(not repos.confirm_add(), "nothing to confirm without a pending repository")
+        repos.add_async("official/bl4-fix", replace="tester/mods")
+        time.sleep(0.1)
+        check(repos.R.message["error"] and [s["key"] for s in repos.R.sources] == ["tester/mods"], "an edit can't become the built-in one")
+        repos.remove_source("official/bl4-fix")
+        flush_worker()
+        check(json.loads(repos.settings_file(game).read_text(encoding="utf-8")).get("official_hidden"), "removed built-in repository saved")
+        state = json.loads(repos.snapshot_json()[1])
+        check(state["sources"][0]["official"] and state["sources"][0]["hidden"], "the built-in repository shows as removed")
+        repos._load(game)
+        check(repos.R.official_hidden, "removed built-in repository stays removed after a restart")
+        repos.add_async("official/bl4-fix")
+        flush_worker()
+        check("official_hidden" not in json.loads(repos.settings_file(game).read_text(encoding="utf-8")), "shown again saved")
+        check(not repos.R.official_hidden, "adding the built-in link brings it back")
+        repos.remove_source("tester/mods")
+        wait(lambda: not repos.R.sources, "cleanup")
         # A corrupt sources file is set aside, not overwritten
         repos.settings_file(game).write_text("{broken", encoding="utf-8")
         repos._load(game)

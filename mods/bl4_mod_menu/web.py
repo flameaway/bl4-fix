@@ -48,7 +48,7 @@ from typing import Any
 
 from unrealsdk import logging
 
-from . import extensions, hotload, keys, model, repos, updates
+from . import extensions, hotload, keyboard, keys, model, repos, updates
 
 UI_DIR = "OakGame/Content/uiresources/bl4modmenu"
 SESSION_FILE = "session.json"
@@ -109,6 +109,23 @@ class Link:
     repos_rev = -1  # repos.summary()["rev"] in the current snapshot
     manifest_seen: Any = None  # the updates.U.manifest repos.py last listed
     quit_at = 0.0  # Restart on the Updates page: quit the game at this time (0: no)
+    # Where the page runs: "main" on the title screen (it polls with ctx=main), else "pause"
+    page_context = "pause"
+    # Esc on the title screen while our screen shows: swallowed (the game would ask "quit?") and
+    # counted in esc_id, which the page answers with Back
+    esc_grab: keyboard.EscGrab | None = None
+    esc_id = 0
+    # The Repositories page's text box: its text, the repository being edited (None: adding), and
+    # the typing while the player types into it
+    draft = ""
+    editing: str | None = None
+    typing: keyboard.Typing | None = None
+
+
+# A poll at least this recent says the page is awake (it polls every 200 ms while its screen shows)
+AWAKE_S = 1.0
+# The longest repository link the box takes
+MAX_DRAFT = 300
 
 
 # Restart waits this long, so the page gets its answer and shows "Restarting" first
@@ -166,6 +183,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         Link.last_poll = time.monotonic()
         Link.page_open = "open=1" in self.path
+        Link.page_context = "main" if "ctx=main" in self.path else "pause"
         Link.trace.append(f"{Link.last_poll:.2f} poll open={int(Link.page_open)} snap_open_id={Link.snapshot_open_id}")
         # The game thread's next tick applies actions posted before this poll and rebuilds the
         # snapshot if it's stale; it never waits for us
@@ -406,6 +424,10 @@ def _write_session(game_dir: Path, server: _PooledServer) -> None:
 
 
 def stop() -> None:
+    _stop_typing()
+    if Link.esc_grab is not None:
+        Link.esc_grab.stop()
+        Link.esc_grab = None
     server, Link.server = Link.server, None
     if server is not None:
         # shutdown() waits for the serve loop; do it off the game thread
@@ -483,6 +505,9 @@ def _build_snapshot(full: bool) -> None:
         "menus_closed": Link.menus_closed,
         "updates": updates.snapshot(),
         "repos": repos.summary(),
+        "esc": Link.esc_id,
+        "box": {"text": Link.typing.text if Link.typing is not None else Link.draft,
+                "typing": Link.typing is not None, "editing": Link.editing},
     }
     Link.updates_rev = state["updates"]["rev"]
     Link.repos_rev = state["repos"]["rev"]
@@ -503,6 +528,9 @@ def _apply(action: dict[str, Any]) -> None:
         return
     if op in ("updates_check", "updates_apply", "updates_restart", "updates_seen", "updates_load_now"):
         _apply_updates(op, action)
+        return
+    if isinstance(op, str) and op.startswith("box_"):
+        _apply_box(op, action)
         return
     if isinstance(op, str) and op.startswith(("repo_", "mods_")):
         _apply_repos(op, action)
@@ -610,17 +638,26 @@ def _apply_repos(op: str, action: dict[str, Any]) -> None:
     value = action.get("value")
     match op:
         case "repo_refresh":
-            if not repos.refresh_async():
-                say("Already checking the repositories.")
+            # BL4 Fix's release first: the repositories' check waits for it to report both
             updates.check_async(game_dir)
+            if not repos.refresh_async(announce=True):
+                say("Already checking the repositories.")
         case "repo_add_clip":
             repos.add_from_clipboard_async()
         case "repo_add_confirm":
-            repos.confirm_add()
+            if repos.confirm_add():
+                # Added (or the edit saved): empty the box for the next one
+                _stop_typing()
+                Link.draft, Link.editing = "", None
         case "repo_add_cancel":
             repos.cancel_add()
         case "repo_remove" if isinstance(value, str):
             repos.remove_source(value)
+            if Link.editing == value:
+                _stop_typing()
+                Link.draft, Link.editing = "", None
+        case "repo_show_official":
+            repos.show_official()
         case "repo_install":
             for mod_id in _str_ids(value):
                 repos.install_async(mod_id)
@@ -646,6 +683,110 @@ def _apply_repos(op: str, action: dict[str, Any]) -> None:
             threading.Thread(target=hotload.publish_icons, args=(game_dir,), daemon=True).start()
         case _:
             pass
+
+
+# region The text box (Repositories)
+
+
+def _start_typing() -> None:
+    _stop_typing()
+    Link.typing = keyboard.Typing(Link.draft, MAX_DRAFT, repos.clipboard_text)
+
+
+def _stop_typing() -> None:
+    """Stops typing and keeps what was typed in the box."""
+    typing, Link.typing = Link.typing, None
+    if typing is not None:
+        typing.stop()
+        Link.draft = typing.text
+        Link.dirty = True
+
+
+def _submit_box() -> None:
+    _stop_typing()
+    text = Link.draft.strip()
+    if not text:
+        say("Type a repository link first: owner/name, a github.com link, or an https link to an index.", error=True)
+        return
+    editing = Link.editing
+    repos.add_async(text, replace=editing)
+    if editing is not None and repos.normalize(text) == editing:
+        Link.draft, Link.editing = "", None  # the same repository: saved as it is, nothing to check
+
+
+def _apply_box(op: str, action: dict[str, Any]) -> None:
+    value = action.get("value")
+    match op:
+        case "box_type":
+            _start_typing()
+        case "box_stop":
+            _stop_typing()
+        case "box_submit":
+            _submit_box()
+        case "box_paste":
+            # The clipboard into the box (a worker reads it), then the player presses Add
+            def run() -> None:
+                text = "".join((repos.clipboard_text().strip().splitlines() or [""])[0].split())
+                if not text:
+                    say("The clipboard is empty: copy a repository link first.", error=True)
+                    return
+                Link.actions.append({"op": "box_set", "value": text})
+
+            threading.Thread(target=run, name="bl4_mod_menu.paste", daemon=True).start()
+        case "box_set" if isinstance(value, str):
+            _stop_typing()
+            Link.draft = value[:MAX_DRAFT]
+        case "box_edit" if isinstance(value, str):
+            # Edit a repository: its link goes into the box, typing starts
+            url = repos.source_url(value)
+            if url is None:
+                return
+            repos.cancel_add()
+            Link.editing, Link.draft = value, url
+            _start_typing()
+        case "box_cancel":
+            _stop_typing()
+            repos.cancel_add()
+            Link.draft, Link.editing = "", None
+        case _:
+            pass
+    Link.dirty = True
+
+
+def _poll_keyboard(now: float) -> None:
+    """The text box's typing and the title screen's Esc (game thread, every frame)."""
+    awake = Link.page_open and now - Link.last_poll < AWAKE_S
+    typing = Link.typing
+    if typing is not None:
+        if typing.failed:
+            _stop_typing()
+            say("Couldn't read the keyboard for typing: use Paste, or modrepo add <link> in the console.", error=True)
+        elif not awake:
+            _stop_typing()  # the screen closed (or the page went to sleep): stop swallowing keys
+        elif typing.poll():
+            Link.dirty = True
+            if typing.done is not None:
+                submit = typing.done
+                _stop_typing()
+                if submit:
+                    _submit_box()
+    # Esc on the title screen goes back a page instead of opening the game's "quit?" dialog
+    want = awake and Link.page_context == "main"
+    grab = Link.esc_grab
+    if want and grab is None:
+        Link.esc_grab = keyboard.EscGrab()
+    elif not want and grab is not None:
+        grab.stop()
+        Link.esc_grab = None
+    elif grab is not None and grab.take():
+        if Link.capture is not None:
+            Link.capture = None  # Esc cancels a rebind (the swallowed key never reaches its poll)
+        else:
+            Link.esc_id += 1
+        Link.dirty = True
+
+
+# endregion
 
 
 def _quit_game() -> None:
@@ -707,6 +848,7 @@ def tick(menus_up: bool) -> None:
         if action.get("op") != "ext":
             changed = True
     _poll_capture()
+    _poll_keyboard(time.monotonic())
     extensions.tick(menus_up)
     if repos.pending_loads():
         # Mods the repositories' workers downloaded: load them here, on the game thread
