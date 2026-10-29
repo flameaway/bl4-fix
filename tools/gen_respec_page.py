@@ -1,21 +1,19 @@
 """
-Regenerates the Skills page shipped in mods/bl4_respec/skills_page/ (dev only).
+Re-pins the Skills page Easy Respec's script was checked with (dev only).
 
-    python tools/gen_respec_page.py --oodle <path to an oo2core_*_win64.dll>
+    python tools/gen_respec_page.py
 
-The Skills menu is menu_skills/menu_skills.html inside the game's paks. This takes the copy the
-installed game currently uses, adds our stylesheet and script after the page's own, and writes:
+The Skills menu is menu_skills/menu_skills.html inside the game's paks. Our script (respec.js, a
+loader for respec_main.js and respec.css) runs in it through the BL4 UI Link since 0.2.0, without
+replacing the page. This writes:
 
-- skills_page/menu_skills.html  the edited page, which the mod packs into its own pak
-- skills_page/vanilla.json      the SHA1 Unreal stores for the game's copy. The mod only installs its
-                                pak while the game still ships exactly that copy, so a game patch
-                                that touches the Skills page pauses the feature instead of undoing
-                                the patch.
+- skills_page/vanilla.json  the SHA1 Unreal stores for the game's copy. The mod only runs its script
+                            while the game still ships exactly that copy, so a game patch that
+                            touches the Skills page pauses the feature ("Needs update") until the
+                            script is checked against the new page and this is run again.
 
-Our behaviour lives in skills_page/respec.js (a loader), respec_main.js and respec.css: new files,
-written loose by the mod, that replace nothing.
-
-Needs an Oodle DLL for the same reason as tools/gen_item_cards.py.
+Until 0.1.x this also wrote skills_page/menu_skills.html (the page + our tags) for a pak (4244).
+--oodle is still accepted (tools/game_patch.py passes it) but not needed: only the pak index is read.
 """
 
 from __future__ import annotations
@@ -29,32 +27,16 @@ REPO = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO / "mods" / "bl4_respec" / "skills_page"
 DEFAULT_GAME = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Borderlands 4")
 PAGE_PATH = "OakGame/Content/uiresources/menu_skills/menu_skills.html"
-# The page's own script; ours has to run after it so Widget_Skills exists
-ANCHOR = '<script src="coui://uiresources/menu_skills/js/menu_skills.js"></script>'
-OUR_TAGS = (
-    '\n<link href="coui://uiresources/bl4respec/respec.css"\n'
-    '      type="text/css"\n'
-    '      rel="stylesheet" />\n'
-    '<script src="coui://uiresources/bl4respec/respec.js"></script>'
-)
-
 sys.path.insert(0, str(REPO / "mods" / "bl4_respec"))
 sys.path.insert(0, str(REPO / "mods" / "bl4_direct"))
 sys.path.insert(0, str(REPO / "tools"))
 import pak  # noqa: E402  # mods/bl4_respec/pak.py is plain Python, no SDK imports
 import shared  # noqa: E402  # mods/bl4_direct/shared.py, for the build id
-from gen_item_cards import extract  # noqa: E402
-
-
-def edit(html: str) -> str:
-    if html.count(ANCHOR) != 1:
-        raise SystemExit(f"expected exactly one {ANCHOR!r} in the Skills page")
-    return html.replace(ANCHOR, ANCHOR + OUR_TAGS)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--oodle", type=Path, required=True, help="path to an oo2core_*_win64.dll")
+    parser.add_argument("--oodle", type=Path, help="not needed any more (only the pak index is read)")
     parser.add_argument("--game", type=Path, default=DEFAULT_GAME, help="Borderlands 4 install folder")
     args = parser.parse_args()
 
@@ -64,11 +46,7 @@ def main() -> None:
     if entry is None:
         raise SystemExit(f"{PAGE_PATH} not found in {args.game}")
 
-    vanilla = extract(entry, args.oodle).decode("utf-8")
-    edited = edit(vanilla)
-
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "menu_skills.html").write_text(edited, encoding="utf-8", newline="")
     fingerprint = {
         "path": PAGE_PATH,
         "sha1": entry.sha1,
@@ -76,7 +54,7 @@ def main() -> None:
         "game_build": shared.game_build_id(args.game),
     }
     (OUT_DIR / "vanilla.json").write_text(json.dumps(fingerprint, indent=4) + "\n", encoding="utf-8")
-    print(f"built from {entry.pak.name} ({entry.sha1}), {len(vanilla)} -> {len(edited)} bytes")
+    print(f"pinned {PAGE_PATH} from {entry.pak.name} ({entry.sha1})")
 
 
 if __name__ == "__main__":

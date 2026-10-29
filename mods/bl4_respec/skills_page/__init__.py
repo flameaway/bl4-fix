@@ -1,22 +1,24 @@
 """
-The Skills page with right-click respec.
+The Skills page's right-click respec: our loose page files, and the check that they still fit the
+game's Skills menu.
 
-BL4's menus are HTML pages (Coherent Gameface) stored in the game's paks, and a pak in
-`Paks/~mods/` can replace any of them. We ship one replaced page, menu_skills.html, made from the
-game's own copy by tools/gen_respec_page.py, which only adds our script and stylesheet.
+The scripts and stylesheet are loose files in uiresources/bl4respec/: the UI reads loose files there
+straight from disk. respec.js is a small loader that pulls in respec_main.js and respec.css and
+reloads them whenever they change, so updating them needs no restart. Since 0.2.0 the BL4 UI Link
+(../uilink, shared by our mods) runs respec.js in the menu page, without replacing any game page.
 
-The scripts and stylesheet are loose files in uiresources/bl4respec/ rather than pak entries: the
-UI reads loose files there straight from disk. The page loads respec.js, a small loader that pulls
-in respec_main.js and respec.css and reloads them whenever they change, so updating them needs no
-restart. Paks are only read at startup, so the page itself (and the first install) applies the next
-time the game starts.
+Until 0.1.x the loader got there through our own copy of the game's menu_skills.html in a pak
+(pakchunk0-Windows_4244_P.pak), which clashed with any other mod replacing the Skills page. sync()
+now only removes that pak: the game reads a pak's index once at startup and keeps reading file data
+at those offsets, so an existing pak is only removed after the game exits (a `.remove` marker and a
+hidden helper; with no game running, as in the setup app, at once).
 
-To never undo a game update, the pak is only installed while the game's own menu_skills.html is
-still exactly the copy ours was made from (vanilla.json). If a patch changes it, or another mod
-also replaces the Skills page, the pak is removed and the feature stays off until the mod is
-updated.
+The script is written against the game's own Skills menu: `page_current` says whether the game
+still ships exactly the copy it was checked with (vanilla.json, tools/gen_respec_page.py). After a
+game update that changed it the mod steps aside until it's updated (health shows "Needs update").
 
-Plain Python only (file I/O, no unreal calls), so this is safe to run from any thread.
+Plain Python only (file I/O, no unreal calls), so this is safe to run from any thread, and the
+setup app imports it (installer/core.py PAGE_MODULES): keep it plain Python 3.11.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from pathlib import Path
 from .. import pak
 
 ASSETS = resources.files(__name__)
+# The old Skills page pak (until 0.1.x), removed after exit
 PAK_NAME = "pakchunk0-Windows_4244_P.pak"
 UI_PREFIX = "OakGame/Content/uiresources/"
 PAGE = "menu_skills/menu_skills.html"
@@ -57,8 +60,9 @@ def signal_path(game_dir: Path) -> Path:
     return game_dir / UI_PREFIX / SIGNAL_PATH
 
 
-def build_pak() -> bytes:
-    return pak.build_pak("../../../" + UI_PREFIX, {PAGE: (ASSETS / "menu_skills.html").read_bytes()}, PAK_NAME)
+# Whether the game's own Skills page is still the one respec_main.js was checked with: None until
+# sync() looked (read by the health probes, shared/health)
+page_current: bool | None = None
 
 
 def _write_if_changed(path: Path, data: bytes) -> None:
@@ -81,9 +85,9 @@ def write_loose_files(game_dir: Path) -> None:
     _write_if_changed(game_dir / UI_PREFIX / STAMP_PATH, f"{zlib.crc32(b''.join(datas)):08x}".encode())
 
 
-# What the script and styles become while we're off. The page (ours until the next start) only
-# reloads files it can read, so a deleted script would keep the running copy going; an empty one
-# makes the loader dispose it.
+# What the script and styles become while we're off. A loader running from the old pak (until the
+# next start) only reloads files it can read, so a deleted script would keep the running copy
+# going; an empty one makes the loader dispose it. Through the link, unregistering tears it down.
 OFF_FILES = {
     "bl4respec/respec_main.js": b"// Easy Respec is off.\n",
     "bl4respec/respec.css": b"/* Easy Respec is off. */\n",
@@ -155,64 +159,42 @@ def _apply_after_exit(target: Path) -> bool:
     return True
 
 
-def _install(path: Path, data: bytes) -> str:
-    replacement, removal = _staged(path)
-    removal.unlink(missing_ok=True)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.with_suffix(".tmp").unlink(missing_ok=True)  # staged by older versions
-    if not path.exists():
-        # Nothing mounted it yet, so it's safe to put in place now
-        replacement.unlink(missing_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(path)
-        return "Easy Respec installed: restart the game once to use it."
-    if path.read_bytes() == data:
-        replacement.unlink(missing_ok=True)
-        return "Easy Respec is on: right-click a skill to take a point out."
-    replacement.write_bytes(data)
-    if _apply_after_exit(path):
-        return "Easy Respec updated: the new Skills page loads the next time the game starts."
-    return "Easy Respec: couldn't update the Skills page while the game is running."
-
-
-def _remove(path: Path, reason: str) -> str:
+def _retire(path: Path) -> str:
+    """Removes the old Skills page pak (after the game exits if it's there). Returns a note, "" if none."""
     replacement, removal = _staged(path)
     replacement.unlink(missing_ok=True)
     path.with_suffix(".tmp").unlink(missing_ok=True)
     if not path.exists():
         removal.unlink(missing_ok=True)
-        return reason
+        return ""
     removal.write_bytes(b"")
     if _apply_after_exit(path):
-        return f"{reason} The normal Skills page comes back the next time the game starts."
-    return f"{reason} Couldn't remove {path.name} while the game is running."
+        return f" The old Skills page pak ({path.name}) goes when the game exits."
+    return f" Couldn't remove the old {path.name} while the game is running."
+
+
+def check_page(game_dir: Path) -> bool:
+    """Whether the game's own Skills page (its paks, not ~mods) is the copy vanilla.json pins."""
+    global page_current
+    expected = json.loads((ASSETS / "vanilla.json").read_text(encoding="utf-8"))["sha1"]
+    paks_dir = game_dir / "OakGame" / "Content" / "Paks"
+    game_copy = pak.winning_entry(sorted(paks_dir.glob("*.pak")), UI_PREFIX + PAGE)
+    page_current = game_copy is not None and game_copy.sha1 == expected
+    return page_current
 
 
 def sync(game_dir: Path, enabled: bool) -> str:
-    """Installs or removes our pak to match `enabled` and the installed game. Returns a status line."""
-    ours = pak_path(game_dir)
+    """
+    Publishes (or stops) our loose page files to match `enabled` and the installed game, and
+    removes the old pak. The caller registers respec.js with the link while `page_current`.
+    Returns a status line.
+    """
+    note = _retire(pak_path(game_dir))
     if not enabled:
         remove_loose_files(game_dir)
-        return _remove(ours, "Easy Respec is off.")
-
-    paks_dir = ours.parent.parent
-    expected = json.loads((ASSETS / "vanilla.json").read_text(encoding="utf-8"))["sha1"]
-    game_copy = pak.winning_entry(sorted(paks_dir.glob("*.pak")), UI_PREFIX + PAGE)
-    if game_copy is None or game_copy.sha1 != expected:
-        return _remove(
-            ours,
-            "Easy Respec paused: this game version changed the Skills menu, so the mod needs an update.",
-        )
-
-    others = [
-        other.name
-        for other in sorted(ours.parent.glob("*.pak"))
-        if other.name.lower() != ours.name.lower()
-        and pak.winning_entry([other], UI_PREFIX + PAGE) is not None
-    ]
-    if others:
-        return _remove(ours, f"Easy Respec paused: {', '.join(others)} in Paks/~mods also changes the Skills menu.")
-
+        return "Easy Respec is off." + note
+    if not check_page(game_dir):
+        remove_loose_files(game_dir)
+        return "Easy Respec paused: this game version changed the Skills menu, so the mod needs an update." + note
     write_loose_files(game_dir)
-    return _install(ours, build_pak())
+    return "Easy Respec is on: right-click a skill to take a point out." + note

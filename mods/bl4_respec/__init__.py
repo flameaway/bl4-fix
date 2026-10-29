@@ -9,9 +9,11 @@ message saying what's in the way.
 
 How it fits together:
 
-- The Skills menu is an HTML page. Our pak (skills_page/) adds respec.js to it, a loader for
-  respec_main.js, which knows which skill is hovered and has the whole tree to check the rules
-  against. Both are loose files, reloaded by the page when they change (no restart needed).
+- The Skills menu is an HTML page. The BL4 UI Link (uilink/, shared by our mods; no Mod Menu
+  needed, no game page replaced) runs respec.js in it, a loader for respec_main.js, which knows
+  which skill is hovered and has the whole tree to check the rules against. All are loose files
+  (skills_page/), reloaded by the page when they change (no restart needed). Until 0.1.x a pak of
+  ours replaced the Skills page to load it; skills_page removes that pak after the game exits.
 - BL4 keeps the right mouse button away from its menu pages, so we watch it here, and while the
   page says the Skills menu is showing, each right click bumps a counter in a loose file the page
   polls. The page works out which skill was under the cursor.
@@ -37,14 +39,17 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
-from . import skills_page
+from . import health, skills_page, uilink
 
-__version__ = "0.1.0"
-__version_info__ = (0, 1, 0)
+__version__ = "0.2.0"
+__version_info__ = (0, 2, 0)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 CHANNEL_FUNC = "/Game/UI/Scripts/ui_script_skills.ui_script_skills_C:RemovePoint"
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
+# The page script, run by the BL4 UI Link in the menu page
+LINK_KEY = "respec"
+LINK_SCRIPT = "coui://uiresources/bl4respec/respec.js"
 # The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
 # together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
 FRAME_GAP_S = 0.004
@@ -75,6 +80,17 @@ _kernel32 = ctypes.windll.kernel32
 
 def log(msg: str) -> None:
     logging.info(f"[Easy Respec] {msg}")
+
+
+_errors: set[str] = set()
+
+
+def _report_error(ex: Exception) -> None:
+    """The tick runs every frame; report each distinct problem only once."""
+    message = repr(ex)
+    if message not in _errors:
+        _errors.add(message)
+        logging.error(f"[Easy Respec] {message}")
 
 
 # region Right clicks
@@ -163,6 +179,11 @@ def watch_right_clicks(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: Bo
     if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
         return
     _ticked_at = started
+    try:
+        uilink.tick()  # runs our Skills page script (shared/uilink; does work at most once a frame overall)
+        health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
+    except Exception as ex:  # noqa: BLE001 - never let this break the game's tick
+        _report_error(ex)
     if _unmap_undo:
         _unmap_undo = False
         set_native_undo_on_right_click(False)
@@ -316,6 +337,10 @@ def sync_page(enabled: bool) -> None:
     except Exception as ex:  # noqa: BLE001 - never let a file problem break the mod
         status = f"Easy Respec: couldn't update the Skills page ({ex})."
     log(status)
+    if enabled and skills_page.page_current:
+        uilink.register(LINK_KEY, LINK_SCRIPT, dict, lambda _action: None, views=(uilink.MENUS,), mod=__name__)
+    else:
+        uilink.unregister(LINK_KEY)
 
 
 def _enable() -> None:
