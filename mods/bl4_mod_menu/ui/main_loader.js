@@ -1,7 +1,8 @@
 "use strict";
 
-// BL4 Mod Menu, title screen. The main menu page (menu_main.html, our shim in main_page/) loads
-// this file: it marks the page as the main menu and runs the normal loader, which loads menu.js.
+// BL4 Mod Menu, title screen, for a game that still has our old main menu page pak (4247, retired
+// in 0.2.0: ui/link.js does this through the BL4 UI Link now). It marks the page as the main menu
+// and runs the normal loader, which loads menu.js.
 // menu.js then puts MODS under Options (with a "!" when mod updates are waiting) instead of in
 // the pause menu.
 

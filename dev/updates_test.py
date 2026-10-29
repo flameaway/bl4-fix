@@ -13,6 +13,7 @@ import hashlib
 import http.server
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -149,8 +150,8 @@ def main() -> int:  # noqa: PLR0915
         updates.apply(game, install_new=["bl4_dialog_skipper"])
         staged = updates.staging(game)
         names = sorted(p.name for p in staged.iterdir())
-        check(names == sorted(["bl4_mod_menu.sdkmod", "bl4_dialog_skipper.sdkmod", updates.APP_EXE, updates.APP_VERSION_FILE]),
-              f"apply: staged the update, the new mod and the app {names}")
+        check(names == sorted(["bl4_mod_menu.sdkmod", "bl4_dialog_skipper.sdkmod"]),
+              f"apply: staged the update and the new mod, never the setup app {names}")
         check(hashlib.sha256((staged / "bl4_mod_menu.sdkmod").read_bytes()).hexdigest() == manifest["mods"]["bl4_mod_menu"]["sha256"],
               "apply: staged bytes match the manifest")
         check((mods_dir / "bl4_mod_menu.sdkmod").read_bytes() != good, "apply: the loaded .sdkmod isn't touched")
@@ -169,9 +170,7 @@ def main() -> int:  # noqa: PLR0915
         check(res.returncode == 0, f"helper: ran ({res.stderr.strip()[:200]})")
         check((mods_dir / "bl4_mod_menu.sdkmod").read_bytes() == good, "helper: update moved into sdk_mods")
         check((mods_dir / "bl4_dialog_skipper.sdkmod").is_file(), "helper: new mod moved into sdk_mods")
-        check((app_dir / updates.APP_EXE).read_bytes().startswith(b"MZ") and (app_dir / updates.APP_EXE).stat().st_size > 1000,
-              "helper: setup app replaced")
-        check((app_dir / updates.APP_VERSION_FILE).read_text().strip() == manifest["app"]["version"], "helper: app version file")
+        check((app_dir / updates.APP_EXE).read_bytes() == b"MZ old app", "helper: leaves the setup app alone")
         check(not staged.exists(), "helper: staging folder removed")
 
         updates.check(game, repo="test/repo")
@@ -182,6 +181,34 @@ def main() -> int:  # noqa: PLR0915
         (mods_dir / "bl4_less_fog.sdkmod").write_bytes(with_version((RELEASE / "bl4_less_fog.sdkmod").read_bytes(), "bl4_less_fog", "0.0.1"))
         updates.check(game, repo="test/repo")
         check(updates.U.status == "error" and "SDK" in updates.U.message, "sdk: an old SDK blocks the update with a pointer to setup")
+
+        # --- the setup app's old copy in the game folder (and what older Mod Menus staged of it) ---
+        updates.staging(game).mkdir()
+        (updates.staging(game) / updates.APP_EXE).write_bytes(b"MZ staged app")
+        (updates.staging(game) / updates.APP_VERSION_FILE).write_text("0.0.2", encoding="utf-8")
+        appdata = tmp / "appdata"
+        programs = appdata / "Microsoft/Windows/Start Menu/Programs"
+        programs.mkdir(parents=True)
+        link = programs / updates.SHORTCUT_NAME
+        link.write_bytes(b"L\0\0\0" + str(app_dir / updates.APP_EXE).encode("utf-16-le") + b"\0\0")
+        old_appdata = os.environ.get("APPDATA")
+        os.environ["APPDATA"] = str(appdata)
+        try:
+            with open(app_dir / updates.APP_EXE, "rb"):  # a running copy can't be deleted: kept for now
+                updates.remove_old_app(game)
+            check((app_dir / updates.APP_EXE).exists() and link.exists(), "old app: an open copy is kept, and its shortcut")
+            updates.remove_old_app(game)
+            check(not app_dir.exists(), "old app: the game folder's copy and its folder are gone")
+            check(not any(updates.staging(game).iterdir()), "old app: the staged copy is gone")
+            check(not link.exists(), "old app: the Start menu entry pointing at it is gone")
+            app_dir.mkdir()
+            (app_dir / updates.APP_EXE).write_bytes(b"MZ old app")
+            link.write_bytes(b"L\0\0\0" + r"C:\Users\x\Downloads\BL4FixSetup.exe".encode("utf-16-le"))
+            updates.remove_old_app(game)
+            check(not app_dir.exists() and link.exists(), "old app: an entry pointing elsewhere is kept")
+        finally:
+            if old_appdata is not None:
+                os.environ["APPDATA"] = old_appdata
 
         check(updates.newer("0.10.0", "0.9.9") and not updates.newer("0.1.0", "0.1.0"), "versions compare numerically")
     finally:

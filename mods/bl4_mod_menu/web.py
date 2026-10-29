@@ -7,6 +7,8 @@ uiresources/bl4modmenu/session.json, then:
 - GET  /hello   200 only if the request comes from this game process (see below)
 - GET  /state   the mods and their options as JSON (built on the game thread, see below)
 - POST /action  {op, mod, path, value}: queued, and applied on the game thread by tick()
+- GET  /repos   the Discover / Repositories pages' data (repos.py), answered on the server thread:
+                plain Python state, no game access, so polls never wait for a frame
 
 The server thread never touches mods or the game: it only hands out the last snapshot and queues
 actions. Everything else happens in tick(), which runs every frame on the game thread.
@@ -46,7 +48,7 @@ from typing import Any
 
 from unrealsdk import logging
 
-from . import extensions, keys, model, updates
+from . import extensions, hotload, keys, model, repos, updates
 
 UI_DIR = "OakGame/Content/uiresources/bl4modmenu"
 SESSION_FILE = "session.json"
@@ -59,7 +61,7 @@ SNAPSHOT_S = 0.25
 WAIT_S = 0.2
 MAX_BODY = 64 * 1024
 # The page's scripts, kept as loose files (never in a pak, or they couldn't reload themselves)
-UI_FILES = ("loader.js", "main_loader.js", "menu.js", "menu.css", "extensions.js")
+UI_FILES = ("link.js", "loader.js", "main_loader.js", "menu.js", "menu.css", "extensions.js")
 PUBLISH_S = 1.0
 # A packed .sdkmod can't change while the game runs: then the loop only repairs deleted files
 PUBLISH_RELEASE_S = 10.0
@@ -104,6 +106,8 @@ class Link:
     menus_closed = 0
     game_dir: Path | None = None
     updates_rev = -1  # updates.U.revision in the current snapshot
+    repos_rev = -1  # repos.summary()["rev"] in the current snapshot
+    manifest_seen: Any = None  # the updates.U.manifest repos.py last listed
     quit_at = 0.0  # Restart on the Updates page: quit the game at this time (0: no)
 
 
@@ -149,6 +153,10 @@ class _Handler(BaseHTTPRequestHandler):
             Link.trace.append(f"{time.monotonic():.2f} hello from pid {owner}: {'ours' if mine else 'not ours'}")
             self._send(200 if mine else 421, b'{"ok":true}' if mine else b"")
             return
+        if self.path.startswith("/repos") and self._authorized():
+            # Discover / Repositories: plain state, built here (never waits for the game thread)
+            self._send(200, _repos_answer(self.path))
+            return
         if self.path.startswith("/ext") and self._authorized():
             # Other mods' screens on this page (extensions.py)
             self._send(200, extensions.handle_get(self.path))
@@ -186,6 +194,22 @@ class _Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         pass
+
+
+# Look at sdk_mods for new or replaced mods at most this often, while the page asks for /repos
+SCAN_S = 2.0
+
+
+def _repos_answer(path: str) -> bytes:
+    """/repos?v=<rev the page holds>: the whole state, or {"same": rev} when nothing changed."""
+    game_dir = Link.game_dir
+    if game_dir is not None and time.monotonic() - hotload.H.scanned_at >= SCAN_S:
+        hotload.scan(game_dir)
+    rev, data = repos.snapshot_json()
+    query = path.partition("?")[2].split("&")
+    if f"v={rev}" in query:
+        return b'{"same":%d}' % rev
+    return data
 
 
 # name -> (source stamp, target stamp) at the last publish; unchanged stamps = nothing to read
@@ -436,9 +460,16 @@ def _build_snapshot(full: bool) -> None:
     state: dict[str, Any] = {}
     if full:
         mods = []
+        icons = hotload.H.icons
         for mod in model.mods():
             try:
-                mods.append(model.mod_json(mod))
+                entry = model.mod_json(mod)
+                # The module it came from (build_mod names the settings file after it), for its icon
+                settings = getattr(mod, "settings_file", None)
+                entry["id"] = mod_id = Path(settings).stem if settings is not None else ""
+                if mod_id in icons:
+                    entry["icon"] = icons[mod_id]
+                mods.append(entry)
             except Exception as ex:  # noqa: BLE001 - one broken mod shouldn't hide the others
                 mods.append({"name": mod.name, "desc": f"Couldn't read this mod's options: {ex}",
                              "status": "Error", "status_kind": "warn", "options": []})  # fmt: skip
@@ -451,8 +482,10 @@ def _build_snapshot(full: bool) -> None:
         "menus": Link.menus_up,
         "menus_closed": Link.menus_closed,
         "updates": updates.snapshot(),
+        "repos": repos.summary(),
     }
     Link.updates_rev = state["updates"]["rev"]
+    Link.repos_rev = state["repos"]["rev"]
     data = json.dumps(state, separators=(",", ":"), default=str).encode("utf-8")
     if data != Link.snapshot:
         Link.revision += 1
@@ -468,8 +501,11 @@ def _apply(action: dict[str, Any]) -> None:
     if op == "ext":
         extensions.apply(action)
         return
-    if op in ("updates_check", "updates_apply", "updates_restart", "updates_seen"):
+    if op in ("updates_check", "updates_apply", "updates_restart", "updates_seen", "updates_load_now"):
         _apply_updates(op, action)
+        return
+    if isinstance(op, str) and op.startswith(("repo_", "mods_")):
+        _apply_repos(op, action)
         return
     if op == "close_menus":
         # Back on a screen F7 opened: close the game's menu we opened for it too
@@ -515,6 +551,8 @@ def _apply_updates(op: str, action: dict[str, Any]) -> None:
         install_new = [str(i) for i in action.get("value") or [] if isinstance(i, str)]
         if not updates.apply_async(game_dir, install_new):
             say("Already checking or downloading.")
+    elif op == "updates_load_now":
+        _load_staged(game_dir)
     elif op == "updates_restart":
         if updates.U.status != "ready":
             say("Nothing to install yet.", error=True)
@@ -523,6 +561,91 @@ def _apply_updates(op: str, action: dict[str, Any]) -> None:
             Link.quit_at = time.monotonic() + QUIT_DELAY_S
         else:
             say("Quit the game and start it again to finish the update.")
+
+
+def _load_staged(game_dir: Path) -> None:
+    """Load updates now: reloads every staged update whose mod can reload (the rest wait for the
+    restart; the helper still moves every file in when the game closes)."""
+    done, waiting = [], []
+    staged = sorted(updates.staging(game_dir).glob("*.sdkmod"))
+    if not staged:
+        say("No downloaded updates are waiting.")
+        return
+    for path in staged:
+        mod_id = path.stem
+        if hotload.H.loaded_from.get(mod_id) == str(path):
+            continue  # already running from there
+        try:
+            hotload.reload(game_dir, mod_id, path)
+            done.append(mod_id)
+        except Exception as ex:  # noqa: BLE001 - say why and carry on with the others
+            waiting.append(mod_id)
+            logging.warning(f"[Mod Menu] {mod_id} waits for the restart: {ex}")
+    names = [m.name for i in done for m in hotload.mods_of(i)] or done
+    text = f"Loaded {', '.join(names)} now." if done else "Nothing could load now."
+    if waiting:
+        text += f" At the restart: {', '.join(waiting)} (see the log for why)."
+    say(text, error=not done)
+
+
+def _try(action: Callable[[], str]) -> None:
+    """Runs a load/reload/remove and shows what happened, or why it couldn't."""
+    try:
+        say(action())
+    except Exception as ex:  # noqa: BLE001 - the reason is the message (a failed import, a refusal)
+        say(str(ex), error=True)
+
+
+def _str_ids(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else [value]
+    return [str(v) for v in values if isinstance(v, str) and hotload.MOD_ID.match(v)]
+
+
+def _apply_repos(op: str, action: dict[str, Any]) -> None:
+    """Discover, Repositories and the mods folder. Network work goes to repos.py's workers; loads
+    and removals run here, on the game thread."""
+    game_dir = Link.game_dir
+    if game_dir is None:
+        return
+    value = action.get("value")
+    match op:
+        case "repo_refresh":
+            if not repos.refresh_async():
+                say("Already checking the repositories.")
+            updates.check_async(game_dir)
+        case "repo_add_clip":
+            repos.add_from_clipboard_async()
+        case "repo_add_confirm":
+            repos.confirm_add()
+        case "repo_add_cancel":
+            repos.cancel_add()
+        case "repo_remove" if isinstance(value, str):
+            repos.remove_source(value)
+        case "repo_install":
+            for mod_id in _str_ids(value):
+                repos.install_async(mod_id)
+        case "repo_update":
+            repos.update_async(_str_ids(value))
+        case "repo_remove_mod":
+            for mod_id in _str_ids(value):
+                _try(lambda mod_id=mod_id: repos.remove_mod(mod_id))
+        case "repo_images" if isinstance(value, list):
+            repos.want_images([str(v) for v in value if isinstance(v, str)])
+        case "repo_link" if isinstance(value, str):
+            repos.open_link(value)
+        case "mods_folder":
+            hotload.open_folder(game_dir)
+            say("Mods folder opened: drop .sdkmod files in, then press Load here.")
+        case "mods_load":
+            for mod_id in _str_ids(value):
+                _try(lambda mod_id=mod_id: hotload.load(game_dir, mod_id))
+            threading.Thread(target=hotload.publish_icons, args=(game_dir,), daemon=True).start()
+        case "mods_reload":
+            for mod_id in _str_ids(value):
+                _try(lambda mod_id=mod_id: hotload.reload(game_dir, mod_id))
+            threading.Thread(target=hotload.publish_icons, args=(game_dir,), daemon=True).start()
+        case _:
+            pass
 
 
 def _quit_game() -> None:
@@ -585,8 +708,18 @@ def tick(menus_up: bool) -> None:
             changed = True
     _poll_capture()
     extensions.tick(menus_up)
+    if repos.pending_loads():
+        # Mods the repositories' workers downloaded: load them here, on the game thread
+        repos.drain()
+        changed = True
     now = time.monotonic()
     if updates.U.revision != Link.updates_rev:
+        changed = True
+        if updates.U.manifest is not Link.manifest_seen:
+            # BL4 Fix's release was read again: Discover lists its mods from it
+            Link.manifest_seen = updates.U.manifest
+            repos.official_checked()
+    if repos.R.events + hotload.H.revision != Link.repos_rev:
         changed = True
     if Link.quit_at and now >= Link.quit_at:
         Link.quit_at = 0.0

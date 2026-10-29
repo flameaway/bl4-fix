@@ -46,8 +46,12 @@
         button: "coui://uiresources/components/list_button/list_button.html"
     };
     var MAX_STEPPER_PIPS = 12;
-    // view.mod for the Updates page (not a mod name: no mod can be called this)
+    // view.mod for the Updates, Discover and Repositories pages (not mod names: no mod can be called these)
     var UPDATES = "\u0002updates";
+    var DISCOVER = "\u0002discover";
+    var REPOS = "\u0002repos";
+    // The Discover / Repositories data (GET /repos) is re-read this often while one of those pages shows
+    var REPOS_POLL_MS = 1000;
     // A gap this long between polls means this page was asleep (we poll every 200 ms while open)
     var WAKE_GAP_MS = 1500;
 
@@ -408,7 +412,9 @@
     // endregion
     // region State
 
-    var view = { open: false, mod: null, nested: [], details: null, dragging: false, installNew: {}, newTags: {} };
+    // item: the Discover entry shown full size (its id), shot: which of its pictures
+    var view = { open: false, mod: null, nested: [], details: null, dragging: false, installNew: {}, newTags: {},
+                 item: null, shot: 0 };  // prettier-ignore
     var ui = {};
 
     function currentMods() {
@@ -421,11 +427,30 @@
 
     function updatesPage() {
         var u = updatesState() || {};
-        return { name: "Updates", pseudo: true, desc: u.message || "", version: u.release || "", status: "", coop: "" };
+        return { name: "Updates", pseudo: UPDATES, desc: u.message || "", version: u.release || "", status: "", coop: "" };
+    }
+
+    // The small repositories summary in /state (counts, the toast); the pages' data is repoData()
+    function reposState() {
+        return (link.state && link.state.repos) || {};
+    }
+
+    // Updates waiting (BL4 Fix's and the repositories') plus new mods not yet shown: the "!"
+    function badgeCount() {
+        var u = updatesState() || {};
+        return (u.count || 0) + (reposState().updates || 0);
+    }
+
+    function pseudoPage(key) {
+        if (key === UPDATES) return updatesPage();
+        if (key === DISCOVER) return { name: "Discover", pseudo: DISCOVER, desc: "", version: "", status: "", coop: "" };
+        if (key === REPOS) return { name: "Repositories", pseudo: REPOS, desc: "", version: "", status: "", coop: "" };
+        return null;
     }
 
     function selectedMod() {
-        if (view.mod === UPDATES) return updatesPage();
+        var pseudo = pseudoPage(view.mod);
+        if (pseudo) return pseudo;
         var mods = currentMods();
         // No list yet (the screen opened before a full snapshot came): keep the mod asked for
         if (!mods.length) return null;
@@ -452,6 +477,19 @@
             link.lastOpenId = null;
             link.lastMsgId = state.message.id;
             link.lastCloseId = state.close;
+            link.lastRepoMsgId = state.repos && state.repos.message ? state.repos.message.id : null;
+            repoLink.rev = null;  // a new server: its revisions mean nothing to what we kept
+            for (var asked in askedPictures) delete askedPictures[asked];  // nor does what we asked the old one for
+        }
+        var rm = state.repos && state.repos.message;
+        if (rm && rm.id !== link.lastRepoMsgId) {
+            link.lastRepoMsgId = rm.id;
+            if (rm.text) toast(rm.text, rm.error);
+        }
+        // Something on the repositories' side moved: re-read their pages' data now
+        if (state.repos && state.repos.rev !== link.lastRepoRev) {
+            link.lastRepoRev = state.repos.rev;
+            if (repoPageShows()) pollReposSoon();
         }
         if (state.close !== link.lastCloseId) {
             // The open key, pressed while we're showing: same as Back from the top page
@@ -514,6 +552,9 @@
         d.appendChild(ui.detailsTitle);
         d.appendChild(ui.detailsMeta);
         d.appendChild(ui.detailsBody);
+        // A Discover entry's first picture, under its description (empty otherwise)
+        ui.detailsPic = el("div", "bl4mm_details_pic");
+        d.appendChild(ui.detailsPic);
         inner.appendChild(d);
         details.appendChild(inner);
         body.appendChild(details);
@@ -570,6 +611,12 @@
     }
 
     function back() {
+        if (view.item) {
+            view.item = null;
+            view.details = null;
+            render();
+            return;
+        }
         if (view.nested.length) {
             view.nested.pop();
             view.details = null;
@@ -593,31 +640,44 @@
         }
     }
 
+    // An entry for one of our own pages (Updates, Discover, Repositories) at the top of the list
+    function pseudoButton(key, word, kind) {
+        var b = listButton(pseudoPage(key).name, function () {
+            if (view.mod !== key) {
+                view.mod = key;
+                view.nested = [];
+                view.details = null;
+                view.item = null;
+                ui.options.scrollTop = 0;
+                pollReposSoon();
+            }
+            render();
+        }, "bl4mm_mod_btn");
+        if (view.mod === key) b.classList.add("bl4mm_selected");
+        if (word) b.appendChild(el("div", "bl4mm_status bl4mm_status_" + kind, word));
+        b.addEventListener("mouseenter", function () {
+            view.details = { mod: pseudoPage(key) };
+            renderDetails(selectedMod());
+        });
+        ui.mods.appendChild(b);
+        return b;
+    }
+
     function renderMods() {
         var mods = currentMods();
         ui.mods.innerHTML = "";
         var u = updatesState();
+        var rs = reposState();
         if (u && u.status !== "off") {
-            var ub = listButton("Updates", function () {
-                if (view.mod !== UPDATES) {
-                    view.mod = UPDATES;
-                    view.nested = [];
-                    view.details = null;
-                    ui.options.scrollTop = 0;
-                }
-                render();
-            }, "bl4mm_mod_btn");
-            if (view.mod === UPDATES) ub.classList.add("bl4mm_selected");
-            setBadge(q(ub, ".button_txt") || ub);
-            var word = u.count ? u.count + " new" : { checking: "Checking", downloading: "Downloading",
+            var count = badgeCount();
+            var word = count ? count + " new" : { checking: "Checking", downloading: "Downloading",
                 ready: "Restart", error: "Error", current: "Up to date" }[u.status] || "";  // prettier-ignore
-            ub.appendChild(el("div", "bl4mm_status bl4mm_status_" + (u.count || u.status === "ready" ? "warn" : u.status === "error" ? "off" : "on"), word));
-            ub.addEventListener("mouseenter", function () {
-                view.details = { mod: updatesPage() };
-                renderDetails(selectedMod());
-            });
-            ui.mods.appendChild(ub);
+            var ub = pseudoButton(UPDATES, word, count || u.status === "ready" ? "warn" : u.status === "error" ? "off" : "on");
+            setBadge(q(ub, ".button_txt") || ub);
         }
+        // Discover's count: mods dropped into the folder waiting to load first, else what's new
+        pseudoButton(DISCOVER, rs.found ? rs.found + " to load" : rs.discover ? String(rs.discover) : "", rs.found ? "warn" : "on");
+        pseudoButton(REPOS, rs.sources ? String(rs.sources) : "", "on");
         mods.forEach(function (mod) {
             var b = listButton(mod.name, function () {
                 if (view.mod !== mod.name) {
@@ -629,6 +689,12 @@
                 render();
             }, "bl4mm_mod_btn");
             if (mod.name === view.mod) b.classList.add("bl4mm_selected");
+            if (mod.icon) {
+                // The icon.png the mod carries (hotload.publish_icons), left of its name
+                var inner = q(b, ".button_inner") || b;
+                inner.insertBefore(picture(mod.icon, "bl4mm_mod_icon"), inner.firstChild);
+                b.classList.add("bl4mm_has_icon");
+            }
             var pip = el("div", "bl4mm_status bl4mm_status_" + mod.status_kind, mod.status);
             b.appendChild(pip);
             b.addEventListener("mouseenter", function () {
@@ -682,7 +748,9 @@
         ui.options.innerHTML = "";
         if (!mod) return;
         if (mod.pseudo) {
-            renderUpdates();
+            if (mod.pseudo === DISCOVER) renderDiscover();
+            else if (mod.pseudo === REPOS) renderRepos();
+            else renderUpdates();
             ui.options.scrollTop = scroll;
             return;
         }
@@ -755,6 +823,11 @@
             // The game's list button
             button: function (text, fn, cls) {
                 return listButton(text, fn, cls);
+            },
+            // A picture (a div showing it, scaled to fit): a coui:// url (a loose file your mod
+            // publishes, or Texture2D'...'), or an https url the Mod Menu downloads once and caches
+            image: function (src, cls) {
+                return picture(src, cls);
             },
             toast: toast
         };
@@ -872,6 +945,12 @@
                 send({ op: "updates_apply", value: picked });
             }, "bl4mm_update_btn"));
         }
+        if (!busy && u.status === "ready") {
+            // Reload the staged mods that can, without a restart (the rest wait for it)
+            actions.appendChild(listButton("Load now", function () {
+                send({ op: "updates_load_now" });
+            }, "bl4mm_update_btn"));
+        }
         if (!busy && u.status === "ready" && u.can_restart) {
             actions.appendChild(listButton("Restart now", function () {
                 send({ op: "updates_restart" });
@@ -906,9 +985,384 @@
                 if (n.blurb) ui.options.appendChild(el("p", "bl4mm_new_blurb", n.blurb));
             });
         }
-        if (!items.length && !fresh.length && !busy) {
+        var repoUpdates = renderRepoUpdates();
+        if (!items.length && !fresh.length && !repoUpdates && !busy) {
             ui.options.appendChild(el("p", "bl4mm_empty small_text_2",
                 u.status === "error" ? "No update information." : "Everything is up to date."));  // prettier-ignore
+        }
+    }
+
+    // Updates from the added repositories, under BL4 Fix's. Returns how many it listed.
+    function renderRepoUpdates() {
+        var r = repoData();
+        var list = (r && r.updates) || [];
+        if (!list.length) return 0;
+        var jobs = r.jobs || {};
+        addTitle("From your repositories");
+        var open = [];
+        list.forEach(function (item) {
+            var job = jobs[item.id];
+            var state = job ? job.state : "";
+            var b = null;
+            if (!state || state === "failed") {
+                open.push(item.id);
+                b = listButton("Update", function () {
+                    send({ op: "repo_update", value: [item.id] });
+                }, "bl4mm_update_btn");
+            }
+            addInfoRow(item.name, item.installed + "  ->  " + item.version + jobWord(job),
+                (item.notes ? item.notes + "\n\n" : "") + "From " + item.repo_name + "." +
+                (job && job.message ? "\n\n" + job.message : "\n\nUpdate reloads it right away when it can; otherwise it installs when the game closes."), b);  // prettier-ignore
+        });
+        if (open.length > 1) {
+            var actions = el("div", "bl4mm_update_actions");
+            actions.appendChild(listButton("Update all " + open.length, function () {
+                send({ op: "repo_update", value: open });
+            }, "bl4mm_update_btn"));
+            ui.options.appendChild(actions);
+        }
+        return list.length;
+    }
+
+    // "   45%", "   RELOADED"...: a job's state after a version or name
+    function jobWord(job) {
+        if (!job) return "";
+        if (job.state === "downloading") {
+            var p = job.progress || [0, 0];
+            return "   " + (p[1] ? Math.floor((100 * p[0]) / p[1]) + "%" : "...");
+        }
+        return "   " + ({ loading: "LOADING", loaded: "INSTALLED", reloaded: "RELOADED", staged: "AT RESTART",
+                         failed: "FAILED", removed: "REMOVED" }[job.state] || "");  // prettier-ignore
+    }
+
+    // endregion
+    // region Pictures
+
+    // Pictures are divs with a background image (what the game's own pages do). coui:// urls show
+    // as they are; https ones are downloaded by Python (repos.want_images) into a loose cache folder
+    // next to this page, and show once it's there (the repositories' data says where).
+    var askedPictures = ns.askedPictures || (ns.askedPictures = {});
+    var pictureQueue = [];
+
+    function pictureUrl(src) {
+        if (!src) return "";
+        if (/^(coui:|Texture2D'|TextureRenderTarget2D')/.test(src)) return src;
+        if (!/^https?:\/\//i.test(src)) return "";
+        var cached = (repoData() && repoData().images) || {};
+        if (cached[src] !== undefined) return cached[src];  // "" = couldn't be fetched
+        if (!askedPictures[src]) {
+            askedPictures[src] = true;
+            pictureQueue.push(src);
+            if (pictureQueue.length === 1) {
+                later(function () {
+                    var urls = pictureQueue.splice(0, pictureQueue.length);
+                    if (urls.length) send({ op: "repo_images", value: urls });
+                }, 50);
+            }
+        }
+        return null;  // on its way
+    }
+
+    // A div showing src (scaled to fit); empty (the placeholder style) until it's there. letter:
+    // shown while there's no picture (a mod's initial)
+    function picture(src, cls, letter) {
+        var d = el("div", "bl4mm_pic" + (cls ? " " + cls : ""));
+        var url = pictureUrl(src);
+        if (url) {
+            d.style.backgroundImage = "url(" + url + ")";
+        } else {
+            d.classList.add("bl4mm_pic_empty");
+            if (letter) d.appendChild(el("p", "bl4mm_pic_letter", letter.charAt(0).toUpperCase()));
+        }
+        return d;
+    }
+    ns.picture = picture;
+
+    // endregion
+    // region Repositories' data
+
+    // GET /repos (repos.py): the Discover and Repositories pages' data and Updates' repository part.
+    // Read once a second while one of those pages shows, at once after an action or when /state says
+    // it moved; an unchanged state comes back as {"same": rev}.
+    var repoLink = ns.repoLink || (ns.repoLink = { rev: null, data: null });
+    var repoTimer = null;
+
+    function repoData() {
+        return repoLink.data;
+    }
+
+    function repoPageShows() {
+        return view.open && (view.mod === DISCOVER || view.mod === REPOS || view.mod === UPDATES);
+    }
+
+    function pollRepos() {
+        if (repoTimer !== null) clearTimeout(repoTimer);
+        repoTimer = null;
+        if (!alive() || !link.port || !repoPageShows()) return;
+        http("GET", "/repos?v=" + (repoLink.rev === null ? "" : repoLink.rev), null, function (status, text) {
+            if (!alive()) return;
+            if (status === 200) {
+                try {
+                    var data = JSON.parse(text);
+                    if (data.same === undefined) {
+                        repoLink.data = data;
+                        repoLink.rev = data.rev;
+                        if (repoPageShows() && !view.dragging) render();
+                    }
+                } catch (err) {
+                    ns.log("bad repos state: " + err);
+                }
+            }
+            if (repoTimer === null && repoPageShows()) repoTimer = setTimeout(pollRepos, REPOS_POLL_MS);
+        });
+    }
+
+    function pollReposSoon() {
+        if (repoTimer !== null) clearTimeout(repoTimer);
+        repoTimer = setTimeout(pollRepos, 30);
+    }
+
+    function sendRepo(op, value) {
+        send({ op: op, value: value });
+        pollReposSoon();
+    }
+
+    function fmtSize(bytes) {
+        if (!bytes) return "";
+        if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + " KB";
+        return (bytes / 1024 / 1024).toFixed(1) + " MB";
+    }
+
+    // endregion
+    // region Discover page
+
+    function findItem(r, id) {
+        var list = (r && r.discover) || [];
+        for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+        return null;
+    }
+
+    // The button (or state) for a Discover entry: Install, a progress figure, or how it ended
+    function installPart(item, jobs) {
+        var job = jobs[item.id];
+        var state = job ? job.state : "";
+        if (!state || state === "failed") {
+            return listButton(state === "failed" ? "Try again" : "Install", function () {
+                sendRepo("repo_install", [item.id]);
+            }, "bl4mm_update_btn");
+        }
+        return el("p", "bl4mm_card_state" + (state === "loaded" ? " bl4mm_status_on" : ""), jobWord(job).trim());
+    }
+
+    function renderDiscover() {
+        var r = repoData();
+        ui.crumb.textContent = "Discover";
+        ui.back.querySelector(".button_txt").textContent = view.item ? "Back" : "Close";
+        if (!r) {
+            ui.options.appendChild(el("p", "bl4mm_update_msg", "Reading your repositories..."));
+            return;
+        }
+        if (view.item) {
+            var item = findItem(r, view.item);
+            if (item) return renderItem(r, item);
+            view.item = null;
+        }
+        var actions = el("div", "bl4mm_update_actions");
+        actions.appendChild(listButton("Open mods folder", function () {
+            sendRepo("mods_folder");
+        }, "bl4mm_update_btn"));
+        if (!r.refreshing) {
+            actions.appendChild(listButton("Check repositories", function () {
+                sendRepo("repo_refresh");
+            }, "bl4mm_update_btn"));
+        }
+        ui.options.appendChild(actions);
+
+        // Mods dropped into sdk_mods the game hasn't loaded (or replaced since it did)
+        var found = r.found || [];
+        if (found.length) {
+            addTitle("In your mods folder");
+            ui.options.appendChild(el("p", "bl4mm_update_msg", "Not running yet. Load starts a mod now, no restart needed."));
+            found.forEach(function (f) {
+                var changed = f.kind === "changed";
+                var b = f.problem ? null : listButton(changed ? "Reload" : "Load", function () {
+                    send({ op: changed ? "mods_reload" : "mods_load", value: [f.id] });
+                }, "bl4mm_update_btn");
+                addInfoRow(f.name || f.id, (f.version || "") + (changed ? "   CHANGED" : f.problem ? "   CAN'T LOAD" : ""),
+                    (f.problem ? f.problem + "\n\n" : "") + (f.description ? f.description + "\n\n" : "") + f.file +
+                    (changed ? "\n\nThis file was replaced while the game runs. Reload swaps the running copy for it." :
+                        "\n\nLoad imports it like the game does at start and turns it on."), b);  // prettier-ignore
+            });
+        }
+
+        var list = r.discover || [];
+        var jobs = r.jobs || {};
+        ui.options.appendChild(el("p", "bl4mm_update_msg", r.refreshing ? "Checking repositories..." :
+            list.length ? "Mods from your repositories that you don't have yet. Add more sources on Repositories." :
+            "Nothing new: you have every mod your repositories offer. Add more on Repositories."));  // prettier-ignore
+        var group = null;
+        list.forEach(function (item) {
+            if (item.repo_name !== group) {
+                group = item.repo_name;
+                addTitle(group);
+            }
+            ui.options.appendChild(card(item, jobs));
+        });
+    }
+
+    // A Discover entry: icon, name, who and what, a line of description, Install on the right.
+    // Click it for the full page (pictures, notes).
+    function card(item, jobs) {
+        var c = el("div", "bl4mm_card");
+        c.appendChild(picture(item.icon, "bl4mm_card_icon", item.name));
+        var text = el("div", "bl4mm_card_text");
+        text.appendChild(el("p", "bl4mm_card_name", item.name));
+        var meta = [item.author ? "by " + item.author : "", item.version, fmtSize(item.size)].filter(function (s) {
+            return !!s;
+        });
+        text.appendChild(el("p", "bl4mm_card_meta", meta.join("   |   ")));
+        if (item.blurb || item.description) text.appendChild(el("p", "bl4mm_card_blurb", item.blurb || item.description));
+        c.appendChild(text);
+        var part = installPart(item, jobs);
+        part.classList.add("bl4mm_card_action");
+        c.appendChild(part);
+        c.addEventListener("mouseenter", function () {
+            c.classList.add("hover_effect");
+            view.details = { item: item };
+            renderDetails(selectedMod());
+        });
+        c.addEventListener("mouseleave", function () {
+            c.classList.remove("hover_effect");
+        });
+        onClick(c, function () {
+            view.item = item.id;
+            view.shot = 0;
+            view.details = { item: item };
+            ui.options.scrollTop = 0;
+            render();
+        });
+        return c;
+    }
+
+    // One Discover entry, full size: its pictures (click for the next), description and notes
+    function renderItem(r, item) {
+        ui.crumb.textContent = "Discover  /  " + item.name;
+        var head = el("div", "bl4mm_item_head");
+        head.appendChild(picture(item.icon, "bl4mm_item_icon", item.name));
+        var text = el("div", "bl4mm_card_text");
+        text.appendChild(el("p", "bl4mm_item_name", item.name));
+        var meta = [item.author ? "by " + item.author : "", item.version, fmtSize(item.size), "from " + item.repo_name];
+        text.appendChild(el("p", "bl4mm_card_meta", meta.filter(function (s) { return !!s; }).join("   |   ")));  // prettier-ignore
+        head.appendChild(text);
+        ui.options.appendChild(head);
+
+        var actions = el("div", "bl4mm_update_actions");
+        actions.appendChild(installPart(item, r.jobs || {}));
+        if (item.homepage) {
+            actions.appendChild(listButton("Web page", function () {
+                sendRepo("repo_link", item.homepage);
+            }, "bl4mm_update_btn"));
+        }
+        ui.options.appendChild(actions);
+
+        var shots = item.images || [];
+        if (shots.length) {
+            var at = Math.min(view.shot, shots.length - 1);
+            var shot = picture(shots[at], "bl4mm_shot");
+            if (shots.length > 1) {
+                shot.appendChild(el("p", "bl4mm_shot_count", at + 1 + " / " + shots.length));
+                onClick(shot, function () {
+                    view.shot = (at + 1) % shots.length;
+                    render();
+                });
+                // The next one starts downloading now, so the click shows it at once
+                pictureUrl(shots[(at + 1) % shots.length]);
+            }
+            ui.options.appendChild(shot);
+        }
+        var desc = item.description || item.blurb;
+        if (desc) ui.options.appendChild(el("p", "bl4mm_item_desc", desc));
+        if (item.notes) {
+            addTitle("What's new");
+            ui.options.appendChild(el("p", "bl4mm_item_desc", item.notes));
+        }
+    }
+
+    // endregion
+    // region Repositories page
+
+    function renderRepos() {
+        var r = repoData();
+        ui.crumb.textContent = "Repositories";
+        ui.back.querySelector(".button_txt").textContent = "Close";
+        if (!r) {
+            ui.options.appendChild(el("p", "bl4mm_update_msg", "Reading your repositories..."));
+            return;
+        }
+        ui.options.appendChild(el("p", "bl4mm_update_msg",
+            "Add other modders' repositories to get their mods on Discover, with updates. Mods run code on " +
+            "your PC like any mod: only add repositories you trust."));  // prettier-ignore
+        var pending = r.pending;
+        var actions = el("div", "bl4mm_update_actions");
+        if (!pending) {
+            actions.appendChild(listButton("Add from clipboard", function () {
+                sendRepo("repo_add_clip");
+            }, "bl4mm_update_btn"));
+        }
+        if (!r.refreshing) {
+            actions.appendChild(listButton("Check all", function () {
+                sendRepo("repo_refresh");
+            }, "bl4mm_update_btn"));
+        }
+        ui.options.appendChild(actions);
+        if (!pending) {
+            ui.options.appendChild(el("p", "bl4mm_new_blurb",
+                "Copy a repository's link first: owner/name, a github.com link, or an https link to an index " +
+                "(or type modrepo add <link> in the console)."));  // prettier-ignore
+        } else if (pending.status === "checking") {
+            addTitle("Adding");
+            addInfoRow(pending.key, "CHECKING", "Reading the repository...", null);
+        } else {
+            addTitle("Add this repository?");
+            addInfoRow(pending.name, pending.count + " mod" + (pending.count === 1 ? "" : "s"),
+                (pending.description ? pending.description + "\n\n" : "") + pending.key +
+                (pending.mods && pending.mods.length ? "\n\nMods: " + pending.mods.join(", ") : ""), null);  // prettier-ignore
+            if (pending.description) ui.options.appendChild(el("p", "bl4mm_new_blurb", pending.description));
+            var confirm = el("div", "bl4mm_update_actions");
+            confirm.appendChild(listButton("Add", function () {
+                sendRepo("repo_add_confirm");
+            }, "bl4mm_update_btn"));
+            confirm.appendChild(listButton("Cancel", function () {
+                sendRepo("repo_add_cancel");
+            }, "bl4mm_update_btn"));
+            ui.options.appendChild(confirm);
+        }
+
+        addTitle("Your repositories");
+        (r.sources || []).forEach(function (s) {
+            var word = s.official ? "BUILT IN" : s.status === "error" ? "ERROR" : s.status === "checking" ? "CHECKING" : (s.message || "").toUpperCase();
+            var b = s.official ? null : listButton("Remove", function () {
+                sendRepo("repo_remove", s.key);
+            }, "bl4mm_update_btn");
+            addInfoRow(s.name || s.key, word,
+                (s.description ? s.description + "\n\n" : "") + (s.official ? "The BL4 Fix mods (" + s.key + "). Always on." : s.url || s.key) +
+                (s.release ? "\n\nNewest release: " + s.release : "") + (s.status === "error" ? "\n\n" + s.message : "") +
+                (s.homepage ? "\n\n" + s.homepage : ""), b);  // prettier-ignore
+        });
+
+        var installed = r.installed || [];
+        if (installed.length) {
+            addTitle("Installed from repositories");
+            var jobs = r.jobs || {};
+            installed.forEach(function (m) {
+                var job = jobs[m.id];
+                var gone = job && job.state === "removed";
+                var b = gone ? null : listButton("Remove", function () {
+                    sendRepo("repo_remove_mod", [m.id]);
+                }, "bl4mm_update_btn");
+                addInfoRow(m.id, (m.version || "") + jobWord(job),
+                    "From " + m.repo_name + ". Remove turns it off now and deletes its file when the game closes.", b);  // prettier-ignore
+            });
         }
     }
 
@@ -1190,6 +1644,18 @@
 
     function renderDetails(mod) {
         var d = view.details;
+        if (ui.detailsPic) ui.detailsPic.innerHTML = "";
+        if (d && d.item) {
+            var item = d.item;
+            ui.detailsTitle.textContent = item.name;
+            ui.detailsMeta.textContent = [item.author ? "by " + item.author : "", item.version, "from " + item.repo_name]
+                .filter(function (s) { return !!s; })
+                .join("   |   ");  // prettier-ignore
+            ui.detailsBody.textContent = (item.description || item.blurb || "") + (view.item ? "" : "\n\nClick for pictures and details.");
+            var first = (item.images || [])[0];
+            if (first && ui.detailsPic) ui.detailsPic.appendChild(picture(first, "bl4mm_details_shot"));
+            return;
+        }
         if (d && d.node) {
             ui.detailsTitle.textContent = d.node.title || d.node.name;
             var meta = [];
@@ -1201,6 +1667,24 @@
         }
         var shown = (d && d.mod) || mod;
         if (!shown) return;
+        if (shown.pseudo === DISCOVER) {
+            ui.detailsTitle.textContent = "Discover";
+            ui.detailsMeta.textContent = "";
+            ui.detailsBody.textContent =
+                "Mods from your repositories you don't have yet, with their pictures. Install puts a mod in your" +
+                " mods folder and starts it right away, no restart.\n\nOpen mods folder: drop any .sdkmod file in," +
+                " and it shows here to load, also without a restart.";  // prettier-ignore
+            return;
+        }
+        if (shown.pseudo === REPOS) {
+            ui.detailsTitle.textContent = "Repositories";
+            ui.detailsMeta.textContent = "";
+            ui.detailsBody.textContent =
+                "Where mods come from. BL4 Fix is built in; add any modder's GitHub repository (owner/name) or" +
+                " an https link to a repository index, and their mods show on Discover and update from Updates." +
+                "\n\nModders: see docs/mod-repos.md in the BL4 Fix repository for how to publish one.";  // prettier-ignore
+            return;
+        }
         if (shown.pseudo) {
             var u = updatesState() || {};
             ui.detailsTitle.textContent = "Updates";
@@ -1251,8 +1735,7 @@
     // a dot, not the font's "!": the glyph sits off-centre in its line box whatever the alignment.
     function setBadge(label) {
         if (!label) return;
-        var u = updatesState();
-        var show = !!(u && u.count);
+        var show = !!badgeCount();
         var badge = label.querySelector(".bl4mm_badge");
         if (!badge && !show) return;
         if (badge && !badge.querySelector(".bl4mm_badge_bar")) {
@@ -1292,8 +1775,7 @@
         }
         hoverable(b);
         onClick(b, function () {
-            var u = updatesState();
-            openScreen(u && u.count ? UPDATES : null);
+            openScreen(badgeCount() ? UPDATES : null);
         });
         slot.appendChild(b);
         entry.appendChild(slot);
@@ -1369,8 +1851,7 @@
             } catch (err) {}
         });
         onClick(entry, function () {
-            var u = updatesState();
-            openScreen(u && u.count ? UPDATES : null);
+            openScreen(badgeCount() ? UPDATES : null);
         });
         list.insertBefore(entry, anchor.nextSibling);
         setBadge(label || entry);
@@ -1392,6 +1873,7 @@
         ns.gen = 0;
         timers.forEach(clearTimeout);
         if (pollTimer !== null) clearTimeout(pollTimer);
+        if (repoTimer !== null) clearTimeout(repoTimer);
         docListeners.forEach(function (l) {
             document.removeEventListener(l[0], l[1]);
         });
@@ -1413,6 +1895,8 @@
         view.nested = ns.view.nested || [];
         view.installNew = ns.view.installNew || {};
         view.newTags = ns.view.newTags || {};
+        view.item = ns.view.item || null;
+        view.shot = ns.view.shot || 0;
     }
     ns.view = view;
 

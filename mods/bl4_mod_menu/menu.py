@@ -52,7 +52,7 @@ from unrealsdk import hooks, logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import WeakPointer
 
-from . import keys, web
+from . import health, keys, uilink, web
 from .widgets import DESIGN_H, DESIGN_W, Canvas, Color, Hint, call, make_overlay, viewport_scale, widget_lib
 
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
@@ -345,7 +345,7 @@ def _draw_mod_list(c: Canvas) -> None:
 
 
 def _status_color(mod: Mod, status: str) -> Color:
-    if "ncompatible" in status or "estart" in status:
+    if any(word in status for word in ("ncompatible", "estart", "eeds update", "onflict")):
         return WARN
     return GOOD if mod.is_enabled else BAD
 
@@ -792,7 +792,7 @@ def open_preferred(mod_name: str | None = None, fallback: Callable[[], None] | N
     # The page lives in the in-game menus, and its scripts only run while one of them is showing,
     # so in game always try it: open the pause menu, ask for MODS, and fall back to the basic
     # panel if the page doesn't answer (e.g. no MODS entry installed). At the title screen the
-    # page is the main menu's (main_page), when it's installed and polling.
+    # page is the main menu's (ui/link.js loads it there through the UI Link), when it's polling.
     if web.Link.server is None or (pc.Pawn is None and not web.connected()):
         fallback() if fallback is not None else open_menu(mod_name)
         return
@@ -862,6 +862,8 @@ def _tick() -> None:
     if pc is None:
         return
     web.tick(bool(pc.bShowMouseCursor) and not S.is_open)
+    health.tick()  # our mods' "needs an update" statuses and notice (a clock compare most frames)
+    uilink.tick()  # the BL4 UI Link, which loads our page (works once a frame across all our mods)
 
     if S.pending is not None:
         action, S.pending = S.pending, None

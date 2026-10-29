@@ -12,6 +12,8 @@ SUBMODULES = (
     "bl4_mod_menu.pause_page",
     "bl4_mod_menu.main_page",
     "bl4_mod_menu.updates",
+    "bl4_mod_menu.hotload",
+    "bl4_mod_menu.repos",
     "bl4_mod_menu.keys",
     "bl4_mod_menu.widgets",
     "bl4_mod_menu.model",

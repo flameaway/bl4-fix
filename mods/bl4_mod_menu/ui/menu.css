@@ -452,3 +452,186 @@
 }
 
 /* endregion */
+
+/* region Pictures, Discover and Repositories */
+
+/* Every picture is a div with a background image, scaled to fit (menu.js picture()) */
+.bl4mm_pic {
+    position: relative;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* No picture (yet): a dark tile, with the mod's initial where there's one */
+.bl4mm_pic_empty {
+    background-color: rgba(63, 118, 157, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bl4mm_pic_letter {
+    font-family: Industry-Bold;
+    font-size: 3rem;
+    color: rgba(228, 217, 206, 0.55);
+    margin: 0;
+}
+
+/* A mod's own icon.png, left of its name in the list */
+.bl4mm_has_icon .button_inner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4mm_mod_icon {
+    flex: 0 0 3.4rem;
+    width: 3.4rem;
+    height: 3.4rem;
+    margin-right: 1.2rem;
+}
+
+/* Discover: one row per mod, the density of an Options entry with room for a description line */
+.bl4mm_card {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 8.6rem;
+    height: 8.6rem;
+    margin: 0 0 0.8rem 0;
+    padding: 0 1.6rem;
+    background-color: rgba(3, 16, 25, 0.55);
+    border-left: 0.5rem solid rgba(0, 198, 255, 0);
+    cursor: pointer;
+}
+
+.bl4mm_card.hover_effect {
+    background-color: rgba(0, 198, 255, 0.16);
+    border-left-color: #00c6ff;
+}
+
+.bl4mm_card_icon {
+    flex: 0 0 6.4rem;
+    width: 6.4rem;
+    height: 6.4rem;
+    margin-right: 1.8rem;
+}
+
+.bl4mm_card_text {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.bl4mm_card_name {
+    font-family: Industry-DemiBold;
+    font-size: 2.3rem;
+    color: #e4d9ce;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.bl4mm_card_meta {
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #00c6ff;
+    margin: 0.2rem 0 0 0;
+    white-space: nowrap;
+}
+
+.bl4mm_card_blurb {
+    font-family: Industry-Normal;
+    font-size: 1.7rem;
+    color: #9fb4c0;
+    margin: 0.3rem 0 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4mm_card_action {
+    flex: 0 0 auto;
+    margin-left: 1.6rem;
+}
+
+.bl4mm_card .bl4mm_update_btn.list_btn {
+    width: 20rem;
+    margin-right: 0;
+}
+
+.bl4mm_card_state {
+    font-family: Industry-DemiBold;
+    font-size: 1.9rem;
+    color: #ffbb00;
+    white-space: nowrap;
+    margin: 0 1rem 0 1.6rem;
+}
+
+/* One Discover entry, full size */
+.bl4mm_item_head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 1rem 2rem 0 2rem;
+}
+
+.bl4mm_item_icon {
+    flex: 0 0 9rem;
+    width: 9rem;
+    height: 9rem;
+    margin-right: 2.2rem;
+}
+
+.bl4mm_item_name {
+    font-family: Industry-Bold;
+    font-size: 3.4rem;
+    color: #e4d9ce;
+    margin: 0;
+}
+
+/* Screenshots at 16:9 across the column; a click shows the next one */
+.bl4mm_shot {
+    flex: 0 0 auto;
+    width: auto;
+    height: 40rem;
+    margin: 0 2rem 1.6rem 2rem;
+    background-color: rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+}
+
+.bl4mm_shot_count {
+    position: absolute;
+    right: 1.2rem;
+    bottom: 1rem;
+    padding: 0.3rem 1rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.7rem;
+    color: #e4d9ce;
+    background-color: rgba(3, 16, 25, 0.8);
+    margin: 0;
+}
+
+.bl4mm_item_desc {
+    font-family: Industry-Normal;
+    font-size: 2rem;
+    line-height: 2.8rem;
+    color: #e4d9ce;
+    white-space: pre-wrap;
+    margin: 0 2rem 1.6rem 2rem;
+}
+
+/* The details pane's picture (a Discover entry's first screenshot) */
+.bl4mm_details_pic {
+    margin-top: 2rem;
+}
+
+.bl4mm_details_shot {
+    width: 100%;
+    height: 27rem;
+}
+
+/* endregion */

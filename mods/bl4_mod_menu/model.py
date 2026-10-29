@@ -107,7 +107,9 @@ def resolve(mod: Mod, path: Sequence[str]) -> BaseOption | None:
 def status(mod: Mod) -> tuple[str, str]:
     """(status text, kind): kind is on / off / warn."""
     text = plain(mod.get_status())
-    if "ncompatible" in text or "estart" in text:
+    # "Needs update" / "Conflict": set by the shared health package (a game update or another mod's
+    # file broke part of it; its description says what)
+    if any(word in text for word in ("ncompatible", "estart", "eeds update", "onflict")):
         return text, "warn"
     return text, "on" if mod.is_enabled else "off"
 

@@ -18,8 +18,10 @@ caches their directory, mods read their assets from them), so replacing one unde
 mismatched or broken reads, the same way a replaced pak does. Downloads are verified (size, SHA-256,
 the mod's folder and version inside) and staged in sdk_mods/.bl4_updates/ (dot folders aren't
 loaded as mods). A hidden helper waits until the game has closed, moves them into sdk_mods, and
-starts the game again if the player chose Restart. The setup app's copy in the game folder
-(sdk_mods/.bl4_direct/) is updated the same way, so a later repair can't put old mods back.
+starts the game again if the player chose Restart. The setup app isn't updated from here: it
+updates itself where the player keeps it (installer/selfupdate.py). Setup apps before 2026-10-28
+kept a ~100 MB copy of themselves in sdk_mods/.bl4_direct/ (and older Mod Menus downloaded each new
+one into it); remove_old_app() deletes it.
 
 Plain Python only (network and file I/O, never unreal calls): everything runs on worker threads
 and the game thread only reads snapshot().
@@ -29,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -58,9 +61,14 @@ MAX_MANIFEST = 1 << 20
 MAX_ASSET = 256 << 20
 CHUNK = 64 << 10
 STAGING = ".bl4_updates"  # in sdk_mods
-APP_DIR = ".bl4_direct"  # in sdk_mods: the setup app's copy (installer core.TOOLS_DIR_REL)
+# In sdk_mods: where setup apps before 2026-10-28 kept a copy of themselves (installer core.TOOLS_DIR_REL)
+APP_DIR = ".bl4_direct"
 APP_EXE = "BL4DirectSetup.exe"
 APP_VERSION_FILE = "version.txt"
+# What the copy's folder (and older Mod Menus' staging) held: the exe, its version, self-update leftovers
+OLD_APP_FILES = (APP_EXE, APP_VERSION_FILE, f"{APP_EXE}.old", f"{APP_EXE}.new")
+# The Start menu entry those setup apps pointed at the copy (installer core.SHORTCUT_NAME)
+SHORTCUT_NAME = "BL4 Fix Setup.lnk"
 # In sdk_mods/settings: the new mods the player was already told about (the badge shows each once)
 SEEN_FILE = "bl4_mod_menu_seen_mods.json"
 RELAUNCH_FLAG = "relaunch"
@@ -261,13 +269,6 @@ def installed_sdk(game_dir: Path) -> str | None:
         return None
     match = re.search(r'\[mod_manager\][^\[]*display_version\s*=\s*"([^"\s]+)', text)
     return match.group(1) if match else None
-
-
-def _app_version(game_dir: Path) -> str | None:
-    try:
-        return (sdk_mods(game_dir) / APP_DIR / APP_VERSION_FILE).read_text(encoding="utf-8").strip() or None
-    except OSError:
-        return None
 
 
 # endregion
@@ -477,11 +478,7 @@ def apply(game_dir: Path, install_new: list[str] | None = None) -> None:
         return
 
     infos = [(mod_id, manifest["mods"][mod_id]) for mod_id in wanted]
-    app = manifest.get("app")
-    want_app = isinstance(app, dict) and (sdk_mods(game_dir) / APP_DIR / APP_EXE).is_file() and newer(
-        str(app.get("version", "")), _app_version(game_dir)
-    )
-    total = sum(int(info.get("size") or 0) for _, info in infos) + (int(app.get("size") or 0) if want_app else 0)  # type: ignore[union-attr]
+    total = sum(int(info.get("size") or 0) for _, info in infos)
     done = 0
     _set(status="downloading", message=f"Downloading {len(infos)} mod(s)...", progress=(0, total))
 
@@ -497,19 +494,9 @@ def apply(game_dir: Path, install_new: list[str] | None = None) -> None:
             _verify_mod(data, mod_id, str(info["version"]))
             downloads.append((mod_id, data))
             done += len(data)
-        app_data = b""
-        if want_app:
-            base = done
-            app_data = _download(repo, tag, app, lambda n: _set(progress=(base + n, total)))  # type: ignore[arg-type]
-            if not app_data.startswith(b"MZ"):
-                raise RuntimeError("the setup app download isn't a Windows program")
         for mod_id, data in downloads:
             written.append(staged_dir / f"{mod_id}.sdkmod")
             _write(written[-1], data)
-        if app_data:
-            written += [staged_dir / APP_EXE, staged_dir / APP_VERSION_FILE]
-            _write(staged_dir / APP_EXE, app_data)
-            _write(staged_dir / APP_VERSION_FILE, str(app["version"]).encode("utf-8"))  # type: ignore[index]
     except BaseException:
         for path in written:
             path.unlink(missing_ok=True)
@@ -557,22 +544,22 @@ def _ps(path: Path) -> str:
 def helper_script(game_dir: Path, process: str = "Borderlands4") -> str:
     """The PowerShell that waits for the game to close, then moves the staged files into place."""
     staged, mods_dir = staging(game_dir), sdk_mods(game_dir)
-    app_dir = mods_dir / APP_DIR
     launch = f"steam://rungameid/{STEAM_APP_ID}"
     return (
         # Every copy of the game, not just this process (two instances, a dev tool)
         f"while (Get-Process -Name {process} -ErrorAction SilentlyContinue) {{ Start-Sleep 2 }}; "
-        f"$s = {_ps(staged)}; $m = {_ps(mods_dir)}; $a = {_ps(app_dir)}; "
+        f"$s = {_ps(staged)}; $m = {_ps(mods_dir)}; "
         "for ($i = 0; $i -lt 30; $i++) { try { "
+        # <id>.remove: a mod removed in game (repos.remove_mod) goes now
+        "Get-ChildItem -LiteralPath $s -Filter *.remove -File | ForEach-Object { "
+        "$t = Join-Path $m ($_.BaseName + '.sdkmod'); "
+        "if (Test-Path -LiteralPath $t) { Remove-Item -LiteralPath $t -Force -ErrorAction Stop }; "
+        "Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop }; "
         "Get-ChildItem -LiteralPath $s -Filter *.sdkmod -File | ForEach-Object { "
         "Move-Item -LiteralPath $_.FullName -Destination (Join-Path $m $_.Name) -Force -ErrorAction Stop }; "
-        f"if (Test-Path -LiteralPath (Join-Path $s '{APP_EXE}')) {{ "
-        "New-Item -ItemType Directory -Force -Path $a | Out-Null; "
-        f"Move-Item -LiteralPath (Join-Path $s '{APP_EXE}') -Destination (Join-Path $a '{APP_EXE}') -Force -ErrorAction Stop; "
-        f"Move-Item -LiteralPath (Join-Path $s '{APP_VERSION_FILE}') -Destination (Join-Path $a '{APP_VERSION_FILE}') -Force -ErrorAction SilentlyContinue }}; "
         "break } catch { Start-Sleep 1 } }; "
         f"$r = Test-Path -LiteralPath (Join-Path $s '{RELAUNCH_FLAG}'); "
-        "if (-not (Get-ChildItem -LiteralPath $s -Filter *.sdkmod -File -ErrorAction SilentlyContinue)) { "
+        "if (-not (Get-ChildItem -LiteralPath $s -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.sdkmod', '.remove' })) { "
         "Remove-Item -LiteralPath $s -Recurse -Force -ErrorAction SilentlyContinue }; "
         f"if ($r) {{ Start-Process '{launch}' }}"
     )
@@ -599,9 +586,10 @@ def start_helper(game_dir: Path) -> bool:
 
 def resume(game_dir: Path) -> None:
     """At launch: updates staged by an earlier session that didn't install yet go in at this exit."""
-    if any(staging(game_dir).glob("*.sdkmod")):
+    if any(staging(game_dir).glob("*.sdkmod")) or any(staging(game_dir).glob("*.remove")):
         _set(game_dir=game_dir)
         start_helper(game_dir)
+    threading.Thread(target=remove_old_app, args=(game_dir,), name="bl4_mod_menu.old_app", daemon=True).start()
 
 
 def mark_restart(game_dir: Path) -> bool:
@@ -612,6 +600,52 @@ def mark_restart(game_dir: Path) -> bool:
     staged.mkdir(parents=True, exist_ok=True)
     (staged / RELAUNCH_FLAG).write_bytes(b"")
     return True
+
+
+# region The setup app's old copy
+
+
+def _shortcut_targets(link: Path, exe: Path) -> bool:
+    """Whether a .lnk file points at `exe` (the path is stored in it as ANSI and/or UTF-16 text)."""
+    try:
+        data = link.read_bytes().lower()
+    except OSError:
+        return False
+    path = str(exe).lower()
+    return path.encode("utf-16-le") in data or path.encode("mbcs", "replace") in data
+
+
+def remove_old_app(game_dir: Path) -> None:
+    """
+    Deletes the setup app's copy in sdk_mods/.bl4_direct/ (~100 MB; nothing uses it any more) and
+    what older Mod Menus staged of it, plus the Start menu entry when it points at that copy. A copy
+    that's running (opened from that entry) can't be deleted: it's tried again at the next launch.
+    Plain file I/O: call from a worker.
+    """
+    app_dir = sdk_mods(game_dir) / APP_DIR
+    exe = app_dir / APP_EXE
+    had = exe.exists()
+    for folder in (staging(game_dir), app_dir):
+        for name in OLD_APP_FILES:
+            try:
+                (folder / name).unlink(missing_ok=True)
+            except OSError as ex:
+                _log(f"couldn't remove the setup app's old copy ({folder / name}): {ex}")
+                return
+    try:
+        app_dir.rmdir()  # only if nothing else is in it
+    except OSError:
+        pass
+    if not had:
+        return
+    _log(f"removed the setup app's old copy in {app_dir}")
+    if appdata := os.environ.get("APPDATA"):
+        link = Path(appdata) / "Microsoft/Windows/Start Menu/Programs" / SHORTCUT_NAME
+        if _shortcut_targets(link, exe):
+            try:
+                link.unlink()
+            except OSError:
+                pass
 
 
 # endregion
