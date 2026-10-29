@@ -25,7 +25,10 @@ Turning the mod off stops the script and takes everything it drew off the cards 
 
 from __future__ import annotations
 
+import sys
+import threading
 import time
+import types
 from typing import Any
 
 from mods_base import SETTINGS_DIR, BoolOption, ButtonOption, KeybindOption, SliderOption, build_mod, hook
@@ -59,7 +62,33 @@ def _report_error(ex: Exception) -> None:
         logging.error(f"[Item Cards] {message}")
 
 
+# Shared by every copy of this module (a hot reload imports a new one while the old copy's
+# disable may still be syncing): one sync at a time, and the newest wish wins
+_SYNC = sys.modules.setdefault("_bl4_item_cards_sync", types.ModuleType("_bl4_item_cards_sync"))
+if not hasattr(_SYNC, "lock"):
+    _SYNC.lock = threading.Lock()
+    _SYNC.want = None  # (sync function, enabled) not done yet
+
+
 def sync_page(enabled: bool) -> None:
+    """
+    card_page.sync reads the game's pak indexes (~0.7 s) and writes files: a worker does it, so
+    turning the mod on mid-game (installed from the Mod Menu's Discover, which loads it on the
+    game thread) doesn't freeze the game. At startup the SDK enables mods off the game thread
+    anyway. The cards show once it's done.
+    """
+    _SYNC.want = (_sync_now, enabled)
+    threading.Thread(target=_sync_latest, name="bl4_item_cards.sync", daemon=True).start()
+
+
+def _sync_latest() -> None:
+    with _SYNC.lock:
+        want, _SYNC.want = _SYNC.want, None
+        if want is not None:
+            want[0](want[1])
+
+
+def _sync_now(enabled: bool) -> None:
     global _status
     try:
         _status = card_page.sync(GAME_DIR, enabled)
