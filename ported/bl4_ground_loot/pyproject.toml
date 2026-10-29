@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Ground Loot"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bring the loot lying around to you, or clear it away."
 authors = [{ name = "flame" }, { name = "Yeti (original mod)" }]
 license = "GPL-3.0-only"

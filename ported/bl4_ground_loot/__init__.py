@@ -8,11 +8,11 @@ Only loot the game has loaded can move, and that doesn't reach very far. Item of
 in vending machines are left alone. Clearing drops the loot far below the map; it can leave a
 marker on the radar for a while.
 
-Co-op: loot is per player, and each key only moves the loot of the player who pressed it (gear
-whose Owner is their controller, plus shared pickups). Loot lives in the host's world: a client
-moving its own copy would only fool its screen, so a client's press asks the host's copy of this
-mod to move it (BL4 Direct's co-op channel). So the host needs the mod for anyone to use it, and
-each player who wants the keys needs it too.
+Co-op: loot isn't replicated. Every player's game spawns its own loot (gear and pickups) and only
+that game can move it, so each key moves this game's loot right here, whatever the role. With
+"Co-op partners' loot" on, Bring also asks the other players' copies of this mod to bring their
+loot to the same spot (the host passes a friend's ask on to everyone else, over BL4 Direct's
+co-op channel). Players without the mod keep their loot where it fell.
 """
 
 from __future__ import annotations
@@ -30,11 +30,14 @@ try:
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo/host behavior only
     coop = None
 
-__version__ = "0.1.0"
-__version_info__ = (0, 1, 0)
+__version__ = "0.2.0"
+__version_info__ = (0, 2, 0)
 
-FEATURE = "ground_loot"
-SERVICE = "ground_loot.move"
+# v0.1 had "ground_loot" + "ground_loot.move" (a client asked the host to move loot the host
+# doesn't have); new names so the two versions ignore each other
+FEATURE = "ground_loot.share"
+SERVICE = "ground_loot.gather"  # a friend pressed Bring: host brings its loot, tells everyone else
+PUSH = "ground_loot.bring_to"  # host -> a friend: bring your loot to this spot
 
 RING_FIRST = 200.0  # cm from you to the first ring of gear
 RING_GAP = 150.0
@@ -72,6 +75,14 @@ range_option = SliderOption(
     10,
     description="Only loot this close moves (both keys). 0 = all loot the game has loaded.",
 )
+partners_option = BoolOption(
+    "Co-op partners' loot",
+    True,
+    description=(
+        "In co-op, Bring loot also brings the other players' loot to the same spot, and a partner's"
+        " Bring brings yours to them (players who run Ground Loot). Clear loot only clears your own."
+    ),
+)
 
 
 def _is_pickup(item: UObject) -> bool | None:
@@ -90,25 +101,33 @@ def _is_pickup(item: UObject) -> bool | None:
     return None
 
 
-def _ground_loot(pc: UObject, origin: Any, options: dict[str, Any]) -> tuple[list[UObject], list[UObject]]:
-    """(pickups, gear) lying around for this player, nearest first, as the options choose."""
+def _players(pc: UObject, partners: bool) -> list[UObject]:
+    """The controllers whose loot moves: the presser, plus (on the host) everyone else."""
+    players = [pc]
+    if partners and coop is not None:
+        host = get_pc()
+        for other in ([host] if host is not None else []) + coop.remote_controllers():
+            if all(other != p for p in players):
+                players.append(other)
+    return players
+
+
+def _ground_loot(origin: Any, max_m: float) -> tuple[list[UObject], list[UObject]]:
+    """(pickups, gear) lying around in this game, nearest first. All of it is ours: loot isn't
+    replicated, every player's game spawns its own."""
     world = ENGINE.GameViewport.World
+    pc = get_pc()
     shown: set[int] = set()
     _, vendors = _statics.GetAllActorsOfClass(world, _vendor_class, [])
     for vendor in vendors:
-        if vendor is not None and (item := vendor.GetIOTDForPlayer(pc)) is not None:
+        if vendor is not None and pc is not None and (item := vendor.GetIOTDForPlayer(pc)) is not None:
             shown.add(item._get_address())
 
-    max_dist = float(options.get("range", 0)) * 100.0
+    max_dist = max_m * 100.0
     found: list[tuple[float, bool, UObject]] = []
     _, items = _statics.GetAllActorsOfClass(world, _pickup_class, [])
     for item in items:
         if item is None or item.RootPrimitiveComponent is None or item._get_address() in shown:
-            continue
-        # In co-op the host has every player's loot: gear drops for one player (its Owner is
-        # their controller); ammo, health and money have no owner
-        owner = item.Owner
-        if owner is not None and owner != pc:
             continue
         where = item.K2_GetActorLocation()
         dist = math.dist((where.X, where.Y, where.Z), (origin.X, origin.Y, origin.Z))
@@ -118,9 +137,14 @@ def _ground_loot(pc: UObject, origin: Any, options: dict[str, Any]) -> tuple[lis
         if kind is not None:
             found.append((dist, kind, item))
     found.sort(key=lambda entry: entry[0])
-    pickups = [i for _, k, i in found if k] if options.get("pickups", True) else []
-    gear = [i for _, k, i in found if not k] if options.get("gear", True) else []
+    pickups = [i for _, k, i in found if k] if pickups_option.value else []
+    gear = [i for _, k, i in found if not k] if gear_option.value else []
     return pickups, gear
+
+
+def _pawn() -> UObject | None:
+    pc = get_pc()
+    return pc.Pawn if pc is not None else None
 
 
 def _move(item: UObject, x: float, y: float, z: float, yaw: float | None = None) -> None:
@@ -129,71 +153,94 @@ def _move(item: UObject, x: float, y: float, z: float, yaw: float | None = None)
     item.K2_TeleportTo(make_struct("Vector", X=x, Y=y, Z=z), rotation)
 
 
-def _bring(pc: UObject, options: dict[str, Any]) -> dict[str, Any]:
-    pawn = pc.Pawn
+def _bring_to(x: float, y: float, z: float, facing_deg: float) -> str:
+    """Brings this game's loot (lying around our own character) to the spot x, y, z."""
+    pawn = _pawn()
     if pawn is None:
-        return {"ok": False, "error": "no character"}
-    here = pawn.K2_GetActorLocation()
-    facing = math.radians(pawn.K2_GetActorRotation().Yaw)
-    pickups, gear = _ground_loot(pc, here, options)
+        return "no character"
+    pickups, gear = _ground_loot(pawn.K2_GetActorLocation(), float(range_option.value))
     for item in pickups:
-        _move(item, here.X, here.Y, here.Z - FEET)
+        _move(item, x, y, z - FEET)
 
-    # Rings around you, starting straight ahead; each ring holds as many as fit its length
+    # Rings around the spot, starting straight ahead; each ring holds as many as fit its length
+    facing = math.radians(facing_deg)
     placed, ring = 0, 0
     while placed < len(gear):
         radius = RING_FIRST + ring * RING_GAP
         count = min(len(gear) - placed, max(1, int(2 * math.pi * radius / RING_SPACING)))
         for slot in range(count):
             angle = facing + 2 * math.pi * slot / count
-            x, y = here.X + radius * math.cos(angle), here.Y + radius * math.sin(angle)
-            # Faces away from you, like the game lays out a boss's drops
-            _move(gear[placed], x, y, here.Z - FEET, math.degrees(angle))
+            gx, gy = x + radius * math.cos(angle), y + radius * math.sin(angle)
+            # Faces away from the spot, like the game lays out a boss's drops
+            _move(gear[placed], gx, gy, z - FEET, math.degrees(angle))
             placed += 1
         ring += 1
-    return {"ok": True, "text": f"brought {len(pickups)} pickup(s) and {len(gear)} item(s)"}
+    return f"brought {len(pickups)} pickup(s) and {len(gear)} item(s)"
 
 
-def _clear(pc: UObject, options: dict[str, Any]) -> dict[str, Any]:
-    pawn = pc.Pawn
+def _clear() -> str:
+    pawn = _pawn()
     if pawn is None:
-        return {"ok": False, "error": "no character"}
-    pickups, gear = _ground_loot(pc, pawn.K2_GetActorLocation(), options)
+        return "no character"
+    pickups, gear = _ground_loot(pawn.K2_GetActorLocation(), float(range_option.value))
     for item in pickups + gear:
         _move(item, 100000.0, 100000.0, -1.0e9)
-    return {"ok": True, "text": f"cleared {len(pickups) + len(gear)} item(s)"}
+    return f"cleared {len(pickups) + len(gear)} item(s)"
+
+
+def _share(spot: dict[str, Any], skip: UObject | None = None) -> int:
+    """Host: tells every other modded player to bring their loot to the spot. Returns how many."""
+    sent = 0
+    for pc in coop.players_with(FEATURE):
+        if skip is None or pc != skip:
+            coop.push(pc, PUSH, spot)
+            sent += 1
+    return sent
 
 
 def _serve(req: Any) -> dict[str, Any]:
-    """Host side (also our own presses): moves the asking player's loot."""
-    if not mod.is_enabled:
-        return {"ok": False, "error": "Ground Loot is off on the host"}
-    action = _bring if req.data.get("do") == "bring" else _clear
-    return action(req.pc, req.data)
+    """Host: a friend pressed Bring. Our own loot goes to them, and everyone else's too."""
+    if not mod.is_enabled or not partners_option.value:
+        return {"ok": False, "error": "the host's Ground Loot doesn't share loot"}
+    spot = {k: float(req.data[k]) for k in ("x", "y", "z", "yaw")}
+    text = _bring_to(spot["x"], spot["y"], spot["z"], spot["yaw"])
+    others = _share(spot, skip=req.pc)
+    log(f"{text} to a partner")
+    return {"ok": True, "text": f"the host {text}; asked {others} other player(s)"}
 
 
-def _options(do: str) -> dict[str, Any]:
-    return {"do": do, "pickups": pickups_option.value, "gear": gear_option.value, "range": range_option.value}
+def _on_push(data: dict[str, Any]) -> None:
+    """Friend: a partner pressed Bring; bring our loot to their spot."""
+    if mod.is_enabled and partners_option.value:
+        log(f"{_bring_to(float(data['x']), float(data['y']), float(data['z']), float(data['yaw']))} to a partner")
 
 
 def _done(reply: dict[str, Any]) -> None:
     if reply.get("ok"):
         log(reply.get("text", "done"))
     else:
-        log(f"couldn't move the loot: {reply.get('error')}")
+        log(f"partners' loot: {reply.get('error')}")
 
 
 def _press(do: str) -> None:
-    options = _options(do)
-    if coop is None:
-        pc = get_pc()
-        if pc is not None:
-            _done((_bring if do == "bring" else _clear)(pc, options))
+    if do == "clear":
+        log(_clear())
         return
-    # Solo or host: right here. Co-op client: loot belongs to the host's world, so the host's
-    # mod moves it (moving it here would only move our copy)
-    if not coop.run(SERVICE, options, _done, feature_name=FEATURE):
-        log("in co-op the host needs Ground Loot to move your loot")
+    pawn = _pawn()
+    if pawn is None:
+        return
+    here = pawn.K2_GetActorLocation()
+    spot = {"x": here.X, "y": here.Y, "z": here.Z, "yaw": pawn.K2_GetActorRotation().Yaw}
+    log(_bring_to(spot["x"], spot["y"], spot["z"], spot["yaw"]))
+    if coop is None or not partners_option.value:
+        return
+    role = coop.role()
+    if role == "host":
+        log(f"asked {_share(spot)} partner(s) to bring theirs")
+    elif role == "client":
+        # Only the host can reach the other players: it brings its own and passes the ask on
+        if not coop.run(SERVICE, spot, _done, feature_name=FEATURE):
+            log("the host doesn't run Ground Loot 0.2+, so only your own loot came")
 
 
 @keybind("Bring loot to me", description="Brings the loot lying around to you.")
@@ -213,7 +260,7 @@ def clear_key() -> None:
 
 
 mod = build_mod(
-    options=[pickups_option, gear_option, range_option],
+    options=[pickups_option, gear_option, range_option, partners_option],
     keybinds=[bring_key, clear_key],
     hooks=[],
 )
@@ -221,3 +268,4 @@ mod = build_mod(
 if coop is not None:
     coop.feature(FEATURE, lambda: mod.is_enabled)
     coop.handle(SERVICE, _serve)
+    coop.on_push(PUSH, _on_push)
