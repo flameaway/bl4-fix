@@ -1,7 +1,7 @@
 [project]
 name = "BL4 UVH Boss Teleport"
-version = "0.1.1"
-description = "Hover an Ultimate Vault Hunter boss challenge in the ECHO menu's Challenges and press T to teleport to that boss. Needs the BL4 Mod Menu for the card prompt; or use the uvhtp console command."
+version = "0.2.0"
+description = "Hover an Ultimate Vault Hunter boss challenge in the ECHO menu's Challenges and press T to teleport to that boss. Or use the uvhtp console command."
 authors = [{ name = "flame" }]
 
 [tool.sdkmod]

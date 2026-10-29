@@ -1,21 +1,21 @@
 """
 The teleport prompt on the challenges menu's info card.
 
-The challenges menu lives in the game's menu page, the same page as the BL4 Mod Menu, so this
-borrows the Mod Menu's link (bl4_mod_menu.extensions): the menu loads ui/challenges.js into the
-page and re-runs it whenever it changes. The script knows which challenges have a boss to go to
+The challenges menu lives in the game's menu page. The BL4 UI Link (uilink/, shared by our mods;
+no Mod Menu needed) runs ui/challenges.js there and re-runs it whenever it changes; until the
+link's pak loads (the first start after installing), the BL4 Mod Menu's own link carries the
+script if it's installed. The script knows which challenges have a boss to go to
 (our state lists them), adds "[T] Teleport to Core Observer" to the hovered challenge's info card
 and tells us which one is hovered. No key events reach page scripts, so the key is read from
 Windows here, and only counts while the script says a teleport challenge is hovered. Then
 travel.py makes the trip right away, from inside the menu, like the item cards' Big Encore travel.
-On the same map we then close the menu (the Mod Menu's Esc, again only while the menu is still up:
+On the same map we then close the menu (the link's Esc, again only while the menu is still up:
 one too many would open the pause menu). A fast travel to another map needs no closing: its loading
 screen takes the menus down. If the trip can't start, the menu stays open and the card says why.
 """
 
 from __future__ import annotations
 
-import sys
 import time
 from collections.abc import Callable
 from importlib import resources
@@ -24,7 +24,7 @@ from typing import Any
 
 from unrealsdk import logging
 
-from . import travel
+from . import health, travel, uilink
 
 KEY = "uvhteleport"
 UI_DIR = "OakGame/Content/uiresources/bl4uvhtp"
@@ -39,10 +39,6 @@ HOVER_FRESH_S = 1.0
 ESC_AGAIN_S = 1.3
 ESC_MARGIN_S = 0.3
 ESC_MAX = 3
-
-
-def _menu_module(name: str) -> Any:
-    return sys.modules.get(f"bl4_mod_menu.{name}")
 
 
 class S:
@@ -64,16 +60,14 @@ class S:
 
 
 def _changed() -> None:
-    if (exts := _menu_module("extensions")) is not None:
-        exts.changed(KEY)
+    uilink.changed(KEY)
 
 
 def state() -> dict[str, Any]:
-    keys = _menu_module("keys")
     key = S.key()
     return {
         "key": key or "",
-        "key_text": keys.display_name(key) if keys is not None else (key or ""),
+        "key_text": uilink.display_name(key) if key else "",
         "bosses": [{k: b[k] for k in ("title", "boss", "place", "uvh")} for b in travel.bosses()],
         "busy": travel.busy(),
         "note": S.note,
@@ -97,7 +91,6 @@ def _close_menu() -> None:
     closing = S.closing
     if closing is None:
         return
-    menu = _menu_module("menu")
     now = time.monotonic()
     if closing["at"] is not None:
         if now - closing["at"] < ESC_AGAIN_S:
@@ -105,10 +98,10 @@ def _close_menu() -> None:
         if S.page_seen < closing["at"] + ESC_MARGIN_S:
             S.closing = None  # closed
             return
-    if menu is None or closing["presses"] >= ESC_MAX:
+    if closing["presses"] >= ESC_MAX:
         S.closing = None
         return
-    menu.press_escape()
+    uilink.press_escape()
     closing["presses"] += 1
     closing["at"] = now
 
@@ -120,7 +113,9 @@ def _refuse(boss: dict[str, Any], text: str) -> None:
 
 
 def tick() -> None:
-    """Every frame: publishes the page's files, handles the key and closes the menu after a trip."""
+    """Every frame: the link, the page's files, the key, and closing the menu after a trip."""
+    uilink.tick()
+    health.tick()
     publish()
     _close_menu()
     if (result := travel.take_hop_result()) is not None:
@@ -133,12 +128,16 @@ def tick() -> None:
             _refuse(hopped, f"No room to stand next to {hopped['boss']}'s Big Encore machine; follow the waypoint.")
         else:
             _refuse(hopped, f"The host couldn't move you ({reply.get('error')}); follow the waypoint.")
-    keys = _menu_module("keys")
-    down = keys is not None and keys.key_down(S.key())
+    boss = S.hover
+    if boss is None or time.monotonic() - S.hover_at > HOVER_FRESH_S:
+        # Read the key only while a teleport challenge is hovered. Otherwise it counts as held, so
+        # a press needs a release first (a key's first read after a pause also says held)
+        S.key_down = True
+        return
+    down = uilink.key_down(S.key())
     pressed = down and not S.key_down
     S.key_down = down
-    boss = S.hover
-    if not pressed or boss is None or time.monotonic() - S.hover_at > HOVER_FRESH_S:
+    if not pressed:
         return
     try:
         there = travel.start(boss)
@@ -151,20 +150,16 @@ def tick() -> None:
     _changed()
 
 
-def register(game_dir: Path) -> bool:
+def register(game_dir: Path) -> None:
     S.game_dir = game_dir
-    exts = _menu_module("extensions")
-    if exts is None:
-        return False
     publish(force=True)
-    exts.register(KEY, SCRIPT_URL, state, act)
-    return True
+    uilink.register(KEY, SCRIPT_URL, state, act, views=(uilink.MENUS,), mod="UVH Boss Teleport")
 
 
 def unregister() -> None:
     S.hover = None
-    if (exts := _menu_module("extensions")) is not None:
-        exts.unregister(KEY)
+    uilink.unregister(KEY)
+    uilink.stop()
 
 
 def publish(*, force: bool = False) -> None:

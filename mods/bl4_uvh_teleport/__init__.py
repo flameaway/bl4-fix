@@ -9,9 +9,9 @@ as the item cards' Big Encore travel. On the same map that's at once (and the me
 another map it's the game's own fast travel to the nearest station, then a short hop to the arena.
 The boss also gets your custom waypoint on the map.
 
-Solo or as host. The card prompt needs the BL4 Mod Menu (it lives in its page); without it, use
-the console: `uvhtp` lists the bosses, `uvhtp core observer` (a boss, a challenge's title, or its
-number in the list) goes there.
+Solo or as host. The card prompt runs in the game's menu page through the BL4 UI Link (uilink/,
+no Mod Menu needed). The console works too: `uvhtp` lists the bosses, `uvhtp core observer` (a
+boss, a challenge's title, or its number in the list) goes there.
 
 Everything but this file can be hot-reloaded (dev/reload_uvh_teleport.py), and the card's script
 and styles reload themselves in the page. The boss list (bosses.json) comes from the game's data:
@@ -40,7 +40,6 @@ TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 FRAME_GAP_S = 0.004
 MAX_WAIT_S = 0.012
 _last_call = _ticked_at = 0.0
-REGISTER_S = 1.0
 
 
 def log(msg: str) -> None:
@@ -59,8 +58,6 @@ page.S.key = lambda: teleport_key.value
 
 
 class S:
-    registered = False
-    checked_at = 0.0
     errors: set[str] = set()  # noqa: RUF012
 
 
@@ -73,11 +70,6 @@ def _tick(*_: Any) -> None:
         return
     _ticked_at = started
     try:
-        now = time.monotonic()
-        if not S.registered and now - S.checked_at > REGISTER_S:
-            # The Mod Menu may load (or reload) after us
-            S.checked_at = now
-            S.registered = page.register(GAME_DIR)
         page.tick()
         travel.tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
@@ -111,15 +103,12 @@ uvhtp_command.add_argument("boss", nargs="*", help="a number from the list, a bo
 
 
 def _enable() -> None:
-    S.registered = page.register(GAME_DIR)
-    if not S.registered:
-        log("The challenge card prompt needs the BL4 Mod Menu; the `uvhtp` console command still works.")
+    page.register(GAME_DIR)
 
 
 def _disable() -> None:
     page.unregister()
     travel.cancel()
-    S.registered = False
 
 
 mod = build_mod(

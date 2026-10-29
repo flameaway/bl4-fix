@@ -6,16 +6,17 @@
 //     [T] Teleport to Core Observer
 //         The Fadefields, the kill counts in UVH 2
 //
-// The BL4 Mod Menu runs this file in the game's menu page (its extensions.js) and runs it again
-// when it changes, so it tears its last copy down first. Python (bl4_uvh_teleport/page.py) does
-// the work: its state, polled through GET /ext?k=uvhteleport, lists the challenges that have a boss
-// to go to; we tell it which one is hovered, and it reads the key from Windows (no key events reach
-// this page), makes the trip and closes the menu. If the trip can't start, the card says why.
+// The BL4 UI Link (or, until its pak loads, the BL4 Mod Menu) runs this file in the game's menu
+// page and runs it again when it changes, so it tears its last copy down first. Python
+// (bl4_uvh_teleport/page.py) does the work: its state, polled through GET /ext?k=uvhteleport,
+// lists the challenges that have a boss to go to; we tell it which one is hovered, and it reads
+// the key from Windows (no key events reach this page), makes the trip and closes the menu. If
+// the trip can't start, the card says why.
 //
 // The prompt copies the card's own "claim rewards" prompt (its classes, the game's key glyphs).
 
 (function () {
-    var ns = window.bl4ModMenu;
+    var ns = (typeof bl4linkNs !== "undefined" && bl4linkNs) || window.bl4ModMenu;
     if (!ns || !ns.ext) return;
     var ext = ns.ext;
     var KEY = "uvhteleport";
