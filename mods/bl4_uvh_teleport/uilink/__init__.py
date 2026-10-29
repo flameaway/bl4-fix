@@ -65,6 +65,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import types
 from collections import deque
 from collections.abc import Callable
@@ -93,7 +94,7 @@ except ImportError:  # the setup app imports this module for sync() and check() 
 
 
 # Bump on every change to this package: the newest copy loaded runs the link
-VERSION = 3
+VERSION = 4
 HUB = "_bl4_uilink"
 PAK_NAME = "BL4Fix_UILink_4251_P.pak"
 UI_PREFIX = "OakGame/Content/uiresources/"
@@ -120,6 +121,9 @@ POLLING_S = 3.0
 MENUS_POLL_S = 1.0
 # tick() does its work at most this often (several mods call it each frame)
 TICK_GAP_S = 0.004
+# The Mod Menu fallback (it may load after us, the link may go live) is checked this often, not
+# every frame (v4)
+FALLBACK_S = 1.0
 PUBLISH_S = 1.0
 MAX_BODY = 64 * 1024
 THREADS = 4
@@ -353,7 +357,7 @@ def tick() -> None:
         owner._owner_tick(hub, now)  # noqa: SLF001 - the owner may be another mod's copy
     except Exception as ex:  # noqa: BLE001
         logging.error(f"[UI Link] {ex!r}")
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
 
 
 def _owner_tick(hub: types.ModuleType, now: float) -> None:
@@ -365,7 +369,9 @@ def _owner_tick(hub: types.ModuleType, now: float) -> None:
         _start(hub)
     if not hub.extensions:
         return
-    _fallback(hub)
+    if now >= getattr(hub, "fallback_at", 0.0):
+        hub.fallback_at = now + FALLBACK_S
+        _fallback(hub)
     if DEV and now - hub.published_at > PUBLISH_S:
         hub.published_at = now
         _publish(hub)
@@ -375,11 +381,16 @@ def _owner_tick(hub: types.ModuleType, now: float) -> None:
     # cursor: the page goes quiet only MENUS_POLL_S later, and a menu opened again within that
     # (Esc out of one screen, another screen's key) went uncounted, so the first screen stayed up
     # over the second. Counting one close twice is harmless: pages only look for a change (v3)
-    cursor = _cursor_shown()
-    fell = cursor is False and getattr(hub, "cursor_was", False)
+    # The cursor only matters while the menus page polls (or just did): in play it isn't read at all
+    # (v4: get_pc + the property every frame was half of this tick's cost)
+    if hub.menus_up or up:
+        cursor = _cursor_shown()
+        fell = cursor is False and getattr(hub, "cursor_was", False)
+        hub.cursor_was = bool(cursor)
+    else:
+        fell = hub.cursor_was = False
     if hub.menus_up and (not up or fell):
         hub.menus_closed += 1
-    hub.cursor_was = bool(cursor)
     hub.menus_up = up
     while hub.actions:
         action = hub.actions.popleft()
@@ -394,7 +405,7 @@ def _owner_tick(hub: types.ModuleType, now: float) -> None:
                     ext["dirty"] = True
         except Exception as ex:  # noqa: BLE001 - one broken script shouldn't break the others
             logging.error(f"[UI Link] {action.get('ext') or action.get('op')}: {ex!r}")
-            logging.exception(ex)
+            logging.error("".join(traceback.format_exception(ex)))
     answered = []
     for ext in list(hub.extensions.values()):
         asked = ext["asked"]
@@ -868,19 +879,34 @@ VIRTUAL_KEYS: dict[str, int] = {
     "ThumbMouseButton": 0x05, "ThumbMouseButton2": 0x06,
 }  # fmt: skip
 
-KEY_POLL_S = 0.015
+# Snapshot age at worst; a tap shorter than this still shows ("pressed since the last read", v4).
+# Was 15 ms: each of its Win32 calls hands the GIL back and forth with the game thread
+KEY_POLL_S = 0.03
 KEY_FORGET_S = 2.0  # a key nobody asked about for this long isn't read any more
 KEY_IDLE_EXIT_S = 5.0  # with no asks for this long the thread stops (a later ask starts it again)
 
 
+# The last foreground window and whether it's ours: one tuple, replaced whole (any thread)
+_focus: tuple[int, bool] = (0, False)
+
+
 def game_focused() -> bool:
-    pid = ctypes.c_ulong()
-    _user32.GetWindowThreadProcessId(_user32.GetForegroundWindow(), ctypes.byref(pid))
-    return pid.value == os.getpid()
+    """The game window is in front. One Win32 call while the foreground window stays the same (v4)."""
+    global _focus  # noqa: PLW0603
+    hwnd = _user32.GetForegroundWindow() or 0
+    known, ours = _focus
+    if hwnd != known or not hwnd:
+        pid = ctypes.c_ulong()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        ours = bool(hwnd) and pid.value == os.getpid()
+        _focus = (hwnd, ours)
+    return ours
 
 
 def _poll_keys(hub: types.ModuleType, token: object) -> None:
     # Win32 calls only: fine off the game thread. A newer thread (new token) replaces this one
+    was_focused = False
+    polled: set[int] = set()
     while hub.keys_token is token:
         now = time.monotonic()
         asked = list(hub.keys_asked.items())  # the game thread adds keys meanwhile
@@ -888,10 +914,21 @@ def _poll_keys(hub: types.ModuleType, token: object) -> None:
         if not wanted and now - max((at for _, at in asked), default=0.0) > KEY_IDLE_EXIT_S:
             hub.keys_token = None
             return
-        if wanted and game_focused():
-            hub.keys_down = frozenset(vk for vk in wanted if _user32.GetAsyncKeyState(vk) & 0x8000)
+        focused = bool(wanted) and game_focused()
+        if focused:
+            down = set()
+            for vk in wanted:
+                bits = _user32.GetAsyncKeyState(vk)
+                # Bit 0 = pressed since the last read: only trusted for a key read last poll too, with
+                # the game in front all along (else a press from long ago, or in another window)
+                if bits & 0x8000 or (bits & 1 and was_focused and vk in polled):
+                    down.add(vk)
+            hub.keys_down = frozenset(down)
+            polled = set(wanted)
         else:
             hub.keys_down = frozenset()
+            polled = set()
+        was_focused = focused
         time.sleep(KEY_POLL_S)
 
 

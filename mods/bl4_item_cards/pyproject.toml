@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Detailed Item Cards"
-version = "0.2.0"
+version = "0.2.1"
 description = "Class mod skills with names, ranks and numbers, named secondary stats, and where legendaries drop (with Big Encore waypoint/travel keys) on item cards."
 authors = [{ name = "flame" }]
 

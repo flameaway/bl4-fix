@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Carnage Meter"
-version = "0.2.0"
+version = "0.2.1"
 description = "Every player's damage in co-op: totals, DPS, kills and each player's top 3 damage sources (guns, skills, elements). F9."
 authors = [{ name = "flame" }]
 

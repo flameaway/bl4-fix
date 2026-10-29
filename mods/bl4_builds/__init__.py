@@ -40,8 +40,8 @@ from unrealsdk.hooks import Type
 
 from . import builds, hotkeys, page
 
-__version__ = "0.2.0"
-__version_info__ = (0, 2, 0)
+__version__ = "0.2.1"
+__version_info__ = (0, 2, 1)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
@@ -82,11 +82,31 @@ def _options() -> tuple[bool, bool]:
 
 page.S.options = _options
 hotkeys.S.options = _options
-hotkeys.S.keys = lambda: [
-    *((str(n), option.value) for n, option in enumerate(load_keys, 1)),
-    (hotkeys.NEXT, next_key.value),
-    (hotkeys.PREVIOUS, previous_key.value),
-]
+# Rebinding takes effect within this long (the list was rebuilt every frame, unbound keys included)
+HOTKEYS_CHECK_S = 1.0
+
+
+class _Hotkeys:
+    at = -1e9
+    bound: list[tuple[str, str]] = []  # noqa: RUF012
+
+
+def _bound_hotkeys() -> list[tuple[str, str]]:
+    """The hotkeys that have a key (none by default): hotkeys.tick reads only those."""
+    now = time.monotonic()
+    if now - _Hotkeys.at >= HOTKEYS_CHECK_S:
+        _Hotkeys.at = now
+        pairs = [*((str(n), option.value) for n, option in enumerate(load_keys, 1)),
+                 (hotkeys.NEXT, next_key.value), (hotkeys.PREVIOUS, previous_key.value)]  # fmt: skip
+        _Hotkeys.bound = [(action, key) for action, key in pairs if key]
+        # A key bound later starts as "held" (hotkeys.tick's default), so it needs a fresh press
+        for action, key in pairs:
+            if not key:
+                hotkeys.S.down.pop(action, None)
+    return _Hotkeys.bound
+
+
+hotkeys.S.keys = _bound_hotkeys
 
 
 class S:

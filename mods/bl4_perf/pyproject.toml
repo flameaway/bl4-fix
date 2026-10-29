@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Performance Fixes"
-version = "0.2.0"
+version = "0.2.1"
 description = "Removes hitches: DLSS reloads after menus, Python hook overhead and garbage collection, memory trimming."
 authors = [{ name = "flame" }]
 

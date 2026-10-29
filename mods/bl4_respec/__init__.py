@@ -41,8 +41,8 @@ from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
 from . import health, skills_page, uilink
 
-__version__ = "0.2.0"
-__version_info__ = (0, 2, 0)
+__version__ = "0.2.1"
+__version_info__ = (0, 2, 1)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 CHANNEL_FUNC = "/Game/UI/Scripts/ui_script_skills.ui_script_skills_C:RemovePoint"

@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Tidy Pause Menu"
-version = "0.2.0"
+version = "0.2.1"
 description = "Moves the pause menu's News panel to the right side, under the party list, so it no longer covers the bottom entries (Quit Game). Or hides it."
 authors = [{ name = "flame" }]
 

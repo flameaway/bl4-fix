@@ -23,15 +23,15 @@ import threading
 import time
 from typing import Any
 
-from mods_base import ENGINE, BoolOption, SliderOption, build_mod, hook
+from mods_base import ENGINE, BoolOption, SliderOption, build_mod, get_pc, hook
 from unrealsdk import hooks, logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
 from . import gc_tune, memory, python_state, render
 
-__version__ = "0.2.0"
-__version_info__ = (0, 2, 0)
+__version__ = "0.2.1"
+__version_info__ = (0, 2, 1)
 
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 CLEANUP_ID = "bl4_perf.cleanup"
@@ -76,7 +76,8 @@ gc_option = BoolOption(
     description=(
         "Python's garbage collector now and then walks every mod's data in one go, inside a game"
         " frame (35-200 ms freezes). This sets the long-lived data aside after each world load so"
-        " it only walks what's new. Changes nothing you can see."
+        " it only walks what's new, and runs those passes while a menu is open or the game is"
+        " loading instead of in the middle of play. Changes nothing you can see."
     ),
     on_change_while_enabled=_gc_changed,
 )
@@ -159,7 +160,10 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
         if gc_option.value:
             viewport = ENGINE.GameViewport
             world = viewport.World if viewport is not None else None
-            if done := gc_tune.step(world._get_address() if world is not None else None):  # noqa: SLF001
+            pc = get_pc(possibly_loading=True)
+            # Nobody sees a frame: a menu is up (cursor), or there's no character (loading)
+            quiet = pc is None or pc.Pawn is None or bool(pc.bShowMouseCursor)
+            if done := gc_tune.step(world._get_address() if world is not None else None, quiet=quiet):  # noqa: SLF001
                 _log(f"Python objects frozen ({done})")
         if dlss_option.value:
             render.enforce(render.DLSS)

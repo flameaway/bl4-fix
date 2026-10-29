@@ -38,8 +38,8 @@ from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
 from . import card_page, encore_waypoint, health, skill_stats, uilink
 
-__version__ = "0.2.0"
-__version_info__ = (0, 2, 0)
+__version__ = "0.2.1"
+__version_info__ = (0, 2, 1)
 
 # The page script's key in the BL4 UI Link
 LINK_KEY = "itemcards"

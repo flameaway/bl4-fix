@@ -186,6 +186,36 @@ def option_json(option: BaseOption) -> dict[str, Any] | None:
     return node
 
 
+def _option_sig(option: BaseOption, out: list[Any]) -> None:
+    out.append((option.identifier, option.is_hidden, option.display_name, option.description_title, option.description))
+    match option:
+        case GroupedOption() | NestedOption():
+            out.append(len(option.children))
+            for child in option.children:
+                _option_sig(child, out)
+        case DropdownOption() | SpinnerOption():
+            out.append((option.value, tuple(option.choices)))
+        case KeybindOption():
+            out.append((option.value, option.is_rebindable))
+        case ValueOption():
+            out.append(option.value)  # pyright: ignore[reportUnknownMemberType]
+        case _:
+            pass
+
+
+def mod_sig(mod: Mod) -> tuple[Any, ...]:
+    """
+    Everything mod_json shows, as plain values to compare: equal signatures mean an equal mod_json,
+    so the snapshot reuses the mod's last JSON (building every mod's JSON 4 times a second while
+    the screen shows cost 3.5 ms a time, 2026-10-29).
+    """
+    out: list[Any] = [mod.name, mod.author, mod.version, mod.description, mod.get_status(), mod.is_enabled,
+                      mod.enabling_locked, mod.coop_support]  # fmt: skip
+    for option in mod.iter_display_options():
+        _option_sig(option, out)
+    return tuple(out)
+
+
 def mod_json(mod: Mod) -> dict[str, Any]:
     text, kind = status(mod)
     return {

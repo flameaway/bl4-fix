@@ -61,12 +61,25 @@ def display_name(key: str | None) -> str:
     return _DISPLAY.get(key, key)
 
 
+# The last foreground window and whether it's ours: one tuple, replaced whole (any thread)
+_focus: tuple[int, bool] = (0, False)
+
+
 def game_focused() -> bool:
-    """True if the game window is the foreground window (so key state is meant for us)."""
+    """
+    True if the game window is the foreground window (so key state is meant for us). One Win32 call
+    while the foreground window stays the same (it was 3 a call; every ctypes call lets other
+    threads take the GIL from the game thread, 2026-10-29).
+    """
+    global _focus  # noqa: PLW0603
     hwnd = _user32.GetForegroundWindow()
-    pid = ctypes.c_ulong()
-    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    return pid.value == _kernel32.GetCurrentProcessId()
+    known, ours = _focus
+    if hwnd != known or not hwnd:
+        pid = ctypes.c_ulong()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        ours = bool(hwnd) and pid.value == _kernel32.GetCurrentProcessId()
+        _focus = (hwnd, ours)
+    return ours
 
 
 # region Key state, read on a worker thread
@@ -77,7 +90,10 @@ def game_focused() -> bool:
 # mods asked about and the game thread only looks at its last snapshot. GetForegroundWindow stays
 # cheap (0.003 ms), so that check is first.
 
-POLL_S = 0.015  # snapshot age at worst; a tap is held for more than this
+# Snapshot age at worst. A tap shorter than this still shows: a key Windows says was pressed since
+# the last read counts as down for one snapshot. It was 15 ms: 67 polls a second, each Win32 call of
+# which hands the GIL back and forth with the game thread (Mod Profiler, 2026-10-29)
+POLL_S = 0.03
 FORGET_S = 2.0  # a key nobody asked about for this long isn't read any more
 IDLE_EXIT_S = 5.0  # with no asks for this long the thread stops (a later ask starts it again)
 
@@ -90,15 +106,29 @@ class _Keys:
 
 def _poll(state: type[_Keys]) -> None:
     # Win32 calls only (no unreal objects): fine off the game thread
+    was_focused = False
+    polled: set[int] = set()
     while getattr(sys.modules.get(__name__), "_Keys", None) is state:  # a hot reload made a new one
         now = time.monotonic()
         wanted = [vk for vk, at in list(state.asked.items()) if now - at < FORGET_S]
         if not wanted and now - max(state.asked.values(), default=0.0) > IDLE_EXIT_S:
             return
-        if wanted and game_focused():
-            state.down = frozenset(vk for vk in wanted if _user32.GetAsyncKeyState(vk) & 0x8000)
+        focused = bool(wanted) and game_focused()
+        if focused:
+            down = set()
+            for vk in wanted:
+                bits = _user32.GetAsyncKeyState(vk)
+                # Bit 0 = pressed since the last read: only trusted for a key read last poll too,
+                # with the game in front all along (else it's a press from long ago, or in another
+                # window: Alt+Tab)
+                if bits & 0x8000 or (bits & 1 and was_focused and vk in polled):
+                    down.add(vk)
+            state.down = frozenset(down)
+            polled = set(wanted)
         else:
             state.down = frozenset()
+            polled = set()
+        was_focused = focused
         time.sleep(POLL_S)
 
 

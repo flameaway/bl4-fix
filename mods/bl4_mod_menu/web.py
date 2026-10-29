@@ -120,6 +120,9 @@ class Link:
     draft = ""
     editing: str | None = None
     typing: keyboard.Typing | None = None
+    # Each mod's entry in the mods list as JSON, with the model.mod_sig (and icon) it was built
+    # from: rebuilt only when those change (id(mod) -> (signature, json bytes))
+    mod_cache: dict[int, tuple[Any, bytes]] = {}  # noqa: RUF012
 
 
 # A poll at least this recent says the page is awake (it polls every 200 ms while its screen shows)
@@ -480,22 +483,35 @@ def _build_snapshot(full: bool) -> None:
     Link.snapshot_fresh = _open_fresh()
     Link.snapshot_open_id = Link.open_request["id"] if Link.snapshot_fresh else -Link.open_request["id"]
     state: dict[str, Any] = {}
+    parts: list[bytes] = []
     if full:
-        mods = []
         icons = hotload.H.icons
+        cache = Link.mod_cache
+        seen: set[int] = set()
         for mod in model.mods():
+            seen.add(id(mod))
             try:
-                entry = model.mod_json(mod)
                 # The module it came from (build_mod names the settings file after it), for its icon
                 settings = getattr(mod, "settings_file", None)
-                entry["id"] = mod_id = Path(settings).stem if settings is not None else ""
+                mod_id = Path(settings).stem if settings is not None else ""
+                sig = (model.mod_sig(mod), mod_id, icons.get(mod_id))
+                cached = cache.get(id(mod))
+                if cached is not None and cached[0] == sig:
+                    parts.append(cached[1])
+                    continue
+                entry = model.mod_json(mod)
+                entry["id"] = mod_id
                 if mod_id in icons:
                     entry["icon"] = icons[mod_id]
-                mods.append(entry)
+                text = json.dumps(entry, separators=(",", ":"), default=str).encode("utf-8")
+                cache[id(mod)] = (sig, text)
+                parts.append(text)
             except Exception as ex:  # noqa: BLE001 - one broken mod shouldn't hide the others
-                mods.append({"name": mod.name, "desc": f"Couldn't read this mod's options: {ex}",
-                             "status": "Error", "status_kind": "warn", "options": []})  # fmt: skip
-        state["mods"] = mods
+                cache.pop(id(mod), None)
+                parts.append(json.dumps({"name": mod.name, "desc": f"Couldn't read this mod's options: {ex}",
+                                         "status": "Error", "status_kind": "warn", "options": []}).encode("utf-8"))  # fmt: skip
+        for gone in [key for key in cache if key not in seen]:
+            del cache[gone]  # unloaded or reloaded mods (their id could be reused)
     state |= {
         "message": Link.message,
         "open": {**Link.open_request, "fresh": _open_fresh()},
@@ -512,6 +528,9 @@ def _build_snapshot(full: bool) -> None:
     Link.updates_rev = state["updates"]["rev"]
     Link.repos_rev = state["repos"]["rev"]
     data = json.dumps(state, separators=(",", ":"), default=str).encode("utf-8")
+    if full:
+        # The mods list first, as before; each mod's JSON is reused while it's unchanged
+        data = b'{"mods":[' + b",".join(parts) + b"]," + data[1:]
     if data != Link.snapshot:
         Link.revision += 1
         Link.snapshot = data

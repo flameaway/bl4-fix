@@ -24,8 +24,8 @@ from unrealsdk.hooks import Type
 
 from . import health, page
 
-__version__ = "0.2.0"
-__version_info__ = (0, 2, 0)
+__version__ = "0.2.1"
+__version_info__ = (0, 2, 1)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"

@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Build Presets"
-version = "0.2.0"
+version = "0.2.1"
 description = "Five build slots per character in the inventory: save and load your equipped gear, skills and specializations with a click. No other mod needed."
 authors = [{ name = "flame" }]
 
