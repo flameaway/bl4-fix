@@ -1,33 +1,33 @@
 """
 Live editing of the item card UI while the game runs (dev only, never shipped).
 
-    python tools/ui_live.py install     write the dev pak (then restart the game once)
-    python tools/ui_live.py serve       run the local server the dev pak talks to
-    python tools/ui_live.py remove      delete the dev pak and refresh the release pak (then restart)
+    python tools/ui_live.py install --bridge C   publish the watcher and run it through the UI Link
+    python tools/ui_live.py serve                run the local server the watcher talks to
+    python tools/ui_live.py remove --bridge C    stop the watcher (and retire the old 4243 dev pak)
 
-The dev pak is the normal item card pak plus a watcher script. Every second, each game page that
-has loaded an item card fetches dev/ui_live/live.js from the server and runs it once each time it
+No pak and no restart since 2026-10-29: the watcher is a loose script the BL4 UI Link runs in every
+game page (key "uilive", views ANY), registered through the bridge in the running game. Every
+second each page fetches dev/ui_live/live.js from the server and runs it once each time it
 changes, with `report` in scope; anything it returns or passes to report(...) is posted back here,
-printed, and appended to .bridge/ui_live/reports.log. Use it for probes.
+printed, and appended to .bridge/ui_live/reports.log. Use it for probes. The registration lasts
+until the game exits (or `remove`); run `install` again after a restart.
 
 You don't need this for styling or layout: the card's own script and stylesheet are loose files
-(OakGame/Content/uiresources/bl4direct/item_cards.{js,css}) that reload themselves when they
-change. With the dev junction in place the mod copies mods/bl4_item_cards/card_page/ there every
-second, so editing those files shows up in game within a few seconds. Only the page in the pak
-(tools/gen_item_cards.py) needs `install` again and a game restart.
+(OakGame/Content/uiresources/bl4direct/item_cards.{js,css}) that the link and the script reload
+when they change, from the dev junction.
 
 If the game can't reach the server, the watcher tries live.js as a loose file under
 OakGame/Content/uiresources/bl4direct/live/. The card's outline shows which works: green = server,
 yellow = loose file, red = neither.
 
-The dev pak has its own file name and a higher number, so it wins over the release pak while it's
-installed, and the mod's sync pauses the release pak (it sees another pak changing item cards).
-`remove` brings it back.
+Until 2026-10-29 this was a dev pak (4243) replacing item_card.html, which paused Item Cards while
+it was installed. `remove` stages an old one's removal after the game exits.
 """
 
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,7 +38,9 @@ MOD_DIR = REPO / "mods" / "bl4_item_cards"
 LIVE_DIR = REPO / "dev" / "ui_live"
 REPORTS = REPO / ".bridge" / "ui_live" / "reports.log"
 DEFAULT_GAME = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Borderlands 4")
-DEV_PAK = "pakchunk0-Windows_4243_P.pak"
+DEV_PAK = "pakchunk0-Windows_4243_P.pak"  # retired
+WATCHER_PATH = "bl4direct/live_watcher.js"
+LINK_KEY = "uilive"
 PORT = 8765
 
 sys.path.insert(0, str(MOD_DIR))
@@ -47,6 +49,7 @@ import pak  # noqa: E402
 WATCHER_JS = """
 (function () {
     "use strict";
+    var linkNs = typeof bl4linkNs !== "undefined" ? bl4linkNs : null;
     if (window.bl4dLive) return;
     var HTTP = "http://127.0.0.1:%(port)d/";
     var LOOSE = "coui://uiresources/bl4direct/live/";
@@ -121,8 +124,16 @@ WATCHER_JS = """
     }
 
     outline();
-    setInterval(tick, 1000);
+    var timer = setInterval(tick, 1000);
     tick();
+    if (linkNs && linkNs.ext) {
+        linkNs.ext.teardowns["uilive"] = function () {
+            clearInterval(timer);
+            var style = document.getElementById("bl4d_live_mode");
+            if (style) style.parentNode.removeChild(style);
+            window.bl4dLive = null;
+        };
+    }
 })();
 """
 
@@ -143,45 +154,54 @@ def _item_cards():  # noqa: ANN202
     return card_page
 
 
-def install(game: Path) -> None:
-    item_cards = _item_cards()
-    assets = MOD_DIR / "card_page"
-    html = (assets / "item_card.html").read_text(encoding="utf-8")
-    html += '\n<script src="coui://uiresources/bl4direct/live_watcher.js"></script>\n'
-    files = {
-        item_cards.CARD_PAGE: html.encode("utf-8"),
-        "bl4direct/live_watcher.js": (WATCHER_JS % {"port": PORT}).encode("utf-8"),
-    }
-    # The card's script and stylesheet stay loose files (a pak copy would block their reloading)
-    item_cards.publish_files(game)
+# Run in the game through the bridge: any mod's uilink copy registers with the one shared link
+REGISTER = """
+import sys
+link = next(m for n, m in list(sys.modules.items()) if n.endswith(".uilink") and hasattr(m, "register"))
+link.register("uilive", "coui://uiresources/%s", lambda: {}, lambda _a: None, views=(link.ANY,), mod="ui_live")
+print("ui_live watcher registered; link:", link.status())
+""" % WATCHER_PATH
+UNREGISTER = """
+import sys
+link = next(m for n, m in list(sys.modules.items()) if n.endswith(".uilink") and hasattr(m, "register"))
+link.unregister("uilive")
+print("ui_live watcher unregistered")
+"""
 
-    out = game_paks(game) / DEV_PAK
-    out.parent.mkdir(parents=True, exist_ok=True)
-    # Never change an existing pak while the game runs: it keeps the index from startup and would
-    # read the new file at old offsets (raw script text on screen). Create it now if it's new,
-    # otherwise stage it and let the mod's helper swap it in once the game has closed.
-    data = pak.build_pak("../../../" + item_cards.UI_PREFIX, files, DEV_PAK)
-    if out.exists() and out.read_bytes() != data:
-        out.with_name(out.name + ".next").write_bytes(data)
-        item_cards.apply_after_exit(out)
-        print(f"staged {out.name}.next: it replaces the dev pak once the game is closed")
-    elif not out.exists():
-        tmp = out.with_suffix(".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(out)
 
+def _bridge(bridge: str | None, code: str) -> None:
+    if not bridge:
+        print("no --bridge id given: run this in the game yourself (python tools/bridge.py <id> \"...\"):\n" + code)
+        return
+    subprocess.run([sys.executable, str(REPO / "tools" / "bridge.py"), bridge, code], check=False)  # noqa: S603
+
+
+def install(game: Path, bridge: str | None) -> None:
+    target = game / _item_cards().UI_PREFIX / WATCHER_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(WATCHER_JS % {"port": PORT}, encoding="utf-8")
+    tmp.replace(target)
     LIVE_DIR.mkdir(parents=True, exist_ok=True)
     js = LIVE_DIR / "live.js"
     if not js.exists():
-        js.write_text("// Runs in every page with an item card each time this file changes.\n", encoding="utf-8")
-    print(f"wrote {out}\nrestart the game once, then run: python tools/ui_live.py serve")
+        js.write_text("// Runs in every game page each time this file changes.\n", encoding="utf-8")
+    print(f"wrote {target}")
+    _bridge(bridge, REGISTER)
+    print("then run: python tools/ui_live.py serve")
 
 
-def remove(game: Path) -> None:
-    (game_paks(game) / DEV_PAK).unlink(missing_ok=True)
-    # Bring the release pak up to date with what's in the repo, as the mod would on startup
-    print(_item_cards().sync(game, enabled=True))
-    print("removed the dev pak; restart the game to go back to the normal one")
+def remove(game: Path, bridge: str | None) -> None:
+    item_cards = _item_cards()
+    _bridge(bridge, UNREGISTER)
+    (game / item_cards.UI_PREFIX / WATCHER_PATH).unlink(missing_ok=True)
+    old = game_paks(game) / DEV_PAK
+    if old.exists():
+        # An existing pak is never touched while a game may run: removed once none does
+        old.with_name(old.name + ".remove").write_bytes(b"")
+        item_cards.apply_after_exit(old)
+        print(f"{old.name} goes once the game is closed")
+    print("removed the watcher")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -226,14 +246,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("action", choices=["install", "serve", "remove"])
     parser.add_argument("--game", type=Path, default=DEFAULT_GAME)
+    parser.add_argument("--bridge", help="bridge id of the running game (register / unregister the watcher there)")
     args = parser.parse_args()
     match args.action:
         case "install":
-            install(args.game)
+            install(args.game, args.bridge)
         case "serve":
             serve()
         case "remove":
-            remove(args.game)
+            remove(args.game, args.bridge)
 
 
 if __name__ == "__main__":
