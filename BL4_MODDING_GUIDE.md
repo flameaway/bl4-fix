@@ -157,9 +157,8 @@ The pattern is from MattsBL4ModsMenu (MIT). All of this is verified in BL4 Direc
   - Clicking a text box only focuses it when the window is active. Put an invisible Button over it that calls your focus function.
   - Redraws destroy the boxes, so copy their text out before redrawing, and clear the boxes themselves when you mean to clear.
 - **Hotkeys while UI-only mode is active:**
-  - PlayerInput sees no keys, so read `user32.GetAsyncKeyState` for F6/Esc/Enter/Tab.
-  - Only do that when the foreground window belongs to the game (`GetWindowThreadProcessId(GetForegroundWindow())` equals the current process).
-  - When closed, check both `pc.IsInputKeyDown(Key)` and the Windows key state. Some other UI may have left the game in UI-only mode.
+  - Read keys from the game's own input (`shared/gamekeys`), never from Windows: no `GetAsyncKeyState`, no keyboard hooks, no XInput (user rule, 2026-10-30).
+  - Until then this UI read `user32.GetAsyncKeyState` for F6/Esc/Enter/Tab, because `IsInputKeyDown` saw no keys in UI-only mode. Whether `gamekeys` (the PlayerInput key map) sees them in UI-only mode is untested; typing goes through the UI Link's `TextBox` instead (`shared/CLAUDE.md`).
 - **On close:**
   - In gameplay: `SetInputMode_GameOnly(pc, True)` and hide the cursor.
   - At the title screen: `SetInputMode_GameAndUIEx(pc, None, 0, False, False)`.

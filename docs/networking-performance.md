@@ -521,7 +521,7 @@ The same arena setup as 4.9, with 8–12 enemies. Three variants, 2 rounds each,
 - Snaps fall at each step in both rounds. Visible teleports fall overall but are noisy (round 2: 0.5 / 0.1 / 0.5).
 - No fps cost in round 2. Round 1 had host hitches of up to 1.5 s in the 0.25 and 0.1 halves, which don't look caused by the settings. B's `t.MaxFPS 30` cap reset after the first half; host fps was equal across halves 2–6.
 - The cost is upload: about 1.8x, roughly 17 KB/s per friend.
-- BL4 Direct's "Smoother enemies for friends" option (`mods/bl4_direct/smooth.py`) therefore uses 0 / 0 / 0.005.
+- BL4 Direct's smoother enemies (`mods/bl4_direct/smooth.py`) therefore uses 0 / 0 / 0.005. An option in 0.5.2 (off), always on while hosting friends since 0.5.3.
 
 ### 4.11 Client hit registration and lag-compensation cvars (2026-10-28)
 

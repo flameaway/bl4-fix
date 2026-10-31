@@ -20,6 +20,7 @@ mods loaded and several other test sessions using the same game.
 | 3 | **Python thread state built and torn down per hook call** (pyunrealsdk / pybind11 on the game thread) | ~1-2 ms every frame (VirtualAlloc/Free, `PyThreadState_Clear`). 113k thread states in 13 h. | `bl4_perf` "Faster Python hooks": pin one thread state | [verified] |
 | 4 | **GIL convoys**: the game thread waiting for Python's lock held by mod worker threads (thread-per-request web server, GIL-releasing ctypes polls) | 1.4-2.1 ms/frame average with mod pages open; single stalls of 190+ ms | Mod changes (persistent server threads, poll less) plus a 0.5 ms switch interval | [verified] 2.1 → 0.3 ms/frame |
 | 5 | **Hard page faults** after Windows trims the game's working set. Game commit is 25-27 GB on 32 GB of RAM; ~15 GB is held by other programs. | Up to 274 ms (game thread parked on a non-resident code page). ~0.5-1.1 s per 15 min. | Close RAM-heavy programs. Optional `bl4_perf` "Keep game memory in RAM". | [measured] Fix untested |
+| 6b | **RAM in use** (2026-10-29): 7.2 GB of the game's working set is NVIDIA's shader cache file mapping (`DXCache/*6e1e42ce.nvph`, 8 + 4 GB, was 4 + 2 GB on 10-24); 11 GB of "private commit" is WDDM's charge for VRAM allocations, not RAM. See §6. | Feeds #5 | Lower NVCP "Shader Cache Size" / clear DXCache (costs a shader re-compile) | [measured] Fix untested |
 | 6 | **Memory growth**: commit +2.1 GB in 48 min. One identified part: copies of the Mod Menu's state JSON kept by the page side (~24 per minute, ~620 MB per session). | Feeds #5 | Mod Menu answers "same" when unchanged (done by the mod-perf session) | [verified] new JSON copies 1,280 per 45 min → 2 per 12 min; all new 64 KB blocks ~4.7× fewer |
 | 7 | Our mods' per-frame Python cost | ~2.65 ms/frame of the game thread in steady play (before the gating fixes) | Per-frame gates, etc. (mod-perf session) | [measured] |
 | 8 | Small items: Steam overlay `PeekMessage` hook, Gearbox `bifrost` telemetry walking the object array | 33-56 ms and ~37 ms, rare | none | [measured] |
@@ -152,6 +153,21 @@ UE Trace / Unreal Insights is compiled out of this shipping build: there's no `C
 - Fixed at the source: unchanged state now answers 36 bytes. Re-diff after menu use to confirm.
 - Another ~7k new blocks are binary and unidentified. A lead: dex roll pictures load under a new URL each roll, which Coherent may cache.
 - 74 private allocations of 64-256 MB are all zeros and non-resident: committed, never touched.
+
+**What the memory is (2026-10-29, game 29308, 30 min in, hosting, Cowbell_P):** private commit
+22.9 GB, but only ~8 GB of it resident. Working set 17.4 GB. Scripts: `dev/perf/mem_parts.py`,
+`dev/perf/heap_owners.py` (read-only, from outside).
+
+| Part | Committed | Resident | Whose |
+|---|---|---|---|
+| Write-combined private memory | 11.0 GB | 2.1 GB | WDDM's commit for the game's GPU allocations (GPU "total committed" 10.8 GB = 9.3 dedicated + 1.4 shared). Not RAM unless evicted. |
+| Process default heap (ucrt `malloc`, 16 MB NT-heap segments) | 5.8 GB | 2.4 GB | Mostly the NVIDIA driver: pointers into `nvwgf2umx.dll` 6.5 M words (552 MB of pages it dominates), D3D12Core 169 MB, 1.6 GB without module pointers (data). python314 + pyunrealsdk ~25 MB, cohtml 6 MB, v8 50 MB. UE's own code uses its own allocator, not this heap. |
+| Private allocations < 1 MB | 4.0 GB | 3.0 GB | UE's allocator (64 KB blocks) and the rest. |
+| Other private >= 1 MB | 2.1 GB | 0.65 GB | |
+| Mapped `NVIDIA/DXCache/*6e1e42ce.nvph` | 8 + 4 GB | 5.2 + 2.0 GB | NVIDIA's DirectX shader cache for this game, mapped whole by the driver. On 2026-10-24 the same mapping was 4 + 2 GB (`.perf/vm_b.json`): the files doubled since, +6 GB mapped, the biggest change in RAM use. Clean file pages, so Windows can drop them, but they sit in the working set until it does. |
+
+Python and our mods' native side are a rounding error here. Smoother enemies on vs off: no
+difference in growth.
 
 **Trimming:**
 - The working set dropped 3.17 → 1.96 GB in one 30 s step, with commit unchanged, while 10-12 GB showed as available. Later drops: 8.2 → 4.6, 7.7 → 2.9 GB.

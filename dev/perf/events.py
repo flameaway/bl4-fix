@@ -36,7 +36,8 @@ def _ev_snapshot():
     return {
         "world": w.Name if w else None,
         "cursor": bool(pc.bShowMouseCursor) if pc else None,
-        "cinematic": str(pc.ActiveCinematicModeIdent)[:80] if pc else None,
+        # A named field, never str() of the whole struct (that froze the game once: root CLAUDE.md)
+        "cinematic": int(pc.ActiveCinematicModeIdent.SummaryHash) if pc else None,
         "hud": bool(pc.MyHUD.bShowHUD) if pc and pc.MyHUD else None,
         "paused": bool(_GS.IsGamePaused(w)) if w else None,
         "pawn": bool(pc.Pawn) if pc else None,
