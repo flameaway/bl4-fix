@@ -150,6 +150,14 @@ def main() -> int:
         ok(status == 200, "/hello from our own process: 200")
         status, body = get(port, "wrong", "/ext")
         ok(status == 404, "wrong token: 404")
+        for origin, allowed in (("https://evil.example", False), ("null", False), ("coui://uiresources", True)):
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/ext?view=HUD&t={token}", headers={"Origin": origin})  # noqa: S310
+            try:
+                with urllib.request.urlopen(req, timeout=3) as r:  # noqa: S310
+                    code = r.status
+            except urllib.error.HTTPError as ex:
+                code = ex.code
+            ok((code == 200) is allowed, f"a request with Origin {origin}: {code} (a web page is refused even with the token)")
         status, body = get(port, token, "/ext?view=view_status_menus")
         ok(json.loads(body) == {"builds": "coui://uiresources/bl4builds/builds.js"}, f"menus listing ({body})")
         status, body = get(port, token, "/ext?view=HUD")
@@ -266,9 +274,69 @@ def main() -> int:
         state_, detail, wanted = d.check(game)
         ok(state_ == "game_changed" and not wanted, f"patched game -> game_changed ({state_})")
 
-        # Keys: the hub's own thread when there's no Mod Menu
-        ok(c.key_down("F8") is True, "first ask reports held (no press until the thread reads)")
-        ok(wait(lambda: hub2.keys_thread is not None and hub2.keys_thread.is_alive()), "key thread running")
+        # Keys (v7): the game's own input through gamekeys (a stub here: copies load without a parent)
+        held = {"F8"}
+        gk = types.ModuleType("stub_gamekeys")
+        gk.VK_NAMES = {0x77: "F8", 0x1B: "Escape"}
+        gk.down = lambda name: name in held
+        gk.vk_down = lambda vk: gk.VK_NAMES.get(vk) in held
+        gk.muted = []
+        gk.mute = lambda s: gk.muted.append(s)
+        gk.ignore = lambda name, s: None
+        sys.modules["_bl4_gamekeys"] = types.SimpleNamespace(owner=gk)
+        ok(c.key_down("F8") is True and c.vk_down(0x77) is True and c.key_down("F9") is False, "keys through gamekeys")
+
+        # Text boxes (v8), offline: the page script's state and actions, the context on / off
+        contexts = []
+        def fake_context(hub, which, keys):
+            if bool(keys) != getattr(hub, f"{which}_ctx_on", False):
+                contexts.append((which, len(keys)))
+            setattr(hub, f"{which}_ctx_on", bool(keys))
+
+        c._context = fake_context
+        hub2.view_polls[c.OVERLAY] = time.monotonic()
+        box = c.TextBox("ab", 5)
+        st_ = c._text_state()
+        ok(st_.get("id") == box.id and st_.get("text") == "ab" and st_.get("view") == c.OVERLAY, f"box in the state ({st_})")
+        ok(c.TEXT_KEY in hub2.extensions and hub2.extensions[c.TEXT_KEY]["views"] == (c.OVERLAY, c.TITLE), "text script registered")
+        c._text_act({"id": box.id, "kind": "text", "value": "abcdefg"})
+        rev = box.rev
+        ok(box.poll() and box.text == "abcde" and box.rev == rev + 1, f"typed text kept to max_len, page told ({box.text!r})")
+        c._text_act({"id": box.id + 1, "kind": "text", "value": "zzz"})
+        ok(not box.poll() and box.text == "abcde", "another box's text ignored")
+        c._text_tick(hub2)
+        ok(("text", len(c.TEXT_KEYS)) in contexts and gk.muted, "typing: text context on, hotkeys muted")
+        c._text_act({"id": box.id, "kind": "enter"})
+        box.poll()
+        ok(box.done is True and getattr(hub2, "text_box", None) is None, "Enter: done True, box gone")
+        contexts.clear()
+        c._text_tick(hub2)
+        ok(("text", 0) in contexts, "after typing: text context off")
+        named = c.TextBox("1.2", 21, allowed=lambda ch: ch.isdigit() or ch in ".:", named=True)
+        c._text_act({"id": named.id, "kind": "text", "value": "1.2x3"})
+        named.poll()
+        ok(named.text == "1.23", f"allowed filters typed characters ({named.text!r})")
+        c._text_act({"id": named.id, "kind": "tab"})
+        named.poll()
+        ok(named.done == "tab", "named=True: Tab -> 'tab'")
+        quiet = c.TextBox("", 10)
+        hub2.view_polls[c.OVERLAY] = time.monotonic() - 5
+        hub2.view_polls.pop(c.TITLE, None)
+        hub2.text_since = time.monotonic() - 5
+        c._text_tick(hub2)
+        ok(quiet.done is False and getattr(hub2, "text_box", None) is None, "menus closed: typing stops")
+        grab = c.KeyGrab(("Escape",))
+        ok(grab.take() == 0, "grab: nothing pressed")
+        held.add("Escape")
+        ok(grab.take() == 1 and grab.take() == 0, "grab: one press counted once")
+        contexts.clear()
+        c._text_tick(hub2)
+        ok(("grab", 1) in contexts, "grab: its context on")
+        grab.taken_at -= 5
+        contexts.clear()
+        c._text_tick(hub2)
+        ok(not hub2.key_grabs and ("grab", 0) in contexts, "grab not taken for a while: stops, context off")
+        del sys.modules["_bl4_gamekeys"]
 
         ticker.running = False
         c._stop_server(hub2)

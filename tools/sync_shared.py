@@ -6,6 +6,8 @@ Copies the shared packages in shared/ into the mods that carry them (dev only).
 
 - shared/uilink/  the BL4 UI Link (page scripts without the Mod Menu, one shared pak)
 - shared/health/  "needs an update" statuses and the notice (whichever of our mods runs)
+- shared/frametick/  one per-frame hook for all our mods (each mod's callback once an engine frame)
+- shared/gamekeys/  key state from the game's own input (no Windows key reads); needs frametick
 
 Each mod carries its own copy (`<mod>/<package>/`) so it works alone; at run time the newest copy
 loaded does the work for all of them. Never edit a mod's copy.
@@ -24,12 +26,28 @@ REPO = Path(__file__).resolve().parents[1]
 PACKAGES = {
     "uilink": ["mods/bl4_builds", "mods/bl4_tidy_pause", "mods/bl4_reroll", "mods/bl4_uvh_teleport",
                "mods/bl4_damage_meter", "mods/bl4_weapondex", "mods/bl4_mod_menu", "mods/bl4_item_cards",
-               "mods/bl4_respec", "mods/bl4_instant_tabs"],
+               "mods/bl4_respec", "mods/bl4_instant_tabs", "mods/bl4_item_pictures"],
     "health": ["mods/bl4_builds", "mods/bl4_tidy_pause", "mods/bl4_mod_menu", "mods/bl4_reroll",
                "mods/bl4_uvh_teleport", "mods/bl4_damage_meter", "mods/bl4_weapondex",
                "mods/bl4_backpack_size", "mods/bl4_direct", "mods/bl4_echo_anywhere", "mods/bl4_instant_travel",
                "mods/bl4_item_cards", "mods/bl4_minimap", "mods/bl4_third_person", "mods/bl4_unstuck",
-               "mods/bl4_respec", "mods/bl4_instant_tabs", "mods/bl4_sprint_toggle"],
+               "mods/bl4_respec", "mods/bl4_instant_tabs", "mods/bl4_sprint_toggle",
+               "mods/bl4_item_pictures"],
+    "frametick": ["mods/bl4_backpack_size", "mods/bl4_builds", "mods/bl4_crisp_numbers",
+                  "mods/bl4_damage_meter", "mods/bl4_direct", "mods/bl4_echo_anywhere",
+                  "mods/bl4_instant_tabs", "mods/bl4_instant_travel", "mods/bl4_item_cards",
+                  "mods/bl4_less_fog", "mods/bl4_minimap", "mods/bl4_mod_menu", "mods/bl4_perf",
+                  "mods/bl4_reroll", "mods/bl4_respec", "mods/bl4_save_backup", "mods/bl4_shoot_open", "mods/bl4_sprint_toggle",
+                  "mods/bl4_item_pictures",
+                  "mods/bl4_third_person", "mods/bl4_tidy_pause", "mods/bl4_unstuck",
+                  "mods/bl4_uvh_teleport", "mods/bl4_vehicles_anywhere", "mods/bl4_weapondex",
+                  "ported/bl4_dialog_skipper", "ported/bl4_grapple_anywhere", "ported/bl4_ground_loot",
+                  "ported/bl4_slam_tweaks"],
+    # Every uilink carrier (uilink reads keys through it) and every mod that reads keys itself
+    "gamekeys": ["mods/bl4_builds", "mods/bl4_tidy_pause", "mods/bl4_reroll", "mods/bl4_uvh_teleport",
+                 "mods/bl4_damage_meter", "mods/bl4_weapondex", "mods/bl4_mod_menu", "mods/bl4_item_cards",
+                 "mods/bl4_respec", "mods/bl4_instant_tabs", "mods/bl4_item_pictures", "mods/bl4_direct",
+                 "mods/bl4_echo_anywhere", "mods/bl4_minimap", "mods/bl4_sprint_toggle", "mods/bl4_third_person"],
 }
 SKIP = {"__pycache__"}
 

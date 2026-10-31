@@ -330,7 +330,8 @@
     }
 
     // Closes the game's menu a hotkey opened, without showing it on the way out: the pause menu's
-    // own Back to Game entry closes it at once; Esc (posted by Python) is the fallback
+    // own Back to Game entry closes it at once; Python (close_menus: the pause menu's UI state) is
+    // the fallback
     ns.closeGameMenu = function () {
         cover("closing", CLOSE_COVER_MS);
         var list = document.querySelector('[data-input-id="menu_pause_list"]');

@@ -46,8 +46,9 @@ from typing import Any
 
 from unrealsdk import logging
 
-VERSION = 3
+VERSION = 4
 HUB = "_bl4_health"
+_tick_errors: set[str] = set()  # owner tick errors already logged (this copy)
 # Probes are read this often; the import scan and the notice wait for the game to settle first
 PROBE_S = 2.0
 SCAN_AFTER_S = 15.0
@@ -290,7 +291,10 @@ def tick() -> None:
     try:
         hub.owner._owner_tick(hub, now)  # noqa: SLF001 - the owner may be another mod's copy
     except Exception as ex:  # noqa: BLE001
-        logging.error(f"[BL4 Fix health] {ex!r}")
+        # Once per message: a lasting error would otherwise be logged 4 times a second
+        if (message := repr(ex)) not in _tick_errors:
+            _tick_errors.add(message)
+            logging.error(f"[BL4 Fix health] {message}")
 
 
 def _owner_tick(hub: types.ModuleType, now: float) -> None:

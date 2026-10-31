@@ -24,7 +24,7 @@ menu-page scripts if it's installed.
 Many copies, one link
 ---------------------
 All our mods run in one Python. The copies share one state object, `sys.modules[HUB]` (a plain
-module object): the registered scripts, the server, the key thread. The newest copy (VERSION) runs
+module object): the registered scripts, the server. The newest copy (VERSION) runs
 the server ("owner"); an older owner is replaced, registrations kept. Shared fields are only ever
 added, never renamed or given a new meaning, so any copy can read what an older one left.
 
@@ -35,6 +35,9 @@ Python side, from a mod:
     uilink.tick()         # from the mod's per-frame hook (does work at most once a frame overall)
     uilink.changed("builds"), uilink.polling(key), uilink.page_open(key), uilink.key_down("F8")
     uilink.reachable(key), uilink.display_name("T"), uilink.press_escape(), uilink.menus_closed()
+    uilink.pause_menu()   # opens / closes the pause menu through the game's UI state (v9)
+    box = uilink.TextBox(text, max_len)   # typing with the game's own text input (v8, see TextBox)
+    grab = uilink.KeyGrab(("Escape",))    # keeps keys from the game's menus, counts presses (v8)
     uilink.unregister("builds")   # on disable: the page tears the script down
 
 The page side (ns = bl4linkNs, the same shape as the Mod Menu's window.bl4ModMenu): ns.ext.get /
@@ -49,7 +52,8 @@ each /hello, answered 200 only for a connection from our own process, as the Mod
 The setup app (installer/core.py PAGE_MODULES) imports this module without the SDK and calls
 sync(game_dir), so a fresh install has the pak before its first launch: keep it plain Python 3.11.
 
-Threads: the server's few pooled threads and the key thread do no game access. Everything that
+Threads: the server's few pooled threads do no game access (keys come from gamekeys since v7,
+the game's own input; there was a key thread polling Windows). Everything that
 touches the game (state(), act()) runs in tick(), on the game thread.
 """
 
@@ -78,6 +82,11 @@ from urllib.parse import parse_qs
 from . import pak
 
 try:
+    from unrealsdk.unreal import WeakPointer as _WeakPointer
+except ImportError:  # the setup app and the offline tests: no SDK, the PC isn't cached
+    _WeakPointer = None
+
+try:
     from unrealsdk import logging
 except ImportError:  # the setup app imports this module for sync() and check() (no SDK there)
 
@@ -94,14 +103,14 @@ except ImportError:  # the setup app imports this module for sync() and check() 
 
 
 # Bump on every change to this package: the newest copy loaded runs the link
-VERSION = 4
+VERSION = 10
 HUB = "_bl4_uilink"
 PAK_NAME = "BL4Fix_UILink_4251_P.pak"
 UI_PREFIX = "OakGame/Content/uiresources/"
 SHIM = "_shared/js/debug.js"
 UI_DIR = UI_PREFIX + "bl4link"
 LINK_FILE = "link.json"
-UI_FILES = ("boot.js", "hub.js")
+UI_FILES = ("boot.js", "hub.js", "text.js")  # text.js: v8 (TextBox)
 # Views (the `view=` of ingame.html): the menus page holds the pause menu, inventory, skills, Options
 MENUS = "view_status_menus"
 HUD = "HUD"
@@ -124,6 +133,17 @@ TICK_GAP_S = 0.004
 # The Mod Menu fallback (it may load after us, the link may go live) is checked this often, not
 # every frame (v4)
 FALLBACK_S = 1.0
+# While a menu is up, the game's mouse cursor is read this often, not every frame, and the PC it's
+# read from is looked up again this often (a weak pointer in between) (v5)
+CURSOR_S = 0.05
+CURSOR_PC_S = 1.0
+# State builds (each mod's state(), then JSON) in one tick stop after this long; the rest are
+# built in the next ticks (a poll waits up to WAIT_S). The menus page waking makes every script
+# ask at once (v5)
+BUILD_BUDGET_S = 0.002
+# A state build or action this slow is logged once per script (dev builds only), to find hitches
+# that land in whichever mod's tick ran the link (v5)
+SLOW_S = 0.004
 PUBLISH_S = 1.0
 MAX_BODY = 64 * 1024
 THREADS = 4
@@ -182,7 +202,7 @@ def _hub() -> types.ModuleType:
         hub.helper_started = False
         hub.menu_exts = None  # the Mod Menu's extensions module we registered fallbacks with
         hub.menu_registered = set()
-        hub.keys_asked = {}  # vk -> when it was last asked about
+        hub.keys_asked = {}  # vk -> when it was last asked about (unused since v7: gamekeys)
         hub.keys_down = frozenset()
         hub.keys_thread = None
         hub.keys_token = None
@@ -205,7 +225,12 @@ def _elect(hub: types.ModuleType) -> bool:
     _stop_server(hub)
     hub.owner, hub.owner_stamp, hub.owner_version = _me(), _STAMP, VERSION
     hub.published = {}
+    hub.published_sig = {}  # v5: file -> (mtime, size) of the source last published (dev)
     hub.checked = False
+    # v5: polls counted by the server, so a tick with nothing asked skips the scripts' loop
+    if not hasattr(hub, "asks"):
+        hub.asks = 0
+    hub.asks_done = -1
     return True
 
 
@@ -361,13 +386,21 @@ def tick() -> None:
 
 
 def _owner_tick(hub: types.ModuleType, now: float) -> None:
+    if getattr(hub, "pause_wait", None):
+        _pause_check(hub, now)  # v9: a few frames after pause_menu() only
     if hub.esc_up_at and now >= hub.esc_up_at:
         hub.esc_up_at = 0.0
         post_key(VK_ESCAPE, down=False)
+    _text_tick(hub)  # v8: first, also in play (the text context must never stay on)
     if not hub.checked:
         hub.checked = True
         _start(hub)
     if not hub.extensions:
+        return
+    # v6: in play (no menu, nothing polled or posted since the last full pass) nothing below has
+    # anything to do until the next fallback / dev publish look: ~20 us a frame of compares before
+    if (not hub.menus_up and not hub.actions and hub.asks == hub.asks_done
+            and now < getattr(hub, "idle_until", 0.0)):  # fmt: skip
         return
     if now >= getattr(hub, "fallback_at", 0.0):
         hub.fallback_at = now + FALLBACK_S
@@ -375,6 +408,7 @@ def _owner_tick(hub: types.ModuleType, now: float) -> None:
     if DEV and now - hub.published_at > PUBLISH_S:
         hub.published_at = now
         _publish(hub)
+    hub.idle_until = min(hub.fallback_at, hub.published_at + PUBLISH_S) if DEV else hub.fallback_at  # v6
     mono = time.monotonic()
     up = mono - hub.view_polls.get(MENUS, -1e9) < MENUS_POLL_S
     # A close counts when the menus page stops polling, or at once when the game hides its mouse
@@ -383,12 +417,18 @@ def _owner_tick(hub: types.ModuleType, now: float) -> None:
     # over the second. Counting one close twice is harmless: pages only look for a change (v3)
     # The cursor only matters while the menus page polls (or just did): in play it isn't read at all
     # (v4: get_pc + the property every frame was half of this tick's cost)
+    # v5: read every CURSOR_S (not every frame), from a PC kept in a weak pointer for CURSOR_PC_S
     if hub.menus_up or up:
-        cursor = _cursor_shown()
-        fell = cursor is False and getattr(hub, "cursor_was", False)
-        hub.cursor_was = bool(cursor)
+        if now >= getattr(hub, "cursor_at", 0.0):
+            hub.cursor_at = now + CURSOR_S
+            cursor = _cursor_shown(hub, now)
+            fell = cursor is False and getattr(hub, "cursor_was", False)
+            hub.cursor_was = bool(cursor)
+        else:
+            fell = False
     else:
         fell = hub.cursor_was = False
+        hub.cursor_at = 0.0  # the first tick of the next menu reads it at once
     if hub.menus_up and (not up or fell):
         hub.menus_closed += 1
     hub.menus_up = up
@@ -401,32 +441,69 @@ def _owner_tick(hub: types.ModuleType, now: float) -> None:
             elif action.get("op") == "ext":
                 ext = hub.extensions.get(str(action.get("ext")))
                 if ext is not None:
+                    started = time.perf_counter()
                     ext["act"](action)
                     ext["dirty"] = True
+                    _note_slow(ext, "act", time.perf_counter() - started)
         except Exception as ex:  # noqa: BLE001 - one broken script shouldn't break the others
             logging.error(f"[UI Link] {action.get('ext') or action.get('op')}: {ex!r}")
             logging.error("".join(traceback.format_exception(ex)))
+    # v5: nothing polled since the last full pass: no walk over every script
+    asks = getattr(hub, "asks", None)
+    if asks is not None and asks == getattr(hub, "asks_done", -1):
+        return
     answered = []
+    left = False
+    budget_end = 0.0
     for ext in list(hub.extensions.values()):
         asked = ext["asked"]
         if asked == ext["answered"]:
             continue
         if ext["dirty"] or not ext["state_json"] or mono - ext["built_at"] >= FRESH_S:
+            # At least one build a tick; more only within the budget (v5)
+            if budget_end and time.perf_counter() > budget_end:
+                left = True
+                continue
+            started = time.perf_counter()
+            budget_end = budget_end or started + BUILD_BUDGET_S
             _build(ext, mono)
+            _note_slow(ext, "state", time.perf_counter() - started)
         answered.append((ext, asked))
     if answered:
         with hub.cond:
             for ext, asked in answered:
                 ext["answered"] = asked
             hub.cond.notify_all()
+    if not left and asks is not None:
+        hub.asks_done = asks
 
 
-def _cursor_shown() -> bool | None:
+def _note_slow(ext: dict[str, Any], what: str, took: float) -> None:
+    """Keeps each script's slowest state build / action (`worst_state_ms`, `worst_act_ms`; v5)."""
+    ms = took * 1000.0
+    field = f"worst_{what}_ms"
+    if ms <= ext.get(field, 0.0):
+        return
+    ext[field] = ms
+    if DEV and took >= SLOW_S:
+        # Lands in whichever mod's tick ran the link: name the script it really was
+        logging.warning(f"[UI Link] {ext['key']} {what} took {ms:.1f} ms (its slowest so far)")
+
+
+def _cursor_shown(hub: types.ModuleType | None = None, now: float = 0.0) -> bool | None:
     """Whether the game shows its mouse cursor (a menu is up), None outside the game."""
     try:
-        from mods_base import get_pc  # noqa: PLC0415 - the setup app imports this module without the SDK
+        pc = None
+        kept = getattr(hub, "cursor_pc", None) if hub is not None else None
+        if kept is not None and now < kept[1]:
+            pc = kept[0]()
+        if pc is None:
+            from mods_base import get_pc  # noqa: PLC0415 - the setup app imports this module without the SDK
 
-        pc = get_pc(possibly_loading=True)
+            pc = get_pc(possibly_loading=True)
+            if hub is not None:
+                # A weak pointer only: never a raw UObject across frames (v5)
+                hub.cursor_pc = (_WeakPointer(pc), now + CURSOR_PC_S) if pc is not None and _WeakPointer else None
         return None if pc is None else bool(pc.bShowMouseCursor)
     except Exception:  # noqa: BLE001
         return None
@@ -494,6 +571,11 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _query(self) -> dict[str, list[str]] | None:
+        # The game's pages send no Origin (measured 2026-10-30); a browser always does on a request
+        # to another site, so a web page never gets in, even with the token
+        origin = self.headers.get("Origin")
+        if origin is not None and not origin.lower().startswith("coui://"):
+            return None
         query = parse_qs(self.path.partition("?")[2])
         token = self.hub.token
         return query if token and (query.get("t") or [""])[0] == token else None
@@ -532,6 +614,7 @@ class _Handler(BaseHTTPRequestHandler):
         with hub.cond:
             ext["asked"] += 1
             ticket = ext["asked"]
+            hub.asks = getattr(hub, "asks", 0) + 1  # after ext["asked"]: the tick reads them the other way round (v5)
             hub.cond.wait_for(lambda: ext["answered"] >= ticket, WAIT_S)
         rev, state = ext["snap"]
         if not state:
@@ -613,6 +696,7 @@ def _start(hub: types.ModuleType) -> None:
         hub.server = server
         threading.Thread(target=_write_link, args=(GAME_DIR, server.server_address[1], hub.token), name="bl4_uilink.link", daemon=True).start()  # fmt: skip
     _publish(hub)
+    _text_register(hub)  # v8: the overlay / title pages run it from the start (no wait on a first box)
     threading.Thread(target=_check_pak, args=(hub, GAME_DIR), name="bl4_uilink.pak", daemon=True).start()
 
 
@@ -630,8 +714,10 @@ def _stop_server(hub: types.ModuleType) -> None:
 def stop() -> None:
     """Stops the link if no script is registered any more (call after unregister on disable)."""
     hub = _hub()
-    if hub.extensions:
+    if set(hub.extensions) - {TEXT_KEY}:
         return
+    _text_release(hub)  # v8
+    hub.extensions.pop(TEXT_KEY, None)
     _stop_server(hub)
     hub.checked = False
 
@@ -678,11 +764,26 @@ def _publish(hub: types.ModuleType) -> None:
     if GAME_DIR is None:
         return
     target = GAME_DIR / UI_DIR
+    sigs = getattr(hub, "published_sig", None)
+    if sigs is None:
+        sigs = hub.published_sig = {}
     for name in UI_FILES:
+        # Dev (a source folder): a file whose date and size didn't move isn't read again (v5: both
+        # files were read every second)
+        sig = None
+        if DEV:
+            try:
+                st = os.stat(Path(__file__).parent / "ui" / name)
+                sig = (st.st_mtime_ns, st.st_size)
+            except OSError:
+                pass
+            if sig is not None and name in hub.published and sigs.get(name) == sig:
+                continue
         try:
             data = (ASSETS / "ui" / name).read_bytes()
         except OSError:
             continue
+        sigs[name] = sig
         if hub.published.get(name) == data:
             continue
         try:
@@ -826,10 +927,311 @@ def _apply_after_exit(target: Path) -> bool:
             creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
             close_fds=True,
         )
-    except OSError:
+    except OSError as ex:
+        # Nothing will apply the staged change: the pak stays as it is past the next start
+        logging.error(f"[UI Link] couldn't start the helper that updates {target.name} after the game exits: {ex!r}")
         return False
     hub.helper_started = True
     return True
+
+
+# endregion
+# region Text boxes (v8): typing with the game's own text input, no keyboard hook
+#
+# No key events reach the page our screens draw in (the menus page): while a menu is up the game
+# gives the keyboard to the ECHO overlay page (`overlay_menu`), whose focused <input> gets real
+# typing (2026-10-30). So a TextBox has an invisible <input> there (ui/text.js, a link script of
+# ours), focused from code, which sends what's typed; our screens draw the box and text as before.
+# The same keys still reach the game's input, so while a box is typed in an Enhanced Input mapping
+# context of ours (TEXT_KEYS -> one do-nothing action that consumes them, priority TEXT_PRIORITY)
+# keeps the menus from acting on them (A/S/D navigated the inventory without it), and gamekeys is
+# muted so our own hotkeys don't fire. Until v8 each mod had a WH_KEYBOARD_LL hook for this.
+#
+# The context blocks those keys everywhere, so it's only on while a box is typed in with a page of
+# ours polling, and it comes off when: the box stops (Enter, Esc, a click elsewhere, the mod), no
+# overlay / title page polled for TEXT_QUIET_S (the menus closed), nothing was typed for
+# TEXT_IDLE_S, the map changed, or the link stops. Checked first thing in every owner tick, also in
+# play.
+
+TEXT_KEY = "bl4text"
+OVERLAY = "overlay_menu"  # the ECHO tab bar's page: it has the keyboard while a menu is up
+TITLE = "menu_main"  # the title screen's page
+TEXT_SCRIPT = "coui://uiresources/bl4link/text.js"
+TEXT_PRIORITY = 100000  # above every context of the game's
+TEXT_QUIET_S = 1.0  # no overlay / title page polled for this long: the menus closed, typing stops
+TEXT_IDLE_S = 120.0  # nothing typed for this long: typing stops (the player walked away)
+TEXT_KEYS = (
+    *(chr(c) for c in range(ord("A"), ord("Z") + 1)),
+    "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    "NumPadZero", "NumPadOne", "NumPadTwo", "NumPadThree", "NumPadFour", "NumPadFive", "NumPadSix",
+    "NumPadSeven", "NumPadEight", "NumPadNine", "Multiply", "Add", "Subtract", "Decimal", "Divide",
+    "SpaceBar", "BackSpace", "Delete", "Enter", "Escape", "Tab", "Left", "Right", "Up", "Down",
+    "Home", "End", "Semicolon", "Equals", "Comma", "Hyphen", "Period", "Slash", "Tilde",
+    "LeftBracket", "Backslash", "RightBracket", "Apostrophe",
+)  # fmt: skip
+
+
+class TextBox:
+    """
+    A line being typed, through the game's own text input (see the region's comment). One at a time:
+    a new one stops the last. Read .text (settable: the page shows it at once) and .done: None while
+    typing, else True (Enter) / False (Esc, Tab, stopped) or, with named=True, "enter" / "tab" /
+    "esc". poll() (game thread, every frame while typing) applies what was typed and says whether
+    anything changed; stop() ends it. `allowed` filters typed characters; spaces=False drops spaces
+    (links); paste reads the clipboard for Ctrl+V when the game's input doesn't paste by itself
+    (called on a short-lived thread). .failed is always False (kept for the hook's interface).
+    """
+
+    failed = False
+
+    def __init__(self, text: str, max_len: int, paste: Callable[[], str] | None = None, *,
+                 allowed: Callable[[str], bool] | None = None, spaces: bool = True, named: bool = False) -> None:  # fmt: skip
+        self.max_len = max_len
+        self.allowed = allowed
+        self.spaces = spaces
+        self.named = named
+        self.done: bool | str | None = None
+        self.id = next(_revs)
+        self.rev = 0  # moves when the text changes here, not from the page (the page then copies it)
+        self.last_key = time.monotonic()
+        self._paste = paste
+        self._events: deque[tuple[str, str]] = deque()  # from the page: (op, value)
+        self._pasted: deque[str] = deque()
+        self._text = self._clean(text)
+        hub = _hub()
+        old = getattr(hub, "text_box", None)
+        if old is not None and old is not self:
+            old.stop()
+        hub.text_box = self
+        hub.text_since = time.monotonic()
+        _text_register(hub)
+        changed(TEXT_KEY)
+
+    @property
+    def text(self) -> str:
+        return self._text
+
+    @text.setter
+    def text(self, value: str) -> None:
+        value = self._clean(value)
+        if value != self._text:
+            self._text = value
+            self.rev += 1
+            changed(TEXT_KEY)
+
+    def _clean(self, text: str) -> str:
+        text = "".join(c for c in str(text) if c.isprintable() and (self.allowed is None or self.allowed(c)))
+        if not self.spaces:
+            text = text.replace(" ", "")
+        return text[: self.max_len]
+
+    def _end(self, how: str) -> None:
+        if self.done is None:
+            self.done = how if self.named else how == "enter"
+
+    def poll(self) -> bool:
+        """Applies what was typed since the last call (game thread). True if anything changed."""
+        changed_ = False
+        while self._pasted and self.done is None:
+            pasted = " ".join((self._pasted.popleft().strip().splitlines() or [""])[0].split())
+            self.text = self._text + pasted
+            changed_ = True
+        while self._events and self.done is None:
+            op, value = self._events.popleft()
+            self.last_key = time.monotonic()
+            changed_ = True
+            if op == "text":
+                clean = self._clean(value)
+                if clean != value:
+                    self.rev += 1  # the page shows what we kept
+                    changed(TEXT_KEY)
+                self._text = clean
+            elif op in ("enter", "tab", "esc"):
+                self._end(op)
+            elif op == "clear":
+                self.text = ""
+            elif op == "paste" and self._paste is not None:
+                threading.Thread(target=self._read_clipboard, name="bl4_uilink paste", daemon=True).start()
+        if self.done is None and time.monotonic() - self.last_key > TEXT_IDLE_S:
+            self._end("esc")
+            changed_ = True
+        if self.done is not None:
+            self.stop()
+        return changed_
+
+    def _read_clipboard(self) -> None:
+        try:
+            text = self._paste() if self._paste is not None else ""
+        except Exception:  # noqa: BLE001 - an unreadable clipboard pastes nothing
+            text = ""
+        self._pasted.append(text or "")
+
+    def stop(self) -> None:
+        """Ends typing (the text stays). The game's keys work again from the next frame."""
+        self._end("esc")
+        hub = _hub()
+        if getattr(hub, "text_box", None) is self:
+            hub.text_box = None
+            changed(TEXT_KEY)
+
+
+class KeyGrab:
+    """
+    Keeps these keys (Unreal key names) from the game's menus while it lives, and counts their
+    presses: .take() (game thread, every frame) returns how many came since the last call. The
+    Mod Menu's title screen uses it so Esc goes back a page instead of opening the game's "quit?"
+    dialog. Stops by itself when take() isn't called for TEXT_QUIET_S.
+    """
+
+    def __init__(self, keys: tuple[str, ...] = ("Escape",)) -> None:
+        self.keys = tuple(keys)
+        self.taken_at = time.monotonic()
+        self._held: set[str] = set()
+        hub = _hub()
+        grabs = getattr(hub, "key_grabs", None)
+        if grabs is None:
+            grabs = hub.key_grabs = []
+        grabs.append(self)
+
+    def take(self) -> int:
+        self.taken_at = time.monotonic()
+        count = 0
+        gk = _gamekeys()
+        for key in self.keys:
+            held = gk.down(key)
+            if held and key not in self._held:
+                count += 1
+            (self._held.add if held else self._held.discard)(key)
+        return count
+
+    def stop(self) -> None:
+        grabs = getattr(_hub(), "key_grabs", None) or []
+        if self in grabs:
+            grabs.remove(self)
+
+
+def _text_register(hub: types.ModuleType) -> None:
+    if TEXT_KEY not in hub.extensions:
+        register(TEXT_KEY, TEXT_SCRIPT, _text_state, _text_act, views=(OVERLAY, TITLE), mod="BL4 UI Link")
+
+
+def _text_view(hub: types.ModuleType) -> str:
+    """The page that has the keyboard: the overlay while a menu is up, else the title screen's."""
+    now = time.monotonic()
+    if now - hub.view_polls.get(OVERLAY, -1e9) < TEXT_QUIET_S:
+        return OVERLAY
+    if now - hub.view_polls.get(TITLE, -1e9) < TEXT_QUIET_S:
+        return TITLE
+    return ""
+
+
+def _text_state() -> dict[str, Any]:
+    hub = _hub()
+    box = getattr(hub, "text_box", None)
+    if box is None or box.done is not None:
+        return {"id": 0}
+    return {"id": box.id, "text": box.text, "rev": box.rev, "view": _text_view(hub)}
+
+
+def _text_act(action: dict[str, Any]) -> None:
+    box = getattr(_hub(), "text_box", None)
+    if box is None or action.get("id") != box.id:
+        return
+    op = str(action.get("kind") or "")
+    if op in ("text", "enter", "tab", "esc", "clear", "paste"):
+        box._events.append((op, str(action.get("value") or "")))  # noqa: SLF001
+
+
+def _text_tick(hub: types.ModuleType) -> None:
+    """Owner, every tick, before anything else: the text context on only while it may be (above)."""
+    box = getattr(hub, "text_box", None)
+    grabs = getattr(hub, "key_grabs", None)
+    if box is None and not grabs and not getattr(hub, "text_ctx_on", False) and not getattr(hub, "grab_ctx_on", False):
+        return
+    now = time.monotonic()
+    view = _text_view(hub)
+    if box is not None and box.done is None and (not view and now - hub.text_since > TEXT_QUIET_S):
+        box.stop()  # the menus closed (or no page of ours ever answered)
+        box = None
+    if grabs:
+        for grab in list(grabs):
+            if now - grab.taken_at > TEXT_QUIET_S:
+                grab.stop()
+        grabs = hub.key_grabs
+    typing = box is not None and box.done is None
+    if typing:
+        _gamekeys().mute(0.25)  # renewed every tick: lapses by itself if this stops running
+    _context(hub, "text", TEXT_KEYS if typing else ())
+    _context(hub, "grab", tuple(sorted({k for g in grabs or () for k in g.keys})) if not typing else ())
+
+
+def _context(hub: types.ModuleType, which: str, keys: tuple[str, ...]) -> None:
+    """Applies our mapping context `which` with these keys, or removes it (no keys)."""
+    on_attr, ptr_attr, keys_attr = f"{which}_ctx_on", f"{which}_ctx", f"{which}_ctx_keys"
+    on = getattr(hub, on_attr, False)
+    if on and keys == getattr(hub, keys_attr, ()):
+        return
+    if not on and not keys:
+        return
+    try:
+        import unrealsdk  # noqa: PLC0415
+        from unrealsdk.unreal import BoundFunction, WeakPointer  # noqa: PLC0415
+
+        iface = unrealsdk.find_class("EnhancedInputSubsystemInterface")
+        sub = _input_subsystem(hub)
+        opts = unrealsdk.make_struct("ModifyContextOptions", bIgnoreAllPressedKeysUntilRelease=False,
+                                     bForceImmediately=True, bNotifyUserSettings=False)  # fmt: skip
+        kept = getattr(hub, ptr_attr, None)
+        ctx = kept() if kept is not None else None
+        if on and ctx is not None and sub is not None:
+            BoundFunction(iface._find("RemoveMappingContext"), sub)(ctx, opts)
+        setattr(hub, on_attr, False)
+        setattr(hub, keys_attr, ())
+        if not keys or sub is None:
+            return
+        # A new context each time: it lives while applied (EnhancedPlayerInput.AppliedInputContexts
+        # is a reflected property), and may be collected once removed
+        ctx = unrealsdk.construct_object("InputMappingContext", sub, f"bl4fix_{which}_keys_{next(_revs)}")
+        action = unrealsdk.construct_object("InputAction", ctx, "bl4fix_keys")  # consumes input by default
+        for key in keys:
+            ctx.MapKey(action, unrealsdk.make_struct("Key", KeyName=key))
+        BoundFunction(iface._find("AddMappingContext"), sub)(ctx, TEXT_PRIORITY, opts)
+        setattr(hub, ptr_attr, WeakPointer(ctx))
+        setattr(hub, on_attr, True)
+        setattr(hub, keys_attr, keys)
+    except Exception as ex:  # noqa: BLE001 - typing still works, the menus may react to it
+        setattr(hub, on_attr, False)
+        logging.error(f"[UI Link] the {which} key context failed: {ex!r}")
+
+
+def _input_subsystem(hub: types.ModuleType) -> Any:
+    """The local player's EnhancedInputLocalPlayerSubsystem (kept in a weak pointer)."""
+    kept = getattr(hub, "input_sub", None)
+    sub = kept() if kept is not None else None
+    if sub is not None:
+        return sub
+    import unrealsdk  # noqa: PLC0415
+    from mods_base import get_pc  # noqa: PLC0415
+    from unrealsdk.unreal import WeakPointer  # noqa: PLC0415
+
+    pc = get_pc(possibly_loading=True)
+    if pc is None or pc.Player is None:
+        return None
+    lib = unrealsdk.find_class("SubsystemBlueprintLibrary").ClassDefaultObject
+    sub = lib.GetLocalPlayerSubSystemFromPlayerController(pc, unrealsdk.find_class("EnhancedInputLocalPlayerSubsystem"))
+    hub.input_sub = WeakPointer(sub) if sub is not None else None
+    return sub
+
+
+def _text_release(hub: types.ModuleType) -> None:
+    """Every context of ours off, at once (the link stops, the owner is replaced)."""
+    box = getattr(hub, "text_box", None)
+    if box is not None:
+        box.stop()
+    for grab in list(getattr(hub, "key_grabs", None) or ()):
+        grab.stop()
+    _context(hub, "text", ())
+    _context(hub, "grab", ())
 
 
 # endregion
@@ -842,8 +1244,6 @@ _kernel32 = ctypes.WinDLL("kernel32")
 _iphlpapi = ctypes.WinDLL("iphlpapi")
 _user32.GetForegroundWindow.restype = ctypes.c_void_p
 _user32.GetWindowThreadProcessId.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong))
-_user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
-_user32.GetAsyncKeyState.restype = ctypes.c_short
 _user32.IsWindowVisible.argtypes = (ctypes.c_void_p,)
 _user32.PostMessageW.argtypes = (ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t)
 _ENUM_PROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
@@ -879,13 +1279,6 @@ VIRTUAL_KEYS: dict[str, int] = {
     "ThumbMouseButton": 0x05, "ThumbMouseButton2": 0x06,
 }  # fmt: skip
 
-# Snapshot age at worst; a tap shorter than this still shows ("pressed since the last read", v4).
-# Was 15 ms: each of its Win32 calls hands the GIL back and forth with the game thread
-KEY_POLL_S = 0.03
-KEY_FORGET_S = 2.0  # a key nobody asked about for this long isn't read any more
-KEY_IDLE_EXIT_S = 5.0  # with no asks for this long the thread stops (a later ask starts it again)
-
-
 # The last foreground window and whether it's ours: one tuple, replaced whole (any thread)
 _focus: tuple[int, bool] = (0, False)
 
@@ -903,56 +1296,26 @@ def game_focused() -> bool:
     return ours
 
 
-def _poll_keys(hub: types.ModuleType, token: object) -> None:
-    # Win32 calls only: fine off the game thread. A newer thread (new token) replaces this one
-    was_focused = False
-    polled: set[int] = set()
-    while hub.keys_token is token:
-        now = time.monotonic()
-        asked = list(hub.keys_asked.items())  # the game thread adds keys meanwhile
-        wanted = [vk for vk, at in asked if now - at < KEY_FORGET_S]
-        if not wanted and now - max((at for _, at in asked), default=0.0) > KEY_IDLE_EXIT_S:
-            hub.keys_token = None
-            return
-        focused = bool(wanted) and game_focused()
-        if focused:
-            down = set()
-            for vk in wanted:
-                bits = _user32.GetAsyncKeyState(vk)
-                # Bit 0 = pressed since the last read: only trusted for a key read last poll too, with
-                # the game in front all along (else a press from long ago, or in another window)
-                if bits & 0x8000 or (bits & 1 and was_focused and vk in polled):
-                    down.add(vk)
-            hub.keys_down = frozenset(down)
-            polled = set(wanted)
-        else:
-            hub.keys_down = frozenset()
-            polled = set()
-        was_focused = focused
-        time.sleep(KEY_POLL_S)
+def _gamekeys() -> Any:
+    """The carrying mod's gamekeys copy (imported when first used: the setup app imports this
+    package without the SDK), else whichever copy reads keys for every mod."""
+    parent = __name__.rpartition(".")[0]
+    if parent:
+        import importlib  # noqa: PLC0415
+
+        return importlib.import_module(parent + ".gamekeys")
+    owner = getattr(sys.modules.get("_bl4_gamekeys"), "owner", None)
+    if owner is None:
+        raise ImportError("no gamekeys loaded")
+    return owner
 
 
 def vk_down(vk: int) -> bool:
-    """Whether a virtual key is held, from a worker thread's snapshot (False while the game isn't in front)."""
-    keys = sys.modules.get("bl4_mod_menu.keys")
-    if keys is not None and hasattr(keys, "vk_down"):
-        try:
-            return bool(keys.vk_down(vk))
-        except Exception:  # noqa: BLE001 - another Mod Menu version: ours below
-            pass
-    hub = _hub()
-    now = time.monotonic()
-    first = now - hub.keys_asked.get(vk, -KEY_FORGET_S) >= KEY_FORGET_S
-    hub.keys_asked[vk] = now
-    thread = hub.keys_thread
-    if thread is None or not thread.is_alive() or hub.keys_token is None:
-        token = hub.keys_token = object()
-        hub.keys_thread = threading.Thread(target=_poll_keys, args=(hub, token), name="bl4_uilink.keys", daemon=True)
-        hub.keys_thread.start()
-    if first:
-        # A key held when we started doesn't count as a press: report it held until the thread reads it
-        return True
-    return vk in hub.keys_down
+    """
+    Whether a virtual key is held, from the game's own input (gamekeys, v7, 2026-10-30; until then
+    a worker thread of ours polled GetAsyncKeyState). False while the game isn't in front.
+    """
+    return _gamekeys().vk_down(vk)
 
 
 # How a few key names read on screen (as the Mod Menu shows them)
@@ -975,9 +1338,8 @@ def display_name(name: str | None) -> str:
 
 
 def key_down(name: str | None) -> bool:
-    """Whether the named key (an Unreal key name, as keybind options hold) is held."""
-    vk = VIRTUAL_KEYS.get(name or "")
-    return vk is not None and vk_down(vk)
+    """Whether the named key (an Unreal key name, as keybind options hold; pads too) is held."""
+    return _gamekeys().down(name)
 
 
 def _game_window() -> int | None:
@@ -1005,16 +1367,125 @@ def post_key(vk: int, *, down: bool) -> bool:
     if hwnd is None:
         return False
     _user32.PostMessageW(hwnd, WM_KEYDOWN if down else WM_KEYUP, vk, 1 if down else 0xC0000001)
+    # The game's input sees a posted key as held (Windows' key state never did): ours isn't a press (v7)
+    try:
+        gk = _gamekeys()
+        if name := gk.VK_NAMES.get(vk):
+            gk.ignore(name, 5.0 if down else 0.25)
+    except Exception:  # noqa: BLE001
+        pass
     return True
 
 
 def press_escape() -> None:
-    """Esc for the game: opens the pause menu in gameplay, closes the open menu otherwise."""
+    """
+    What Esc does for the game: opens the pause menu in gameplay, closes the open menu otherwise.
+    The pause menu through its UI state (v9, pause_menu()); Esc posted to the window for the rest.
+    """
     hub = _hub()
+    if not _pause_native(hub):
+        _post_escape(hub)
+
+
+def _post_escape(hub: types.ModuleType) -> None:
     if hub.esc_up_at:
         return  # still holding the last one
     if post_key(VK_ESCAPE, down=True):
         hub.esc_up_at = time.perf_counter() + ESC_HOLD_S
+
+
+# region The pause menu through the game's UI state (v9)
+#
+# The game's menus are UI states: gameplay tags `UI.State.<NAME>` (the `uistate` NCS; the pause
+# menu is MENU_PAUSE, a child of MENU). GbxUIUMGPlayerSubsystem.AddUIStateToPlayer /
+# RemoveUIStateToPlayer open and close the pause menu as Esc does, with no key sent to the window
+# (so it also works with the game in the back). Checked in game 2026-10-30: added in play, the
+# pause menu showed and its page woke; removed, it closed back to play. The bare MENU state (and
+# MENU_UI_DEV) only put the weapon away and showed the cursor, with no page of ours: not usable.
+# Esc stays for: another menu up (not the pause menu: Esc closes it), no BASE_HUD state
+# (cinematics remove it: the game decides there), and a state that didn't take within
+# PAUSE_CHECK_S (a game patch): Esc then, and for the rest of the session.
+PAUSE_STATE = "UI.State.MENU_PAUSE"
+HUD_STATE = "UI.State.BASE_HUD"
+PAUSE_CHECK_S = 0.5
+
+
+def pause_menu() -> bool:
+    """
+    Opens the pause menu in gameplay, or closes it when it's up, through the game's UI state. False
+    when that isn't the right way here (another menu, a cinematic, it failed before): press Esc.
+    """
+    return _pause_native(_hub())
+
+
+def _ui_states() -> tuple[Any, Any] | None:
+    """(the player controller, the local player's UI state subsystem), or None."""
+    import unrealsdk  # noqa: PLC0415
+    from mods_base import get_pc  # noqa: PLC0415
+
+    pc = get_pc(possibly_loading=True)
+    if pc is None or pc.Player is None:
+        return None
+    lib = unrealsdk.find_class("SubsystemBlueprintLibrary").ClassDefaultObject
+    sub = lib.GetLocalPlayerSubSystemFromPlayerController(pc, unrealsdk.find_class("GbxUIUMGPlayerSubsystem"))
+    return None if sub is None else (pc, sub)
+
+
+def _has_state(sub: Any, name: str) -> bool:
+    import unrealsdk  # noqa: PLC0415
+
+    got = sub.HasUIState(unrealsdk.make_struct("GameplayTag", TagName=name))
+    return bool(got[0] if isinstance(got, tuple) else got)
+
+
+def _pause_native(hub: types.ModuleType) -> bool:
+    if getattr(hub, "pause_native", True) is False:
+        return False
+    wait = getattr(hub, "pause_wait", None)
+    if wait is not None and time.perf_counter() < wait[0] + 1.0:
+        return True  # the last change is still landing (a second press, a repeated close)
+    try:
+        import unrealsdk  # noqa: PLC0415
+
+        found = _ui_states()
+        if found is None:
+            return False
+        pc, sub = found
+        tag = unrealsdk.make_struct("GameplayTag", TagName=PAUSE_STATE)
+        if _has_state(sub, PAUSE_STATE):
+            sub.RemoveUIStateToPlayer(pc, tag, pc.Player)
+            want = False
+        elif pc.bShowMouseCursor or not _has_state(sub, HUD_STATE):
+            return False  # another menu is up, or a cinematic / load: Esc, and the game decides
+        else:
+            sub.AddUIStateToPlayer(pc, tag, pc.Player)
+            want = True
+    except Exception as ex:  # noqa: BLE001 - Esc still works
+        hub.pause_native = False
+        logging.warning(f"[UI Link] the pause menu's UI state failed ({ex!r}); using Esc instead")
+        return False
+    hub.pause_wait = (time.perf_counter() + PAUSE_CHECK_S, want)
+    return True
+
+
+def _pause_check(hub: types.ModuleType, now: float) -> None:
+    """Owner tick after pause_menu(): did the state change? Else Esc, and Esc from now on."""
+    until, want = hub.pause_wait
+    try:
+        found = _ui_states()
+        ok = found is not None and _has_state(found[1], PAUSE_STATE) == want
+    except Exception:  # noqa: BLE001
+        ok = False
+    if ok:
+        hub.pause_wait = None
+    elif now >= until:
+        hub.pause_wait = None
+        hub.pause_native = False
+        logging.warning("[UI Link] the pause menu's UI state didn't change; using Esc from now on")
+        _post_escape(hub)
+
+
+# endregion
 
 
 def _alive(pid: Any) -> bool:
