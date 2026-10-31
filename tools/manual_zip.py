@@ -12,13 +12,18 @@ Extracted into the game folder it gives what the setup app's Install gives with 
   writes these before the first launch (core.prepare_pages), because paks only load at startup:
   without them a fresh install's first launch has no mod pages. The pak is the same bytes every
   link mod builds (uilink.build_pak), so the mods in game find it current.
+- every mod's pictures (catalog `assets`: Kairosdex's bosses and items, ~46 MB) at their
+  uiresources paths, the same files as the release's <id>.assets.zip, so Kairosdex shows them at
+  the first launch and downloads nothing (its fetch.py stays the fallback). Full-size pictures go
+  in before their small/ copies: a small copy older than its picture gets remade in game.
 - BL4Fix-README.txt: the steps, also in README.md ("Install without the setup app")
 
 What the setup app does that the zip can't, and who does it instead:
 - `"enabled": true` for every new mod (mods_base loads a mod with no settings file switched off):
   the Mod Menu at its import (bl4_mod_menu/firstrun.py)
-- old page paks removed, Skip Intro's movies moved, Kairosdex's pictures: the mods in game (the
-  pictures download once on the first launch, bl4_weapondex/fetch.py)
+- old page paks removed, Skip Intro's movies moved: the mods in game
+- merging picture indexes: the zip's index.json replaces the player's, so pictures a player baked
+  themselves (`dex bake`) that we don't ship drop out of the dex until baked again
 - the firewall rule (off by default in the app too): BL4 Direct Connect's F6 page
 - the VC++ runtime, old loose mod folders, another dsound.dll loader: README steps
 
@@ -63,7 +68,7 @@ INSTALL
 3. Start the game. Every mod is on; F7 (or MODS in the pause menu) has their settings, where you
    can switch off the ones you don't want. F6 is BL4 Direct Connect (co-op).
 
-Kairosdex downloads its boss and item pictures (~46 MB) from the release on the first launch.
+Kairosdex's boss and item pictures are in the zip too: nothing to download.
 
 IF NOTHING SHOWS IN GAME
 - Install Microsoft's Visual C++ runtime (x64): https://aka.ms/vs/17/release/vc_redist.x64.exe
@@ -129,6 +134,26 @@ def page_files(sdkmods: Path) -> dict[str, bytes]:
     return files
 
 
+def picture_files() -> dict[str, bytes]:
+    """Every mod's pictures as zip paths -> bytes: what installer/build.build_assets zips."""
+    files: dict[str, bytes] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        for info in catalog.MODS:
+            if not info.assets:
+                continue
+            pictures = Path(tmp) / f"{info.id}.assets.zip"
+            installer_build.build_assets(info, pictures)
+            with zipfile.ZipFile(pictures) as zf:
+                for name in zf.namelist():
+                    files[f"{UI_REL}/{name}"] = zf.read(name)
+    return files
+
+
+def _order(name: str) -> tuple[bool, str]:
+    """Sorted, with every small/ picture copy after the full-size pictures (see the docstring)."""
+    return "/small/" in name, name
+
+
 def build(out: Path, sdkmods: Path, sdk_zip: Path, tag: str) -> Path:
     """Writes the zip (`out` is its path). `sdkmods` holds the release's .sdkmod files."""
     files: dict[str, bytes] = {}
@@ -140,13 +165,14 @@ def build(out: Path, sdkmods: Path, sdk_zip: Path, tag: str) -> Path:
     for info in catalog.MODS:
         files[f"sdk_mods/{info.id}.sdkmod"] = (sdkmods / f"{info.id}.sdkmod").read_bytes()
     files |= page_files(sdkmods)
+    files |= picture_files()
     files[README_NAME] = readme(tag).replace("\n", "\r\n").encode("utf-8")  # Notepad-friendly
     tmp = out.with_name(out.name + ".tmp")
     with zipfile.ZipFile(tmp, "w") as zf:
-        for name in sorted(files):
+        for name in sorted(files, key=_order):
             entry = _entry(name)
-            # .sdkmod files are zips already
-            entry.compress_type = zipfile.ZIP_STORED if name.endswith(".sdkmod") else zipfile.ZIP_DEFLATED
+            # .sdkmod files are zips already, PNGs don't compress further
+            entry.compress_type = zipfile.ZIP_STORED if name.endswith((".sdkmod", ".png")) else zipfile.ZIP_DEFLATED
             zf.writestr(entry, files[name])
     tmp.replace(out)
     return out

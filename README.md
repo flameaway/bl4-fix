@@ -101,7 +101,8 @@ Command line: `BL4FixSetup.exe --list-mods`, `--mods <ids>`, `--add-mod <id>`,
 ### Install without the setup app
 
 Rather not run an exe? Every release also has **[`BL4Fix-Manual.zip`](https://github.com/flameaway/bl4-fix/releases/latest/download/BL4Fix-Manual.zip)**:
-the same mods, the pinned Python SDK and the page files the setup app prepares, with no program
+the same mods, the pinned Python SDK, the page files the setup app prepares and Kairosdex's boss
+and item pictures, with no program
 to run. Each `.sdkmod` inside is a zip of readable Python. GitHub rebuilds the zip from the source
 code and attests it, so you can check it's exactly what this repository builds (see
 [Checking a download](#checking-a-download)).
@@ -110,8 +111,7 @@ code and attests it, so you can check it's exactly what this repository builds (
 2. Extract everything in the zip into the game folder, the one with `OakGame` in it (Steam:
    right-click the game > **Manage** > **Browse local files**). Say yes to replacing files.
 3. Launch the game. Every mod starts switched on; switch off the ones you don't want on **MODS**
-   (F7). Kairosdex downloads its boss and item pictures (~46 MB) from the release on the first
-   launch.
+   (F7). Kairosdex's pictures are already in place: nothing downloads on the first launch.
 
 What the setup app does that the zip leaves to you:
 
@@ -476,7 +476,7 @@ BL4 Fix is open source ([GPL-3.0](LICENSE)): everything the mods and the setup a
 repository. The mods are Python files that only run inside Borderlands 4, through the
 [bl-sdk Python SDK](https://github.com/bl-sdk/oak2-mod-manager). Outside the game, the only things
 left running are small hidden helpers that wait for the game to close to finish a job: install
-updates, apply a save restore you asked for, keep the last session's log for bug reports.
+updates, apply a save restore you asked for.
 
 **Your saves.** No mod writes the game's save files. Kairosdex and Save Backups read decrypted
 copies. Save Backups copies your saves at each launch into `Saved/BL4Fix Save Backups/`, next to
