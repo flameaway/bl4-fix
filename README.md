@@ -2,8 +2,6 @@
 
 <img src="docs/images/banner.jpg" alt="BL4 Fix: co-op by IP, an in-game mod menu, 20+ mods for Borderlands 4" width="100%">
 
-**Direct IP co-op, an in-game mod menu and 20+ quality-of-life mods for Borderlands 4, set up with one installer.**
-
 [![Download BL4FixSetup.exe](https://img.shields.io/badge/Download-BL4FixSetup.exe-f5b82e?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/flameaway/bl4-fix/releases/latest/download/BL4FixSetup.exe)
 [![Or the zip, no exe](https://img.shields.io/badge/Or-the%20zip%2C%20no%20exe-555?style=for-the-badge)](#install-without-the-setup-app)
 
