@@ -317,6 +317,9 @@ def _error(*args: Any, **kwargs: Any) -> Any:
     if what == LOG_AND_NOTE:
         original(f"[Mod Menu] The error above happened {QUIET_AFTER} times this session: further repeats"
                  " are only counted (for bug reports), not logged.")  # fmt: skip
+    logged = getattr(hub, "on_logged", None)  # reporting.copy_log_soon: the log copy for bug reports
+    if logged is not None:
+        logged()
     return result
 
 

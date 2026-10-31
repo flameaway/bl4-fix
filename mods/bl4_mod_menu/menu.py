@@ -45,6 +45,7 @@ from mods_base import (
     SliderOption,
     SpinnerOption,
     ValueOption,
+    ENGINE,
     SETTINGS_DIR,
     get_ordered_mod_list,
     get_pc,
@@ -161,6 +162,7 @@ class MenuState:
     # _cursor_pc: the controller for the per-frame cursor read, and until when it's trusted
     cursor_pc: WeakPointer = field(default_factory=WeakPointer)
     cursor_pc_at: float = 0.0
+    world_address: int = 0  # the last world _note_world saw: a new one asks for a log copy
     cursor_at: float = 0.0  # the next cursor read in play (_tick)
     cursor_up: bool = False  # a game menu showed (its cursor) at the last read, our panel not open
     health_at: float = 0.0  # the next health.tick
@@ -867,7 +869,26 @@ def _cursor_pc(now: float) -> Any:
         pc = get_pc(possibly_loading=True)
         S.cursor_pc = WeakPointer(pc) if pc is not None else WeakPointer()
         S.cursor_pc_at = now + CURSOR_PC_S
+        _note_world()
     return pc
+
+
+def _note_world() -> None:
+    """
+    In _cursor_pc's re-lookup (once a second): a new world = the first one after the mods loaded,
+    or a map change, which asks for a copy of the log for bug reports. Not the controller: the game
+    keeps the same one from the title screen into the map (seen 2026-10-31).
+    """
+    try:
+        viewport = ENGINE.GameViewport
+        world = viewport.World if viewport is not None else None
+        address = world._get_address() if world is not None else 0  # noqa: SLF001
+    except Exception:  # noqa: BLE001 - a loading screen
+        return
+    if address and address != S.world_address:
+        reporting.copy_log_soon()
+    if address:
+        S.world_address = address
 
 
 def _tick() -> None:
@@ -971,7 +992,7 @@ def install(open_key: Callable[[], str | None], game_dir: Path) -> None:
     global _open_key
     _open_key = open_key
     errors.install(SETTINGS_DIR, game_dir / reporting.LOG_DIR / reporting.LOG_NAME)
-    reporting.start_log_keeper(game_dir)
+    reporting.start_log_copy(game_dir)
     S.toggle_was_down = True  # if the key is held right now, wait for a fresh press
     try:
         web.start(game_dir)

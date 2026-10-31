@@ -1,12 +1,14 @@
 """
 "Report a problem" on the mods screen: makes a bug report zip (report.py collects it) and opens
-GitHub's new-issue page; plus the helper that keeps the last session's SDK log.
+GitHub's new-issue page; plus a copy of the SDK log that outlives the next launch.
 
-- The SDK truncates OakGame/Binaries/Win64/Plugins/unrealsdk.log at every launch, so after a crash
-  the evidence was gone by the time the player started the game again to report it.
-  start_log_keeper() starts one hidden PowerShell per game session that waits for this process to
-  exit (Wait-Process: no polling) and then copies the log to unrealsdk.prev.log. It does nothing
-  while another copy of the game still runs (that one owns the log by then).
+- The SDK truncates OakGame/Binaries/Win64/Plugins/unrealsdk.log at every launch, before any mod
+  runs, so after a crash the evidence was gone by the time the player started the game again to
+  report it. start_log_copy() keeps a copy of it, unrealsdk.session.log, appended from inside the
+  game when something happens (the first world, each map change, every logged error: no
+  timer), and renames last session's copy to unrealsdk.prev.log at launch. After a hard crash the
+  copy lacks the info lines since the last of those moments; errors are always in it. (Until
+  2026-10-31 a hidden PowerShell waited for the game to exit and copied the log.)
 - make(): the live part (mods, versions, health, this session's errors, map, role) is read here on
   the game thread (small); report.build() runs on a worker and writes the zip; the page shows the
   result and the buttons to show the zip in Explorer and to open the issue page.
@@ -54,46 +56,112 @@ def _set(status: str, message: str, *, error: bool = False) -> None:
 
 # region The last session's log
 
-
-def _ps_quote(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
-
-
-def log_keeper_script(game_dir: Path, pid: int, game_name: str = "Borderlands4") -> str:
-    log = Path(game_dir) / LOG_DIR / LOG_NAME
-    prev = log.with_name(PREV_NAME)
-    return (
-        # Idle for the whole session: give back what PowerShell's start-up used (~74 -> ~38 MB)
-        "[System.GC]::Collect(); $me = [System.Diagnostics.Process]::GetCurrentProcess(); "
-        "try { $me.MinWorkingSet = [IntPtr]204800; $me.MaxWorkingSet = [IntPtr]409600 } catch { }; "
-        f"try {{ Wait-Process -Id {pid} -ErrorAction Stop }} catch {{ }}; "
-        # Another copy started after us truncated the log and writes it now: leave it
-        f"if (Get-Process -Name {game_name} -ErrorAction SilentlyContinue | Where-Object {{ $_.Id -ne {pid} }}) {{ exit }}; "
-        f"for ($i = 0; $i -lt 20; $i++) {{ try {{ "
-        f"Copy-Item -LiteralPath {_ps_quote(str(log))} -Destination {_ps_quote(str(prev))} -Force -ErrorAction Stop; break "
-        "} catch { Start-Sleep 1 } }"
-    )
+SESSION_NAME = "unrealsdk.session.log"  # this session's copy; renamed to PREV_NAME at the next launch
+COPY_DELAY_S = 0.5  # the SDK writes a line from its own thread a moment after the logging call
+COPY_PIECE = 1 << 20  # read and written at most this much at a time
+COPY_MAX = 16 << 20  # past this the copy starts over with the log's last COPY_KEEP bytes
+COPY_KEEP = 4 << 20  # (a bug report takes the last 2 MB of each log)
 
 
-def start_log_keeper(game_dir: Path) -> bool:
-    """Once per game session (kept across reloads of this module). Returns whether it runs."""
+class _LogCopy:
+    """One per game process, kept on the errors hub so a reload of this module keeps it."""
+
+    def __init__(self, log: Path, out: Any) -> None:
+        self.pid = os.getpid()
+        self.log = log
+        self.out = out  # open for the whole session: another game copy can't rename it meanwhile
+        self.offset = 0  # how far into the SDK's log the copy has got
+        self.written = 0  # the copy's size
+        self.event = threading.Event()
+        self.lock = threading.Lock()
+        self.thread: threading.Thread | None = None
+        self.stopped = False
+
+
+def start_log_copy(game_dir: Path) -> bool:
+    """
+    Once per game session: last session's copy becomes unrealsdk.prev.log and this session's copy
+    is opened. Nothing is copied until copy_log_soon() asks. Returns whether this session is copied.
+    """
     hub = errors.H
-    if getattr(hub, "log_keeper", None) == os.getpid():
-        return True
+    copy = getattr(hub, "log_copy", None)
+    if copy is not None and copy.pid == os.getpid():
+        return not copy.stopped
+    log = Path(game_dir) / LOG_DIR / LOG_NAME
+    session = log.with_name(SESSION_NAME)
     try:
-        # The game runs in a job that doesn't allow breaking away, but the helper still outlives a
-        # normal game exit (the update helper and the page modules do the same)
-        process = subprocess.Popen(  # noqa: S603
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", log_keeper_script(game_dir, os.getpid())],  # noqa: S607
-            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
-            close_fds=True,
-        )
+        if session.exists():
+            os.replace(session, log.with_name(PREV_NAME))
+        out = session.open("wb")
     except OSError as ex:
-        logging.warning(f"[Mod Menu] Couldn't start the log keeper (bug reports get only this session's log): {ex}")
+        # Another copy of the game still runs and holds its copy open: it was wiped with the log
+        # when we started, and the log is ours now, but its copy isn't, so this session isn't kept
+        logging.info(f"[Mod Menu] Not keeping a copy of this session's log (another game copy runs?): {ex}")
         return False
-    hub.log_keeper = os.getpid()
-    hub.log_keeper_process = process  # kept, or Python warns that it's still running when it's dropped
+    hub.log_copy = _LogCopy(log, out)
+    hub.on_logged = copy_log_soon  # errors._error calls it after every logged error
     return True
+
+
+def copy_log_soon() -> None:
+    """
+    Copies what the SDK's log gained since the last copy, COPY_DELAY_S from now on a worker. Any
+    thread, never raises, cheap (an Event). Asked at the first world and each map change
+    (menu._note_world) and on every logged error (errors._error).
+    """
+    try:
+        copy = getattr(errors.H, "log_copy", None)
+        if copy is None or copy.stopped:
+            return
+        copy.event.set()
+        with copy.lock:
+            if copy.thread is None:
+                # Waits on the Event for the rest of the session: no CPU, no GIL while it waits
+                copy.thread = threading.Thread(target=_copier, args=(copy,), name="bl4_mod_menu.log_copy", daemon=True)
+                copy.thread.start()
+    except Exception:  # noqa: BLE001, S110 - called from the error logger: must never raise
+        pass
+
+
+def _copier(copy: _LogCopy) -> None:
+    while not copy.stopped:
+        copy.event.wait()
+        time.sleep(COPY_DELAY_S)  # also folds a burst of asks into one copy
+        copy.event.clear()
+        try:
+            _copy_new(copy)
+        except Exception as ex:  # noqa: BLE001
+            copy.stopped = True
+            # A warning, not an error: an error would ask for another copy
+            logging.warning(f"[Mod Menu] Stopped copying this session's log for bug reports: {ex!r}")
+
+
+def _copy_new(copy: _LogCopy) -> None:
+    """Appends the log's new bytes to the copy (file reads and writes: they let go of the GIL)."""
+    size = copy.log.stat().st_size
+    if size < copy.offset:
+        # Shorter than what we copied: another copy of the game started and wiped it (the SDK's
+        # log is one file for every game copy). What it writes now is that game's session.
+        copy.stopped = True
+        copy.out.close()
+        return
+    if size == copy.offset:
+        return
+    if copy.written + size - copy.offset > COPY_MAX:
+        copy.out.seek(0)
+        copy.out.truncate()
+        copy.written = 0
+        copy.offset = max(copy.offset, size - COPY_KEEP)
+    with copy.log.open("rb") as src:
+        while copy.offset < size:
+            src.seek(copy.offset)
+            data = src.read(min(COPY_PIECE, size - copy.offset))
+            if not data:
+                break
+            copy.out.write(data)
+            copy.offset += len(data)
+            copy.written += len(data)
+    copy.out.flush()
 
 
 # endregion
