@@ -1,19 +1,19 @@
 """
-Unreal key names and the Windows virtual-key codes for them.
+Unreal key names, the Windows virtual-key codes we still key them by, and the key state every mod
+reads (vk_down / key_down / held_keys).
 
-The menu reads the keyboard from Windows (GetAsyncKeyState) because while it's open the game is in
-UI-only input mode and PlayerInput sees nothing. So both opening the menu and rebinding a key go
-through this table. Names are the ones mods_base keybinds use (Unreal's FKey names).
+Keys come from the game's own input (gamekeys: the game's key map, see "Key state" below), not
+from Windows. Names are the ones mods_base keybinds use (Unreal's FKey names); the virtual-key
+codes stay as the table's keys so callers didn't have to change.
 """
 
 from __future__ import annotations
 
 import ctypes
-import sys
-import threading
-import time
 
-# ctypes.windll, not PyDLL: these calls must let go of the GIL (see the key poller below).
+from . import gamekeys
+
+# ctypes.windll, not PyDLL: these calls must let go of the GIL.
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 
@@ -21,6 +21,7 @@ _DIGITS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight
 
 VK_ESCAPE = 0x1B
 VK_LBUTTON = 0x01
+POSTED_IGNORE_S = 0.25  # a key we posted ourselves (post_key) doesn't count as pressed for this long
 
 KEY_NAMES: dict[int, str] = {
     **{0x41 + i: chr(0x41 + i) for i in range(26)},
@@ -82,92 +83,40 @@ def game_focused() -> bool:
     return ours
 
 
-# region Key state, read on a worker thread
+# region Key state: the game's own input
 #
-# GetAsyncKeyState can be slow at the OS level: while the desktop is streamed (Sunshine / Moonlight
-# through a virtual display driver) it took 3 ms at p90 and ~100 ms at worst, and the game thread
-# spent half its time in our mods' key polls (~14 fps, 2026-10-24). So one thread reads the keys
-# mods asked about and the game thread only looks at its last snapshot. GetForegroundWindow stays
-# cheap (0.003 ms), so that check is first.
-
-# Snapshot age at worst. A tap shorter than this still shows: a key Windows says was pressed since
-# the last read counts as down for one snapshot. It was 15 ms: 67 polls a second, each Win32 call of
-# which hands the GIL back and forth with the game thread (Mod Profiler, 2026-10-29)
-POLL_S = 0.03
-FORGET_S = 2.0  # a key nobody asked about for this long isn't read any more
-IDLE_EXIT_S = 5.0  # with no asks for this long the thread stops (a later ask starts it again)
+# gamekeys (a copy of shared/gamekeys, shared by every mod that carries it) reads the game's
+# PlayerInput key state: in play and with menus up, mouse and pad buttons too, held keys dropped
+# when the window loses focus. No Windows key reads, no keyboard hooks, no XInput (2026-10-30).
+# Until then a worker thread here polled GetAsyncKeyState and XInput (`pad_state`).
 
 
 class _Keys:
-    asked: dict[int, float] = {}  # noqa: RUF012 - vk -> time.monotonic() it was last asked about
-    down: frozenset[int] = frozenset()  # held as of the last poll, empty while the game isn't in front
-    thread: threading.Thread | None = None
-
-
-def _poll(state: type[_Keys]) -> None:
-    # Win32 calls only (no unreal objects): fine off the game thread
-    was_focused = False
-    polled: set[int] = set()
-    while getattr(sys.modules.get(__name__), "_Keys", None) is state:  # a hot reload made a new one
-        now = time.monotonic()
-        wanted = [vk for vk, at in list(state.asked.items()) if now - at < FORGET_S]
-        if not wanted and now - max(state.asked.values(), default=0.0) > IDLE_EXIT_S:
-            return
-        focused = bool(wanted) and game_focused()
-        if focused:
-            down = set()
-            for vk in wanted:
-                bits = _user32.GetAsyncKeyState(vk)
-                # Bit 0 = pressed since the last read: only trusted for a key read last poll too,
-                # with the game in front all along (else it's a press from long ago, or in another
-                # window: Alt+Tab)
-                if bits & 0x8000 or (bits & 1 and was_focused and vk in polled):
-                    down.add(vk)
-            state.down = frozenset(down)
-            polled = set(wanted)
-        else:
-            state.down = frozenset()
-            polled = set()
-        was_focused = focused
-        time.sleep(POLL_S)
+    """Kept: other mods look for it (hasattr) to know this module reads keys."""
 
 
 def vk_down(vk: int) -> bool:
-    """
-    Whether a key is held, from the key thread's last snapshot (at most ~POLL_S old; False while the
-    game isn't in front). Only a key's first ask (or the first after FORGET_S) reads Windows here,
-    so "held when we started" stays right for edge detection and rebinding.
-    """
-    now = time.monotonic()
-    fresh = now - _Keys.asked.get(vk, -FORGET_S) >= FORGET_S
-    _Keys.asked[vk] = now
-    thread = _Keys.thread
-    if thread is None or not thread.is_alive():
-        _Keys.thread = threading.Thread(target=_poll, args=(_Keys,), name="bl4_mod_menu.keys", daemon=True)
-        _Keys.thread.start()
-    if fresh:
-        return game_focused() and bool(_user32.GetAsyncKeyState(vk) & 0x8000)
-    return vk in _Keys.down
+    """Whether a key is held (see gamekeys.down). Any thread; read at most once a frame."""
+    return gamekeys.vk_down(vk)
+
+
+def mute(seconds: float) -> None:
+    """No key counts as held for this long, for every mod (a text box of ours is being typed in)."""
+    gamekeys.mute(seconds)
 
 
 # endregion
 
 
 def key_down(name: str | None) -> bool:
-    """Whether the named key is held, read from Windows. Only true while the game is in front."""
-    vk = VIRTUAL_KEYS.get(name or "")
-    return vk is not None and vk_down(vk)
+    """Whether the named key (an Unreal key name, pads too) is held: see gamekeys.down."""
+    return gamekeys.down(name)
 
 
 def held_keys() -> set[int]:
-    """Every key in the table that's currently held."""
+    """Every key in the table that's currently held (~100 reads the first time in a frame: for a
+    rebind capture, not for every frame)."""
     return {vk for vk in KEY_NAMES if vk_down(vk)}
-
-
-def tap(vk: int) -> None:
-    """Presses and releases a key, as if typed (goes to the focused window: the game)."""
-    _user32.keybd_event(vk, 0, 0, 0)
-    _user32.keybd_event(vk, 0, 0x0002, 0)  # KEYEVENTF_KEYUP
 
 
 WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
@@ -200,5 +149,8 @@ def post_key(vk: int, *, down: bool) -> bool:
     if hwnd is None:
         return False
     lparam = 1 if down else 0xC0000001
+    # The game's input sees a posted key as pressed (Windows' key state never did): ours isn't a press
+    if name := gamekeys.VK_NAMES.get(vk):
+        gamekeys.ignore(name, 5.0 if down else POSTED_IGNORE_S)
     _user32.PostMessageW(ctypes.c_void_p(hwnd), WM_KEYDOWN if down else WM_KEYUP, vk, lparam)
     return True

@@ -39,6 +39,7 @@ import queue
 import secrets
 import threading
 import time
+import traceback
 from collections import deque
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib import resources
@@ -48,7 +49,7 @@ from typing import Any
 
 from unrealsdk import logging
 
-from . import extensions, hotload, keyboard, keys, model, repos, updates
+from . import errors, extensions, hotload, keys, model, reporting, repos, uilink, updates
 
 UI_DIR = "OakGame/Content/uiresources/bl4modmenu"
 SESSION_FILE = "session.json"
@@ -57,6 +58,10 @@ CONNECTED_S = 3.0
 # While the mods screen shows, a poll gets a snapshot built up to this long ago (option values can
 # change from other mods' code without telling us)
 SNAPSHOT_S = 0.25
+# Mods whose signature (model.mod_sig) a timed rebuild re-checks; the rest reuse their JSON until
+# their turn. Checking all ~30 every SNAPSHOT_S made each rebuild 1-2 ms (the Mod Menu's >1 ms
+# ticks with the screen open, 2026-10-29); an action, a load or a new error count checks them all
+SIG_BATCH = 8
 # How long a poll waits for the game thread's next tick before taking the last snapshot
 WAIT_S = 0.2
 MAX_BODY = 64 * 1024
@@ -107,28 +112,44 @@ class Link:
     game_dir: Path | None = None
     updates_rev = -1  # updates.U.revision in the current snapshot
     repos_rev = -1  # repos.summary()["rev"] in the current snapshot
+    report_rev = -1  # errors.revision() + reporting.R.revision in the current snapshot
     manifest_seen: Any = None  # the updates.U.manifest repos.py last listed
     quit_at = 0.0  # Restart on the Updates page: quit the game at this time (0: no)
     # Where the page runs: "main" on the title screen (it polls with ctx=main), else "pause"
     page_context = "pause"
-    # Esc on the title screen while our screen shows: swallowed (the game would ask "quit?") and
-    # counted in esc_id, which the page answers with Back
-    esc_grab: keyboard.EscGrab | None = None
+    # Esc on the title screen while our screen shows: kept from the game's menus (it would ask
+    # "quit?") by the UI Link's KeyGrab and counted in esc_id, which the page answers with Back
+    esc_grab: uilink.KeyGrab | None = None
     esc_id = 0
     # The Repositories page's text box: its text, the repository being edited (None: adding), and
     # the typing while the player types into it
     draft = ""
     editing: str | None = None
-    typing: keyboard.Typing | None = None
+    typing: uilink.TextBox | None = None  # the game's own text input (UI Link v8; was a keyboard hook)
+    # The Search page's text (every mod's settings, filtered on the page) and whether the typing
+    # above goes into it instead of the Repositories box
+    search = ""
+    typing_search = False
     # Each mod's entry in the mods list as JSON, with the model.mod_sig (and icon) it was built
     # from: rebuilt only when those change (id(mod) -> (signature, json bytes))
     mod_cache: dict[int, tuple[Any, bytes]] = {}  # noqa: RUF012
+    # Where the next round-robin signature check starts (SIG_BATCH), and whether the next full
+    # snapshot checks every mod (something that can change mods happened)
+    sig_cursor = 0
+    recheck_mods = True
+    idle_tick_at = 0.0  # tick(): the next whole tick while nothing asks for one
 
 
 # A poll at least this recent says the page is awake (it polls every 200 ms while its screen shows)
 AWAKE_S = 1.0
+# tick() in play: the whole tick at most this often while no menu shows, no poll came within
+# QUIET_S and nothing is queued (events such as a repository load or an update check wait this long)
+IDLE_TICK_S = 0.1
+QUIET_S = 3.0
 # The longest repository link the box takes
 MAX_DRAFT = 300
+# The longest search
+MAX_SEARCH = 60
 
 
 # Restart waits this long, so the page gets its answer and shows "Restarting" first
@@ -162,6 +183,11 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _authorized(self) -> bool:
+        # The game's pages send no Origin (measured 2026-10-30); a browser always does on a request
+        # to another site, so a web page never gets in, even with the token
+        origin = self.headers.get("Origin")
+        if origin is not None and not origin.lower().startswith("coui://"):
+            return False
         query = self.path.partition("?")[2]
         return f"t={Link.token}" in query.split("&")
 
@@ -479,6 +505,11 @@ def _want_full() -> bool:
 def _build_snapshot(full: bool) -> None:
     """full: with the mods list. Without it, only the header the page acts on while closed."""
     Link.dirty = False
+    # Every mod's signature after something that can change mods (or when the list wasn't in the
+    # last snapshot); otherwise only the next SIG_BATCH of them, round robin (see SIG_BATCH)
+    recheck = Link.recheck_mods or not Link.snapshot_full
+    if full:
+        Link.recheck_mods = False
     Link.snapshot_full = full
     Link.snapshot_fresh = _open_fresh()
     Link.snapshot_open_id = Link.open_request["id"] if Link.snapshot_fresh else -Link.open_request["id"]
@@ -488,13 +519,23 @@ def _build_snapshot(full: bool) -> None:
         icons = hotload.H.icons
         cache = Link.mod_cache
         seen: set[int] = set()
-        for mod in model.mods():
+        errors.scan_soon()  # the SDK's own error lines too (a worker, at most every few seconds)
+        error_counts = errors.counts()  # "N errors" on a mod's row (errors.py)
+        listed = model.mods()
+        count = len(listed)
+        start = Link.sig_cursor % count if count else 0
+        Link.sig_cursor = start + SIG_BATCH
+        for index, mod in enumerate(listed):
             seen.add(id(mod))
+            cached = cache.get(id(mod))
+            if cached is not None and not recheck and (index - start) % count >= SIG_BATCH:
+                parts.append(cached[1])  # its signature is checked in another snapshot of this round
+                continue
             try:
                 # The module it came from (build_mod names the settings file after it), for its icon
                 settings = getattr(mod, "settings_file", None)
                 mod_id = Path(settings).stem if settings is not None else ""
-                sig = (model.mod_sig(mod), mod_id, icons.get(mod_id))
+                sig = (model.mod_sig(mod), mod_id, icons.get(mod_id), error_counts.get(mod_id, 0))
                 cached = cache.get(id(mod))
                 if cached is not None and cached[0] == sig:
                     parts.append(cached[1])
@@ -503,6 +544,8 @@ def _build_snapshot(full: bool) -> None:
                 entry["id"] = mod_id
                 if mod_id in icons:
                     entry["icon"] = icons[mod_id]
+                if sig[3]:
+                    entry["errors"] = sig[3]
                 text = json.dumps(entry, separators=(",", ":"), default=str).encode("utf-8")
                 cache[id(mod)] = (sig, text)
                 parts.append(text)
@@ -521,12 +564,16 @@ def _build_snapshot(full: bool) -> None:
         "menus_closed": Link.menus_closed,
         "updates": updates.snapshot(),
         "repos": repos.summary(),
+        "report": reporting.snapshot(full),
         "esc": Link.esc_id,
-        "box": {"text": Link.typing.text if Link.typing is not None else Link.draft,
-                "typing": Link.typing is not None, "editing": Link.editing},
+        "box": {"text": Link.typing.text if Link.typing is not None and not Link.typing_search else Link.draft,
+                "typing": Link.typing is not None and not Link.typing_search, "editing": Link.editing},
+        "search": {"text": Link.typing.text if Link.typing is not None and Link.typing_search else Link.search,
+                   "typing": Link.typing is not None and Link.typing_search},
     }
     Link.updates_rev = state["updates"]["rev"]
     Link.repos_rev = state["repos"]["rev"]
+    Link.report_rev = errors.revision() + reporting.R.revision
     data = json.dumps(state, separators=(",", ":"), default=str).encode("utf-8")
     if full:
         # The mods list first, as before; each mod's JSON is reused while it's unchanged
@@ -545,14 +592,20 @@ def _apply(action: dict[str, Any]) -> None:
     if op == "ext":
         extensions.apply(action)
         return
-    if op in ("updates_check", "updates_apply", "updates_restart", "updates_seen", "updates_load_now"):
+    if op in ("updates_check", "updates_apply", "updates_restart", "updates_seen", "updates_load_now", "updates_auto"):
         _apply_updates(op, action)
         return
     if isinstance(op, str) and op.startswith("box_"):
         _apply_box(op, action)
         return
+    if isinstance(op, str) and op.startswith("search_"):
+        _apply_search(op)
+        return
     if isinstance(op, str) and op.startswith(("repo_", "mods_")):
         _apply_repos(op, action)
+        return
+    if op in ("report_make", "report_show", "report_issue"):
+        _apply_report(op)
         return
     if op == "close_menus":
         # Back on a screen F7 opened: close the game's menu we opened for it too
@@ -584,6 +637,17 @@ def _apply(action: dict[str, Any]) -> None:
             pass
 
 
+def _apply_report(op: str) -> None:
+    """Report a problem: make the zip (a worker), show it in Explorer, open GitHub's issue page."""
+    if op == "report_make":
+        if Link.game_dir is None or not reporting.make(Link.game_dir):
+            say("A bug report is being made already.")
+    elif op == "report_show":
+        reporting.show_zip()
+    elif op == "report_issue":
+        reporting.open_issue()
+
+
 def _apply_updates(op: str, action: dict[str, Any]) -> None:
     game_dir = Link.game_dir
     if game_dir is None:
@@ -591,6 +655,9 @@ def _apply_updates(op: str, action: dict[str, Any]) -> None:
     if op == "updates_seen":
         # The Updates page showed these new mods: no badge for them again
         updates.mark_seen([str(i) for i in action.get("value") or [] if isinstance(i, str)])
+    elif op == "updates_auto" and isinstance(action.get("value"), bool):
+        # "Check for updates automatically?" answered, or BL4 Fix's switch on Repositories
+        updates.choose(action["value"])
     elif op == "updates_check":
         if not updates.check_async(game_dir):
             say("Already checking or downloading.")
@@ -670,6 +737,14 @@ def _apply_repos(op: str, action: dict[str, Any]) -> None:
                 Link.draft, Link.editing = "", None
         case "repo_add_cancel":
             repos.cancel_add()
+        case "repo_add_auto" if isinstance(value, bool):
+            repos.set_pending_auto(value)
+        case "repo_auto" if isinstance(value, dict) and isinstance(value.get("key"), str) and isinstance(value.get("on"), bool):
+            # A repository's check-at-launch switch; BL4 Fix's sets the Mod Menu's hidden option
+            if value["key"] == repos.official_key():
+                updates.choose(value["on"])
+            else:
+                repos.set_auto(value["key"], value["on"])
         case "repo_remove" if isinstance(value, str):
             repos.remove_source(value)
             if Link.editing == value:
@@ -682,6 +757,21 @@ def _apply_repos(op: str, action: dict[str, Any]) -> None:
                 repos.install_async(mod_id)
         case "repo_update":
             repos.update_async(_str_ids(value))
+        # The confirm step after another modder's download (what its code uses): Install / Update
+        # use the bytes the player reviewed; Cancel drops them
+        case "repo_install_confirm":
+            for mod_id in _str_ids(value):
+                if not repos.install_confirm(mod_id):
+                    say("That download isn't waiting any more: press Install again.", error=True)
+        case "repo_update_confirm":
+            if not repos.update_confirm(_str_ids(value)):
+                say("Those downloads aren't waiting any more: press Update again.", error=True)
+        case "repo_review_cancel":
+            repos.review_cancel(_str_ids(value))
+        case "repo_trust" if isinstance(value, str):
+            # Trust again, after the page showed the warning once more: the link's new repository
+            if not repos.trust_again(value):
+                say("That repository isn't blocked.", error=True)
         case "repo_remove_mod":
             for mod_id in _str_ids(value):
                 _try(lambda mod_id=mod_id: repos.remove_mod(mod_id))
@@ -689,6 +779,15 @@ def _apply_repos(op: str, action: dict[str, Any]) -> None:
             repos.want_images([str(v) for v in value if isinstance(v, str)])
         case "repo_link" if isinstance(value, str):
             repos.open_link(value)
+        case "repo_rollback":
+            # Updates' Roll back: stage the copy the last update replaced, reload it when it can (undo.py)
+            for mod_id in _str_ids(value):
+                if not repos.undo.roll_back_async(mod_id):
+                    say("Already rolling that back.")
+        case "repo_safe_restore":
+            # Safe mode set other modders' mods aside (the setup app): put them back (undo.py)
+            if not repos.undo.restore_safe_async():
+                say("Already putting them back.")
         case "mods_folder":
             hotload.open_folder(game_dir)
             say("Mods folder opened: drop .sdkmod files in, then press Load here.")
@@ -704,28 +803,54 @@ def _apply_repos(op: str, action: dict[str, Any]) -> None:
             pass
 
 
-# region The text box (Repositories)
+# region The text boxes (Repositories, Search)
 
 
-def _start_typing() -> None:
+def _start_typing(search: bool = False) -> None:
+    """Starts typing into the Repositories box, or with search into the Search page's box."""
     _stop_typing()
-    Link.typing = keyboard.Typing(Link.draft, MAX_DRAFT, repos.clipboard_text)
+    Link.typing_search = search
+    if search:
+        Link.typing = uilink.TextBox(Link.search, MAX_SEARCH, repos.clipboard_text)
+    else:
+        Link.typing = uilink.TextBox(Link.draft, MAX_DRAFT, repos.clipboard_text, spaces=False)  # a link
 
 
 def _stop_typing() -> None:
-    """Stops typing and keeps what was typed in the box."""
+    """Stops typing and keeps what was typed in its box."""
     typing, Link.typing = Link.typing, None
     if typing is not None:
         typing.stop()
-        Link.draft = typing.text
+        if Link.typing_search:
+            Link.search = typing.text
+        else:
+            Link.draft = typing.text
         Link.dirty = True
+
+
+def _apply_search(op: str) -> None:
+    match op:
+        case "search_type":
+            if Link.typing is None or not Link.typing_search:
+                _start_typing(search=True)
+        case "search_stop":
+            if Link.typing_search:
+                _stop_typing()
+        case "search_clear":
+            # Empties the box; typing goes on if it was on
+            Link.search = ""
+            if Link.typing is not None and Link.typing_search:
+                Link.typing.text = ""
+        case _:
+            pass
+    Link.dirty = True
 
 
 def _submit_box() -> None:
     _stop_typing()
     text = Link.draft.strip()
     if not text:
-        say("Type a repository link first: owner/name, a github.com link, or an https link to an index.", error=True)
+        say("Type a repository link first: owner/name, its github.com link, or a raw.githubusercontent.com link to an index.", error=True)
         return
     editing = Link.editing
     repos.add_async(text, replace=editing)
@@ -739,7 +864,8 @@ def _apply_box(op: str, action: dict[str, Any]) -> None:
         case "box_type":
             _start_typing()
         case "box_stop":
-            _stop_typing()
+            if not Link.typing_search:
+                _stop_typing()
         case "box_submit":
             _submit_box()
         case "box_paste":
@@ -777,15 +903,13 @@ def _poll_keyboard(now: float) -> None:
     awake = Link.page_open and now - Link.last_poll < AWAKE_S
     typing = Link.typing
     if typing is not None:
-        if typing.failed:
-            _stop_typing()
-            say("Couldn't read the keyboard for typing: use Paste, or modrepo add <link> in the console.", error=True)
-        elif not awake:
-            _stop_typing()  # the screen closed (or the page went to sleep): stop swallowing keys
+        if not awake:
+            _stop_typing()  # the screen closed (or the page went to sleep): the game's keys work again
         elif typing.poll():
             Link.dirty = True
             if typing.done is not None:
-                submit = typing.done
+                # Enter: the Repositories box adds its link; the search just stops typing
+                submit = typing.done and not Link.typing_search
                 _stop_typing()
                 if submit:
                     _submit_box()
@@ -793,13 +917,13 @@ def _poll_keyboard(now: float) -> None:
     want = awake and Link.page_context == "main"
     grab = Link.esc_grab
     if want and grab is None:
-        Link.esc_grab = keyboard.EscGrab()
+        Link.esc_grab = uilink.KeyGrab(("Escape",))
     elif not want and grab is not None:
         grab.stop()
         Link.esc_grab = None
     elif grab is not None and grab.take():
         if Link.capture is not None:
-            Link.capture = None  # Esc cancels a rebind (the swallowed key never reaches its poll)
+            Link.capture = None  # Esc cancels a rebind
         else:
             Link.esc_id += 1
         Link.dirty = True
@@ -848,6 +972,15 @@ def tick(menus_up: bool) -> None:
     """Call every frame on the game thread, saying whether one of the game's menus is showing."""
     if Link.server is None:
         return
+    # In play (no menu, no page polling, nothing queued or being typed) only every IDLE_TICK_S: the
+    # rest below found nothing to do every frame, ~25 us a frame (2026-10-29). A poll, an action,
+    # a menu or a dirty snapshot gets the whole tick at once, as before
+    now = time.monotonic()
+    if not (menus_up or Link.menus_up or Link.actions or Link.asked != Link.answered or Link.dirty
+            or now >= Link.idle_tick_at or now - Link.last_poll < QUIET_S
+            or Link.typing is not None or Link.capture is not None or Link.esc_grab is not None):  # fmt: skip
+        return
+    Link.idle_tick_at = now + IDLE_TICK_S
     # A stale open request must leave the snapshot even while the page sleeps, or it would act on
     # it whenever a menu next opens
     changed = menus_up != Link.menus_up or _open_fresh() != Link.snapshot_fresh
@@ -861,27 +994,36 @@ def tick(menus_up: bool) -> None:
         except model.ChangeError as ex:
             say(str(ex), error=True)
         except Exception as ex:  # noqa: BLE001
-            logging.exception(ex)
+            logging.error("".join(traceback.format_exception(ex)))
             say(f"Something went wrong: {ex}", error=True)
         # An extension's action doesn't change this snapshot (and they come several a second)
-        if action.get("op") != "ext":
+        op = action.get("op")
+        if op != "ext":
             changed = True
+            if not (isinstance(op, str) and op.startswith(("box_", "search_"))):
+                Link.recheck_mods = True  # typing in a box changes no mod
     _poll_capture()
     _poll_keyboard(time.monotonic())
     extensions.tick(menus_up)
     if repos.pending_loads():
         # Mods the repositories' workers downloaded: load them here, on the game thread
         repos.drain()
-        changed = True
+        changed = Link.recheck_mods = True
     now = time.monotonic()
     if updates.U.revision != Link.updates_rev:
-        changed = True
+        changed = Link.recheck_mods = True
         if updates.U.manifest is not Link.manifest_seen:
             # BL4 Fix's release was read again: Discover lists its mods from it
             Link.manifest_seen = updates.U.manifest
             repos.official_checked()
     if repos.R.events + hotload.H.revision != Link.repos_rev:
-        changed = True
+        changed = Link.recheck_mods = True
+    if errors.revision() + reporting.R.revision != Link.report_rev:
+        changed = Link.recheck_mods = True
+    if reporting.R.note is not None:
+        text, error = reporting.R.note
+        reporting.R.note = None
+        say(text, error=error)
     if Link.quit_at and now >= Link.quit_at:
         Link.quit_at = 0.0
         try:

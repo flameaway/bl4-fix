@@ -52,6 +52,15 @@
     var UPDATES = "\u0002updates";
     var DISCOVER = "\u0002discover";
     var REPOS = "\u0002repos";
+    var REPORT = "\u0002report";
+    // Performance: drawn by ui/perf.js (an extension of ours) through ns.modPages[PERF]
+    var PERF = "\u0002perf";
+    // Search: every mod's settings that match what's typed in its box
+    var SEARCH = "\u0002search";
+    // The most results drawn at once (each is a full Options row, redrawn on every poll while typing)
+    var MAX_SEARCH_HITS = 60;
+    // Our own settings: listed with our pages, right under Report a problem, not among the mods
+    var SELF_NAME = "BL4 Mod Menu";
     // The Discover / Repositories data (GET /repos) is re-read this often while one of those pages shows
     var REPOS_POLL_MS = 1000;
     // A gap this long between polls means this page was asleep (we poll every 200 ms while open)
@@ -451,20 +460,28 @@
         return u.fresh || [];
     }
 
-    // The "!" on the MODS entries: anything to look at
-    function badgeCount() {
-        return updatesWaiting() + freshMods().length;
+    // "Check for updates automatically?" isn't answered yet (a new install): Updates asks, with a "!"
+    function updatesQuestion() {
+        return !!(updatesState() || {}).ask;
     }
 
-    // Where MODS opens while it has a "!": updates first, else the new mods
+    // The "!" on the MODS entries: anything to look at
+    function badgeCount() {
+        return updatesWaiting() + freshMods().length + (updatesQuestion() ? 1 : 0);
+    }
+
+    // Where MODS opens while it has a "!": updates (or the question) first, else the new mods
     function badgePage() {
-        return updatesWaiting() ? UPDATES : freshMods().length ? DISCOVER : null;
+        return updatesWaiting() || updatesQuestion() ? UPDATES : freshMods().length ? DISCOVER : null;
     }
 
     function pseudoPage(key) {
         if (key === UPDATES) return updatesPage();
         if (key === DISCOVER) return { name: "Discover", pseudo: DISCOVER, desc: "", version: "", status: "", coop: "" };
         if (key === REPOS) return { name: "Repositories", pseudo: REPOS, desc: "", version: "", status: "", coop: "" };
+        if (key === REPORT) return { name: "Report a problem", pseudo: REPORT, desc: "", version: "", status: "", coop: "" };
+        if (key === PERF) return { name: "Performance", pseudo: PERF, desc: "", version: "", status: "", coop: "" };
+        if (key === SEARCH) return { name: "Search", pseudo: SEARCH, desc: "", version: "", status: "", coop: "" };
         return null;
     }
 
@@ -517,6 +534,7 @@
             link.lastCloseId = state.close;
             if (view.open) {
                 view.nested = [];
+                view.backTo = null;
                 back();
             }
         }
@@ -532,6 +550,13 @@
             send({ op: "box_stop" });
         } else if (!(state.box && state.box.typing)) {
             link.boxStopSent = false;
+        }
+        // and the search's with the Search page
+        if (state.search && state.search.typing && !(view.open && view.mod === SEARCH) && !link.searchStopSent) {
+            link.searchStopSent = true;
+            send({ op: "search_stop" });
+        } else if (!(state.search && state.search.typing)) {
+            link.searchStopSent = false;
         }
 
         if (state.message.id !== link.lastMsgId) {
@@ -566,12 +591,18 @@
         header.appendChild(el("p", "bl4mm_title", "MODS"));
         ui.crumb = el("p", "bl4mm_crumb");
         header.appendChild(ui.crumb);
+        // The search bar, right of the crumb: on every page
+        header.appendChild(el("div", "bl4mm_header_gap"));
+        ui.searchBar = buildSearchBar();
+        header.appendChild(ui.searchBar.root);
         frame.appendChild(header);
 
         var body = el("div", "bl4mm_body");
-        var modsCol = el("div", "bl4mm_mods");
-        ui.mods = modsCol;
-        body.appendChild(modsCol);
+        // The mods column scrolls inside a wrapper too, with its own game scrollbar
+        var modsWrap = el("div", "bl4mm_mods_wrap");
+        ui.mods = el("div", "bl4mm_mods");
+        modsWrap.appendChild(ui.mods);
+        body.appendChild(modsWrap);
 
         // The column scrolls inside a wrapper: the game's scrollbar goes next to it, on its right edge
         var optionsWrap = el("div", "bl4mm_options_wrap");
@@ -612,12 +643,17 @@
         root.addEventListener("click", function (evt) {
             evt.stopPropagation();
         });
+        // A click anywhere but the box being typed in stops typing (capture: entries stop propagation)
+        root.addEventListener("click", function (evt) {
+            stopTypingOutside(evt.target);
+        }, true);  // prettier-ignore
         document.body.appendChild(root);
         ui.root = root;
         // The game's scrollbar (the inventory and popups use it); without it, the wheel still scrolls
         if (typeof window.OAKScroll === "function") {
             try {
                 ui.scroller = window.OAKScroll(ui.options);
+                ui.modsScroller = window.OAKScroll(ui.mods);
             } catch (err) {
                 ns.log("scrollbar failed: " + err);
             }
@@ -635,6 +671,7 @@
         }
         view.open = true;
         view.details = null;
+        view.backTo = null;
         // The status menus (inventory etc., where F7 opens us) draw their tab bar in a layer above
         // this page, so start below it there; the pause menu has none
         var pause = document.querySelector('[data-input-id="menu_pause_list"]');
@@ -662,6 +699,16 @@
             render();
             return;
         }
+        // A setting opened from the Search page: Back goes back to the results
+        if (view.backTo && view.nested.length <= view.backTo.depth) {
+            view.mod = view.backTo.mod;
+            view.nested = [];
+            view.backTo = null;
+            view.details = null;
+            ui.options.scrollTop = 0;
+            render();
+            return;
+        }
         if (view.nested.length) {
             view.nested.pop();
             view.details = null;
@@ -677,6 +724,7 @@
         if (!ui.root) return;
         try {
             var mod = selectedMod();
+            renderSearchBar();
             renderMods();
             renderOptions(mod);
             renderDetails(mod);
@@ -696,6 +744,7 @@
                 if (!alive() || !ui.options) return;
                 try {
                     ui.options.dispatchEvent(new CustomEvent("oakscrollupdate"));
+                    if (ui.modsScroller) ui.mods.dispatchEvent(new CustomEvent("oakscrollupdate"));
                 } catch (err) {}
             });
         });
@@ -704,6 +753,7 @@
     // An entry for one of our own pages (Updates, Discover, Repositories) at the top of the list
     function pseudoButton(key, word, kind) {
         var b = listButton(pseudoPage(key).name, function () {
+            view.backTo = null;
             if (view.mod !== key) {
                 view.mod = key;
                 view.nested = [];
@@ -731,10 +781,11 @@
         var rs = reposState();
         if (u && u.status !== "off") {
             var count = updatesWaiting();
-            var word = count ? count + " new" : { checking: "Checking", downloading: "Downloading",
-                ready: "Restart", error: "Error", current: "Up to date" }[u.status] || "";  // prettier-ignore
-            var ub = pseudoButton(UPDATES, word, count || u.status === "ready" ? "warn" : u.status === "error" ? "off" : "on");
-            setBadge(q(ub, ".button_txt") || ub, count);
+            var asking = updatesQuestion();
+            var word = count ? count + " new" : asking ? "Set up" : { checking: "Checking", downloading: "Downloading",
+                ready: "Restart", error: "Error", current: "Up to date" }[u.status] || (u.auto ? "" : "Manual");  // prettier-ignore
+            var ub = pseudoButton(UPDATES, word, count || asking || u.status === "ready" ? "warn" : u.status === "error" ? "off" : "on");
+            setBadge(q(ub, ".button_txt") || ub, count || asking);
         }
         // Discover's count: mods dropped into the folder waiting to load first, else what's new
         var fresh = freshMods().length;
@@ -742,8 +793,19 @@
             rs.found || fresh ? "warn" : "on");  // prettier-ignore
         setBadge(q(db, ".button_txt") || db, fresh);
         pseudoButton(REPOS, rs.sources ? String(rs.sources) : "", "on");
-        mods.forEach(function (mod) {
+        pseudoButton(PERF, "", "on");
+        var rp = reportState();
+        pseudoButton(REPORT, rp.errors ? errorsText(rp.errors) : "", "warn");
+        // Our own settings right under Report a problem, then every other mod
+        var own = mods.filter(function (mod) {
+            return mod.name === SELF_NAME;
+        });
+        var others = mods.filter(function (mod) {
+            return mod.name !== SELF_NAME;
+        });
+        own.concat(others).forEach(function (mod) {
             var b = listButton(mod.name, function () {
+                view.backTo = null;
                 if (view.mod !== mod.name) {
                     view.mod = mod.name;
                     view.nested = [];
@@ -759,6 +821,8 @@
                 inner.insertBefore(picture(mod.icon, "bl4mm_mod_icon"), inner.firstChild);
                 b.classList.add("bl4mm_has_icon");
             }
+            // Errors it logged this session (errors.py), next to its status
+            if (mod.errors) b.appendChild(el("div", "bl4mm_status bl4mm_status_warn bl4mm_errors", errorsText(mod.errors)));
             var pip = el("div", "bl4mm_status bl4mm_status_" + mod.status_kind, mod.status);
             b.appendChild(pip);
             b.addEventListener("mouseenter", function () {
@@ -814,6 +878,9 @@
         if (mod.pseudo) {
             if (mod.pseudo === DISCOVER) renderDiscover();
             else if (mod.pseudo === REPOS) renderRepos();
+            else if (mod.pseudo === REPORT) renderReport();
+            else if (mod.pseudo === PERF) renderPerf(mod);
+            else if (mod.pseudo === SEARCH) renderSearch();
             else renderUpdates();
             ui.options.scrollTop = scroll;
             return;
@@ -832,16 +899,18 @@
             }
             if (custom.moreTitle) addTitle(custom.moreTitle);
         }
-        if (!view.nested.length && mod.can_toggle) {
-            addEntry(mod, { kind: "enable", id: "", name: "Enabled", title: "Enabled",
-                            desc: "Turns " + mod.name + " on or off right now.", value: mod.enabled,
-                            off: "Off", on: "On" }, []);  // prettier-ignore
-        }
+        if (!view.nested.length && mod.can_toggle) addEntry(mod, enableNode(mod), []);
         addNodes(mod, page.nodes, page.prefix, 0, custom && custom.keep);
         if (!ui.options.children.length) {
             ui.options.appendChild(el("p", "bl4mm_empty small_text_2", "This mod has no settings."));
         }
         ui.options.scrollTop = scroll;
+    }
+
+    // The "Enabled" row heading a mod's page (also a search result)
+    function enableNode(mod) {
+        return { kind: "enable", id: "", name: "Enabled", title: "Enabled", desc: "Turns " + mod.name + " on or off right now.",
+                 value: mod.enabled, off: "Off", on: "On" };  // prettier-ignore
     }
 
     // keep (optional): which options to draw (a mod page hides the ones it replaces)
@@ -856,6 +925,22 @@
                 addEntry(mod, node, path);
             }
         });
+    }
+
+    // The Performance page: ui/perf.js draws it (ns.modPages[PERF], the same API as a mod's page)
+    function renderPerf(mod) {
+        ui.crumb.textContent = "Performance";
+        ui.back.querySelector(".button_txt").textContent = "Close";
+        var custom = modPage(PERF);
+        if (!custom) {
+            ui.options.appendChild(el("p", "bl4mm_empty small_text_2", "Loading..."));
+            return;
+        }
+        try {
+            custom.render(modPageApi(mod));
+        } catch (err) {
+            ns.log("performance page failed: " + err + " " + (err && err.stack));
+        }
     }
 
     // region Mod pages
@@ -935,6 +1020,273 @@
 
     // endregion
 
+    // region Search
+
+    var SEARCH_HINT = "Search every mod's settings";
+    var SEARCH_HELP = "Type any part of a setting's name or description, or a mod's name: every matching setting of" +
+        " every mod shows on the Search page, and works right there. Upper or lower case doesn't matter.\n\nClick" +
+        " the box to type. Enter or Esc stops typing, Backspace deletes a letter, Delete clears it.";  // prettier-ignore
+
+    function searchState() {
+        return (link.state && link.state.search) || { text: "", typing: false };
+    }
+
+    // Typing stops on a click outside its box (the box's own click toggles it itself)
+    function stopTypingOutside(target) {
+        var searching = searchState().typing;
+        if (!searching && !boxState().typing) return;
+        for (var n = target; n && n !== ui.root; n = n.parentNode) {
+            if (n.classList && n.classList.contains("bl4mm_textbox_entry")) return;
+        }
+        send({ op: searching ? "search_stop" : "box_stop" });
+    }
+
+    // The search bar in the header, on every page: a click opens the Search page and starts typing
+    // (a click while typing stops it). Drawn once; renderSearchBar only updates it.
+    function buildSearchBar() {
+        var bar = { root: el("div", "bl4mm_searchbar bl4mm_textbox_entry"), shown: null };
+        bar.field = el("div", "bl4mm_textbox bl4mm_search_field");
+        bar.text = el("p", "bl4mm_textbox_text");
+        bar.caret = el("div", "bl4mm_caret bl4mm_hidden");
+        bar.field.appendChild(bar.text);
+        bar.field.appendChild(bar.caret);
+        bar.count = el("p", "bl4mm_search_count");
+        bar.root.appendChild(bar.count);
+        bar.root.appendChild(bar.field);
+        onClick(bar.root, function () {
+            var typing = searchState().typing;
+            view.backTo = null;
+            if (view.mod !== SEARCH) {
+                view.mod = SEARCH;
+                view.nested = [];
+                view.details = null;
+                view.item = null;
+                ui.options.scrollTop = 0;
+                typing = false;
+            }
+            send({ op: typing ? "search_stop" : "search_type" });
+            render();
+        });
+        bar.root.addEventListener("mouseenter", function () {
+            bar.field.classList.add("bl4mm_search_hover");
+            view.details = { node: { name: "Search", title: "Search", desc: SEARCH_HELP } };
+            renderDetails(selectedMod());
+        });
+        bar.root.addEventListener("mouseleave", function () {
+            bar.field.classList.remove("bl4mm_search_hover");
+        });
+        return bar;
+    }
+
+    function renderSearchBar() {
+        var bar = ui.searchBar;
+        if (!bar) return;
+        var s = searchState();
+        var words = searchWords(s.text);
+        var n = words.length ? countHits(searchResults(words)) : -1;
+        var key = (s.typing ? "1" : "0") + n + "|" + (s.text || "");
+        if (bar.shown === key) return;
+        bar.shown = key;
+        bar.field.classList.toggle("bl4mm_typing", !!s.typing);
+        bar.text.classList.toggle("bl4mm_textbox_hint", !s.text && !s.typing);
+        bar.text.textContent = s.text || (s.typing ? "" : SEARCH_HINT);
+        bar.caret.classList.toggle("bl4mm_hidden", !s.typing);
+        bar.count.textContent = n < 0 ? "" : n === 1 ? "1 setting" : n + " settings";
+    }
+
+    // Lowercase letters and digits only, like Kairosdex's search: "less fog", "Less-Fog" and
+    // "LESS FOG" all match "Less Fog"
+    function norm(text) {
+        return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    }
+
+    function searchWords(raw) {
+        return String(raw || "").split(/\s+/).map(norm).filter(function (w) {
+            return !!w;
+        });
+    }
+
+    // Every word somewhere in the text (any order)
+    function matchesAll(haystack, words) {
+        for (var i = 0; i < words.length; i++) if (haystack.indexOf(words[i]) < 0) return false;
+        return true;
+    }
+
+    // Every mod's matching settings: [{mod, hits: [{node, path, label, nested, start}]}]. A setting matches
+    // when each word is in its name, title, description or choices, or in its mod's name or the
+    // groups / pages it sits in; a mod's Enabled row when they're in the mod's name or description.
+    // (kept for the state and words it was found for: the list's pip and the page share one search)
+    var lastSearch = { state: null, key: null, out: [] };
+    function searchResults(words) {
+        var out = [];
+        if (!words.length) return out;
+        var key = words.join(" ");
+        if (lastSearch.state === link.state && lastSearch.key === key) return lastSearch.out;
+        lastSearch = { state: link.state, key: key, out: out };
+        currentMods().forEach(function (mod) {
+            var hits = [];
+            var modText = norm(mod.name);
+            if (mod.can_toggle && matchesAll(modText + "|" + norm(mod.desc), words)) {
+                hits.push({ node: enableNode(mod), path: [], label: "Enabled", nested: [], start: 0 });
+            }
+            searchNodes(mod.options || [], { path: [], names: [], nested: [], start: 0, text: modText, depth: 0 }, words, hits);
+            if (hits.length) out.push({ mod: mod, hits: hits });
+        });
+        return out;
+    }
+
+    // at: where these nodes sit (ids from the mod's top, group / page names, the nested pages to
+    // open to show them and where the innermost one starts in the path, the text they match on)
+    function searchNodes(nodes, at, words, hits) {
+        nodes.forEach(function (node) {
+            var path = at.path.concat([node.id]);
+            // mods_base wraps a mod's own options in an "Options" group: no name to show or match
+            var named = !(node.kind === "group" && at.depth === 0 && at.nested.length === 0 && node.name === "Options");
+            var names = named ? at.names.concat([node.name]) : at.names;
+            var own = [norm(node.name), norm(node.title), norm(node.desc)].concat((node.choices || []).map(norm)).join("|");
+            if (node.kind !== "group" && matchesAll(at.text + "|" + own, words)) {
+                hits.push({ node: node, path: path, label: names.join("  /  "), nested: at.nested, start: at.start });
+            }
+            if (node.kind === "group" || node.kind === "nested") {
+                var page = node.kind === "nested";
+                searchNodes(node.children || [], {
+                    path: path,
+                    names: names,
+                    nested: page ? at.nested.concat([path.slice(at.start).join("\u0001")]) : at.nested,
+                    start: page ? path.length : at.start,
+                    text: at.text + (named ? "|" + norm(node.name) : ""),
+                    depth: at.depth + 1
+                }, words, hits);  // prettier-ignore
+            }
+        });
+    }
+
+    function countHits(results) {
+        var n = 0;
+        results.forEach(function (r) {
+            n += r.hits.length;
+        });
+        return n;
+    }
+
+    // The node with its group / page path as its row name (the details pane keeps its own title)
+    function relabel(node, label) {
+        if (label === node.name) return node;
+        var copy = {};
+        for (var k in node) if (Object.prototype.hasOwnProperty.call(node, k)) copy[k] = node[k];
+        copy.name = label;
+        copy.title = node.title || node.name;
+        return copy;
+    }
+
+    function renderSearch() {
+        var s = searchState();
+        ui.crumb.textContent = "Search";
+        ui.back.querySelector(".button_txt").textContent = "Close";
+        if (s.text) {
+            var actions = el("div", "bl4mm_update_actions");
+            actions.appendChild(listButton("Clear", function () {
+                send({ op: "search_clear" });
+            }, "bl4mm_update_btn"));
+            ui.options.appendChild(actions);
+        }
+        var words = searchWords(s.text);
+        if (!words.length) {
+            ui.options.appendChild(el("p", "bl4mm_update_msg", "Finds settings in every mod at once: type a word in the" +
+                " box at the top, e.g. \"key\" for every hotkey, \"fog\", or a mod's name for all its settings."));  // prettier-ignore
+            return;
+        }
+        var results = searchResults(words);
+        var total = countHits(results);
+        if (!total) {
+            ui.options.appendChild(el("p", "bl4mm_empty small_text_2", "No setting matches \"" + s.text.trim() + "\"."));
+            return;
+        }
+        var shown = 0;
+        for (var i = 0; i < results.length && shown < MAX_SEARCH_HITS; i++) {
+            var r = results[i];
+            addTitle(r.mod.name);
+            for (var j = 0; j < r.hits.length && shown < MAX_SEARCH_HITS; j++, shown++) {
+                var hit = r.hits[j];
+                addEntry(r.mod, relabel(hit.node, hit.label), hit.path, hit.node.kind === "nested" ? openFromSearch(r.mod, hit) : null);
+            }
+        }
+        if (total > shown) {
+            ui.options.appendChild(el("p", "bl4mm_update_msg", "Showing " + shown + " of " + total + " settings: type more to narrow it down."));
+        }
+    }
+
+    // Open on a nested page in the results: that page of its mod; Back comes back here
+    function openFromSearch(mod, hit) {
+        return function () {
+            var keys = hit.nested.concat([hit.path.slice(hit.start).join("\u0001")]);
+            view.mod = mod.name;
+            view.nested = keys;
+            view.backTo = { mod: SEARCH, depth: keys.length };
+            view.details = null;
+            ui.options.scrollTop = 0;
+            render();
+        };
+    }
+
+    // endregion
+
+    // region Report a problem
+
+    function reportState() {
+        return (link.state && link.state.report) || {};
+    }
+
+    function errorsText(n) {
+        return n + (n === 1 ? " error" : " errors");
+    }
+
+    function modNameOf(id) {
+        var mods = currentMods();
+        for (var i = 0; i < mods.length; i++) if (mods[i].id === id) return mods[i].name;
+        return id || "Unknown mod";
+    }
+
+    // Errors this session (newest first) and the bug report: make it, show it, open GitHub's issue page
+    function renderReport() {
+        var r = reportState();
+        ui.crumb.textContent = "Report a problem";
+        ui.back.querySelector(".button_txt").textContent = "Close";
+        var busy = r.status === "building";
+        addTitle("Bug report");
+        ui.options.appendChild(el("p", "bl4mm_update_msg", r.message ||
+            "Makes a zip with what a bug report needs: your mods and their versions, this session's and the" +
+            " last session's log, the errors below and the last crash's summary. Nothing is sent anywhere:" +
+            " you attach the zip to a new issue on GitHub yourself."));  // prettier-ignore
+        var actions = el("div", "bl4mm_update_actions");
+        actions.appendChild(listButton(busy ? "Making..." : "Make a bug report", function () {
+            if (!busy) send({ op: "report_make" });
+        }, "bl4mm_update_btn"));
+        if (r.zip) {
+            actions.appendChild(listButton("Show the zip", function () {
+                send({ op: "report_show" });
+            }, "bl4mm_update_btn"));
+        }
+        actions.appendChild(listButton("Open issue page", function () {
+            send({ op: "report_issue" });
+        }, "bl4mm_update_btn"));
+        ui.options.appendChild(actions);
+
+        addTitle(r.errors ? "Errors this session (" + r.errors + ")" : "Errors this session");
+        var recent = r.recent || [];
+        if (!recent.length) {
+            ui.options.appendChild(el("p", "bl4mm_empty small_text_2", "No mod has logged an error since the game started."));
+        }
+        recent.forEach(function (item) {
+            addInfoRow(modNameOf(item.mod), item.count > 1 ? item.count + " times" : "", item.msg || "", null);
+        });
+        if (r.errors > recent.length) {
+            ui.options.appendChild(el("p", "bl4mm_empty small_text_2", "The bug report has all of them, with their tracebacks."));
+        }
+    }
+
+    // endregion
+
     // region Updates page
 
     function updatesLine(u) {
@@ -975,6 +1327,26 @@
         var busy = u.status === "checking" || u.status === "downloading";
         var items = u.items || [];
 
+        if (u.ask) {
+            // Asked once, after the Mod Menu is installed: until then nothing checks on its own
+            addTitle("Check for updates automatically?");
+            ui.options.appendChild(el("p", "bl4mm_update_msg",
+                "Once per launch, the Mod Menu can ask GitHub (in the background) whether BL4 Fix has newer versions " +
+                "of your mods, and show them here with a \"!\" on MODS. Nothing downloads or installs until you press " +
+                "Update all. That check sends GitHub the usual web request (your IP address), nothing else."));  // prettier-ignore
+            ui.options.appendChild(el("p", "bl4mm_update_msg",
+                "No: nothing is checked until you press Check again. You can change this any time on Repositories: " +
+                "BL4 Fix's Check at launch switch."));  // prettier-ignore
+            var answer = el("div", "bl4mm_update_actions");
+            answer.appendChild(listButton("Yes, check at launch", function () {
+                send({ op: "updates_auto", value: true });
+            }, "bl4mm_update_btn"));
+            answer.appendChild(listButton("No, I'll check myself", function () {
+                send({ op: "updates_auto", value: false });
+            }, "bl4mm_update_btn"));
+            ui.options.appendChild(answer);
+        }
+
         addTitle(u.release ? "Mod updates (" + u.release + ")" : "Mod updates");
         ui.options.appendChild(el("p", "bl4mm_update_msg", updatesLine(u)));
         items.forEach(function (item) {
@@ -1013,8 +1385,58 @@
         var repoUpdates = renderRepoUpdates();
         if (!items.length && !repoUpdates && !busy) {
             ui.options.appendChild(el("p", "bl4mm_empty small_text_2",
-                u.status === "error" ? "No update information." : "Everything is up to date."));  // prettier-ignore
+                u.status === "error" ? "No update information." : u.status === "idle" ? "Not checked yet this launch." :
+                "Everything is up to date."));  // prettier-ignore
         }
+        renderRollbacks();
+    }
+
+    // Roll back (undo.py): mods whose last update kept the copy it replaced, when that copy's version
+    // differs from the installed one. Roll back stages it like an update and reloads it when it can
+    function renderRollbacks() {
+        var r = repoData();
+        var undo = (r && r.undo) || {};
+        var list = undo.rollbacks || [];
+        if (!list.length) return;
+        var jobs = undo.jobs || {};
+        addTitle("Roll back");
+        ui.options.appendChild(el("p", "bl4mm_update_msg",
+            "Each update keeps the copy it replaced. Roll back puts that one back: right away when the mod can " +
+            "reload, else when the game closes."));  // prettier-ignore
+        list.forEach(function (item) {
+            var job = jobs[item.id];
+            var state = job ? job.state : "";
+            var b = null;
+            if (!state || state === "failed") {
+                b = listButton(state === "failed" ? "Try again" : "Roll back", function () {
+                    sendRepo("repo_rollback", [item.id]);
+                }, "bl4mm_update_btn");
+            }
+            var word = { working: "   ...", staged: "   AT RESTART", reloaded: "   ROLLED BACK", failed: "   FAILED" }[state] || "";
+            addInfoRow(item.name, item.installed + "  ->  back to " + item.previous + word,
+                "Installed: " + item.installed + ". The copy you had before: " + item.previous + "." +
+                (job && job.message ? "\n\n" + job.message : "\n\nUpdates won't offer " + item.installed +
+                " again until the game starts again."), b);  // prettier-ignore
+        });
+    }
+
+    // Safe mode (the setup app set other modders' mods aside, undo.py): a line and Restore, on
+    // Discover and Repositories
+    function renderSafeMode(r) {
+        var safe = r && r.undo && r.undo.safe;
+        if (!safe || !safe.count) return;
+        var names = (safe.names || []).map(function (n) {
+            return n.name || n.file;
+        });
+        addTitle("Safe mode");
+        addInfoRow("Safe mode: " + safe.count + " mod" + (safe.count === 1 ? "" : "s") + " from other modders " +
+            (safe.count === 1 ? "is" : "are") + " set aside", "",
+            "BL4 Fix Setup's safe mode moved these out of your mods folder (into sdk_mods\\.bl4_safe_mode), so " +
+            "they don't load: " + names.join(", ") + ".\n\nRestore moves them back. They then show under \"In your " +
+            "mods folder\" on Discover, where Load starts one now; otherwise they load at the next start.",
+            r.undo.restoring ? el("p", "bl4mm_card_state", "RESTORING") : listButton("Restore", function () {
+                sendRepo("repo_safe_restore");
+            }, "bl4mm_update_btn"));  // prettier-ignore
     }
 
     // Updates from the added repositories, under BL4 Fix's. Returns how many it listed.
@@ -1024,9 +1446,13 @@
         if (!list.length) return 0;
         var jobs = r.jobs || {};
         addTitle("From your repositories");
+        renderUpdateReview(list, jobs);
         var open = [];
         list.forEach(function (item) {
             var job = jobs[item.id];
+            // An install or reload that finished earlier this session: listed again means a newer
+            // version came out since, so it can be updated (it read "INSTALLED" with no button)
+            if (job && (job.state === "loaded" || job.state === "reloaded")) job = null;
             var state = job ? job.state : "";
             var b = null;
             if (!state || state === "failed") {
@@ -1049,6 +1475,57 @@
         return list.length;
     }
 
+    // The confirm step for updates downloaded from repositories (one or Update all): each one's
+    // version and size change, and what its code uses that the installed copy didn't (repos._review)
+    function renderUpdateReview(list, jobs) {
+        var waiting = list.filter(function (item) {
+            var job = jobs[item.id];
+            return job && job.state === "review" && job.kind === "update";
+        });
+        if (!waiting.length) return;
+        addTitle(waiting.length === 1 ? "Update " + waiting[0].name + "?" : "Update these " + waiting.length + " mods?");
+        var news = [];
+        waiting.forEach(function (item) {
+            var job = jobs[item.id];
+            var fresh = job.new_uses || [];
+            if (fresh.length) news.push(item.name + ": " + fresh.join(", "));
+            addInfoRow(item.name, (job.old_version || item.installed) + "  ->  " + (job.version || item.version) + (fresh.length ? "   NEW: " +
+                fresh.join(", ").toUpperCase() : ""), "Size: " + (fmtSize(job.old_size) || "?") + "  ->  " + fmtSize(job.size) +
+                "\n\nIts code uses: " + usesText(job.uses) + "." + (job.old_read ? "" : "\n\nThe installed copy couldn't be read, so all of it counts as new.") +
+                whereText(job) + "\n\nFrom " + item.repo_name + ".", null);  // prettier-ignore
+        });
+        ui.options.appendChild(el("p", "bl4mm_update_msg" + (news.length ? " bl4mm_risk" : ""), news.length
+            ? "New in " + (waiting.length === 1 ? "this update" : "these updates") + ": " + news.join("; ") + ". " + (jobs[waiting[0].id].hint || "")
+            : "Nothing new on the list of what the code uses. " + (jobs[waiting[0].id].hint || "")));  // prettier-ignore
+        var ids = waiting.map(function (item) {
+            return item.id;
+        });
+        var actions = el("div", "bl4mm_update_actions");
+        actions.appendChild(listButton(waiting.length === 1 ? "Update" : "Update all " + waiting.length, function () {
+            sendRepo("repo_update_confirm", ids);
+        }, "bl4mm_update_btn"));
+        actions.appendChild(listButton("Cancel", function () {
+            sendRepo("repo_review_cancel", ids);
+        }, "bl4mm_update_btn"));
+        ui.options.appendChild(actions);
+    }
+
+    // What a scanned download's code uses, for a sentence
+    function usesText(uses) {
+        return uses && uses.length ? uses.join(", ") : "nothing on the list (network, programs, native code, registry, dynamic code)";
+    }
+
+    // Where the scan saw each thing, one line each (the details pane)
+    function whereText(job) {
+        var where = job.where || {};
+        var lines = (job.uses || []).filter(function (u) {
+            return !!where[u];
+        }).map(function (u) {
+            return u + ": " + where[u];
+        });
+        return lines.length ? "\n\nSeen in:\n" + lines.join("\n") : "";
+    }
+
     // "   45%", "   RELOADED"...: a job's state after a version or name
     function jobWord(job) {
         if (!job) return "";
@@ -1057,7 +1534,7 @@
             return "   " + (p[1] ? Math.floor((100 * p[0]) / p[1]) + "%" : "...");
         }
         return "   " + ({ loading: "LOADING", loaded: "INSTALLED", reloaded: "RELOADED", staged: "AT RESTART",
-                         failed: "FAILED", removed: "REMOVED" }[job.state] || "");  // prettier-ignore
+                         failed: "FAILED", removed: "REMOVED", review: "WAITING FOR OK" }[job.state] || "");  // prettier-ignore
     }
 
     // endregion
@@ -1167,12 +1644,28 @@
         return null;
     }
 
-    // The button (or state) for a Discover entry: Install, a progress figure, or how it ended
+    // Shows a Discover entry's own page (its pictures; the confirm step of an install)
+    function openItem(item) {
+        view.item = item.id;
+        view.shot = 0;
+        view.details = { item: item };
+        ui.options.scrollTop = 0;
+        render();
+    }
+
+    // The button (or state) for a Discover entry: Install, a progress figure, or how it ended.
+    // Another modder's mod is downloaded and read first, then its page asks (renderInstallReview)
     function installPart(item, jobs) {
         var job = jobs[item.id];
         var state = job ? job.state : "";
+        if (state === "review") {
+            return listButton("Review", function () {
+                openItem(item);
+            }, "bl4mm_update_btn");
+        }
         if (!state || state === "failed") {
             return listButton(state === "failed" ? "Try again" : "Install", function () {
+                if (!isOfficialRepo(repoData() || {}, item.repo) && view.item !== item.id) openItem(item);
                 sendRepo("repo_install", [item.id]);
             }, "bl4mm_update_btn");
         }
@@ -1192,6 +1685,7 @@
             if (item) return renderItem(r, item);
             view.item = null;
         }
+        renderSafeMode(r);
         var actions = el("div", "bl4mm_update_actions");
         actions.appendChild(listButton("Open mods folder", function () {
             sendRepo("mods_folder");
@@ -1228,6 +1722,20 @@
             list.length ? "Mods from your repositories that you don't have yet. Add more sources on Repositories." :
             shown ? "Nothing new from " + shown.name + ": you have every mod it offers." :
             "Nothing new: you have every mod your repositories offer. Add more on Repositories."));  // prettier-ignore
+        // Repositories whose check-at-launch switch is off weren't read yet: their mods aren't listed.
+        // BL4 Fix's release read but refused (unsigned, offline) has no status either: Updates says why
+        var refused = (updatesState() || {}).status === "error";
+        var unread = (r.sources || []).filter(function (s) {
+            return !s.hidden && !s.status && (!shown || s.key === shown.key) && !(s.official && refused);
+        });
+        if (refused && (r.sources || []).some(function (s) { return s.official && !s.hidden && !s.status && (!shown || s.key === shown.key); })) {
+            ui.options.appendChild(el("p", "bl4mm_update_msg", "BL4 Fix's release couldn't be read this launch: Updates says why."));
+        }
+        if (unread.length && !r.refreshing) {
+            ui.options.appendChild(el("p", "bl4mm_update_msg", (unread.length === 1 ? unread[0].name + " wasn't" :
+                unread.length + " repositories weren't") + " read this launch (check at launch is off): Refresh repositories lists " +
+                (unread.length === 1 ? "its" : "their") + " mods."));  // prettier-ignore
+        }
         // New mods the badge counted are on screen now: tell Python (no badge for them again). They
         // keep their NEW tag for the rest of this page's life
         var fresh = freshMods();
@@ -1363,14 +1871,22 @@
         head.appendChild(text);
         ui.options.appendChild(head);
 
+        var job = (r.jobs || {})[item.id];
+        var reviewing = job && job.state === "review" && job.kind === "install";
         var actions = el("div", "bl4mm_update_actions");
-        actions.appendChild(installPart(item, r.jobs || {}));
+        if (!reviewing) actions.appendChild(installPart(item, r.jobs || {}));
         if (item.homepage) {
             actions.appendChild(listButton("Web page", function () {
                 sendRepo("repo_link", item.homepage);
             }, "bl4mm_update_btn"));
         }
         ui.options.appendChild(actions);
+        if (reviewing) renderInstallReview(item, job);
+        if (!isOfficialRepo(r, item.repo) && !reviewing) {
+            ui.options.appendChild(el("p", "bl4mm_update_msg bl4mm_risk", "From " + item.repo_name + " (" + item.repo + "), not " +
+                "BL4 Fix: nobody at BL4 Fix checked it. Like any mod it runs with the game's rights on your PC, so install it " +
+                "only if you trust its author."));  // prettier-ignore
+        }
 
         var shots = item.images || [];
         if (shots.length) {
@@ -1395,6 +1911,29 @@
         }
     }
 
+    // The confirm step of an install from another modder's repository: downloaded and checked, its
+    // code read (repos._review); Install uses those same bytes, Cancel drops them
+    function renderInstallReview(item, job) {
+        addTitle("Install " + item.name + "?");
+        var uses = job.uses || [];
+        addInfoRow("It uses", uses.length ? uses.join(", ").toUpperCase() : "NOTHING LISTED",
+            "What " + item.name + "'s code uses, read from the download before anything runs: " + usesText(uses) + "." +
+            whereText(job) + "\n\n" + (job.hint || ""), null);  // prettier-ignore
+        addInfoRow("Version", (job.version || item.version || "?") + "   |   " + fmtSize(job.size),
+            "The file you install: downloaded, its checksum matched the repository's, nothing of it has run.", null);  // prettier-ignore
+        ui.options.appendChild(el("p", "bl4mm_update_msg bl4mm_risk", "Install " + item.name + "? " + (uses.length ? "It uses: " +
+            uses.join(", ") + ". " : "") + (job.hint || "") + " From " + item.repo_name + " (" + item.repo + "), not BL4 Fix: " +
+            "nobody at BL4 Fix checked it, and like any mod it runs with the game's rights on your PC."));  // prettier-ignore
+        var actions = el("div", "bl4mm_update_actions");
+        actions.appendChild(listButton("Install", function () {
+            sendRepo("repo_install_confirm", [item.id]);
+        }, "bl4mm_update_btn"));
+        actions.appendChild(listButton("Cancel", function () {
+            sendRepo("repo_review_cancel", [item.id]);
+        }, "bl4mm_update_btn"));
+        ui.options.appendChild(actions);
+    }
+
     // endregion
     // region Repositories page
 
@@ -1409,6 +1948,7 @@
         ui.options.appendChild(el("p", "bl4mm_update_msg",
             "Add other modders' repositories to get their mods on Discover, with updates. Mods run code on " +
             "your PC like any mod: only add repositories you trust."));  // prettier-ignore
+        renderSafeMode(r);
         var box = boxState();
         var pending = r.pending;
         var editing = box.editing;
@@ -1418,8 +1958,9 @@
             addTextBox(box, editing
                 ? "Change the link of " + editName + ". Enter saves, Esc stops typing, Ctrl+V pastes."
                 : "Click the box and paste (Ctrl+V) or type the modder's GitHub link, e.g.\n" +
-                  "https://github.com/flameaway/bl4-fix\nor just flameaway/bl4-fix. An https link to an index works " +
-                  "too. Enter adds, Esc stops typing. (Or type modrepo add <link> in the console.)");  // prettier-ignore
+                  "https://github.com/flameaway/bl4-fix\nor just flameaway/bl4-fix. A raw.githubusercontent.com link to " +
+                  "an index works too; only GitHub is allowed. Enter adds, Esc stops typing. (Or type modrepo add <link> " +
+                  "in the console.)");  // prettier-ignore
             var actions = el("div", "bl4mm_update_actions");
             actions.appendChild(listButton(editing ? "Save" : "Add", function () {
                 send({ op: "box_submit" });
@@ -1438,10 +1979,24 @@
             addInfoRow(pending.key, "CHECKING", "Reading the repository...", null);
         } else {
             addTitle(pending.replace ? "Use this link for " + (pending.replace_name || pending.replace) + "?" : "Add this repository?");
-            addInfoRow(pending.name, pending.count + " mod" + (pending.count === 1 ? "" : "s"),
+            // The link next to the name: the name is the repository's own word for itself
+            addInfoRow(pending.name === pending.key ? pending.name : pending.name + "  (" + pending.key + ")",
+                pending.count + " mod" + (pending.count === 1 ? "" : "s"),
                 (pending.description ? pending.description + "\n\n" : "") + pending.key +
                 (pending.mods && pending.mods.length ? "\n\nMods: " + pending.mods.join(", ") : ""), null);  // prettier-ignore
             if (pending.description) ui.options.appendChild(el("p", "bl4mm_new_blurb", pending.description));
+            if (pending.no_checksum && pending.no_checksum.length) {
+                ui.options.appendChild(el("p", "bl4mm_update_msg", "Left out (no SHA-256 checksum listed): " + pending.no_checksum.join(", ") + "."));
+            }
+            if (pending.id_note) ui.options.appendChild(el("p", "bl4mm_update_msg", pending.id_note));
+            // Every time, also for an edited link: what adding a repository means
+            ui.options.appendChild(el("p", "bl4mm_update_msg bl4mm_risk", "Before you add it: " + (r.risk || "")));
+            addToggleRow("Check for updates at launch", "Reads this repository once per launch (in the background), so " +
+                "Discover lists its new mods and Updates its new versions. Nothing downloads until you press Install or " +
+                "Update.\n\nOff: it's read only when you press Refresh. You can change this later on its row below.",
+                !!pending.auto, function (on) {
+                    sendRepo("repo_add_auto", on);
+                });  // prettier-ignore
             var confirm = el("div", "bl4mm_update_actions");
             confirm.appendChild(listButton(pending.replace ? "Save" : "Add", function () {
                 sendRepo("repo_add_confirm");
@@ -1457,7 +2012,8 @@
         checkRow.appendChild(checkButton(r, "Refresh all"));
         ui.options.appendChild(checkRow);
         (r.sources || []).forEach(function (s) {
-            var word = s.hidden ? "REMOVED" : s.official ? "BUILT IN" : s.status === "error" ? "ERROR" : s.status === "checking" ? "CHECKING" : (s.message || "").toUpperCase();
+            var word = s.hidden ? "REMOVED" : s.official ? "BUILT IN" : s.blocked ? "BLOCKED" : s.status === "error" ? "ERROR" :
+                s.status === "checking" ? "CHECKING" : s.status ? (s.message || "").toUpperCase() : "NOT CHECKED";  // prettier-ignore
             var web = repoWebLink(s);
             var buttons = [];
             if (web) {
@@ -1484,7 +2040,20 @@
                 (s.official ? "The BL4 Fix mods (" + s.key + "), built in. Remove takes them off Discover; the ones " +
                     "you have still update on the Updates page." : s.url || s.key) +
                 (s.release ? "\n\nNewest release: " + s.release : "") + (s.status === "error" ? "\n\n" + s.message : "") +
+                (s.id_note ? "\n\n" + s.id_note : "") +
+                (s.no_checksum && s.no_checksum.length ? "\n\nLeft out (no SHA-256 checksum listed): " + s.no_checksum.join(", ") : "") +
                 (web ? "\n\n" + web : ""), buttons);  // prettier-ignore
+            if (s.hidden) return;
+            if (s.blocked) addTrustAgain(r, s);
+            // Its own check-at-launch switch, the only one: BL4 Fix's sets the Mod Menu's hidden "Check for
+            // updates at launch" option (no second copy in the Mod Menu's settings to confuse with these)
+            addToggleRow("Check at launch", (s.official ? "Asks GitHub once per launch whether BL4 Fix has newer versions of " +
+                "your mods." : "Reads " + (s.name || s.key) + " once per launch, so Discover lists its new mods and " +
+                "Updates its new versions.") + " Nothing downloads until you press Install or Update.\n\nOff: only " +
+                "Refresh reads it.", !!s.auto, function (on) {
+                    if (s.official) sendRepo("updates_auto", on);
+                    else sendRepo("repo_auto", { key: s.key, on: on });
+                }, true);  // prettier-ignore
         });
 
         var installed = r.installed || [];
@@ -1501,6 +2070,32 @@
                     "From " + m.repo_name + ". Remove turns it off now and deletes its file when the game closes.", b);  // prettier-ignore
             });
         }
+    }
+
+    // Under a blocked repository's row (its link leads to a different GitHub repository now): why,
+    // and Trust again, which shows the warning once more before it accepts the new repository
+    function addTrustAgain(r, s) {
+        var asking = view.trusting === s.key;
+        ui.options.appendChild(el("p", "bl4mm_update_msg bl4mm_risk", asking ? "Trust " + (s.name || s.key) + " again? " +
+            "Its link now leads to a different repository than the one you added: maybe its modder renamed or moved it, " +
+            "maybe someone else took the name. Its mods and updates come from the new one from now on. " + (r.risk || "") : s.message));  // prettier-ignore
+        var actions = el("div", "bl4mm_update_actions");
+        if (asking) {
+            actions.appendChild(listButton("Trust it", function () {
+                view.trusting = null;
+                sendRepo("repo_trust", s.key);
+            }, "bl4mm_update_btn"));
+            actions.appendChild(listButton("Cancel", function () {
+                view.trusting = null;
+                render();
+            }, "bl4mm_update_btn"));
+        } else {
+            actions.appendChild(listButton("Trust again", function () {
+                view.trusting = s.key;
+                render();
+            }, "bl4mm_update_btn"));
+        }
+        ui.options.appendChild(actions);
     }
 
     // Refreshes every repository: new mods and updates (and says what it found when done). While it
@@ -1523,6 +2118,12 @@
         return key;
     }
 
+    function isOfficialRepo(r, key) {
+        var list = r.sources || [];
+        for (var i = 0; i < list.length; i++) if (list[i].key === key) return !!list[i].official;
+        return false;
+    }
+
     function isGithubKey(key) {
         return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(key || "");
     }
@@ -1534,27 +2135,59 @@
         return /^https:\/\//i.test(s.url || "") ? s.url : "";
     }
 
-    // The text box: Python reads the keys (none reach this page) and sends the text in its state
-    function addTextBox(box, desc) {
+    // A row with the game's Off/On toggle for something that isn't a mod's option (a repository's
+    // check-at-launch switch); fn(on) when it's clicked. sub: indented, a part of the row above
+    function addToggleRow(name, desc, value, fn, sub) {
+        var wrap = make("regular", "menu_options_regular_entry");
+        wrap.classList.add("bl4mm_entry_wrap");
+        if (sub) wrap.classList.add("bl4mm_sub_row");
+        var entry = q(wrap, ".menu_options_entry") || wrap;
+        var label = q(wrap, ".menu_options_entry_text");
+        if (label) label.textContent = name;
+        var comp = q(wrap, ".menu_options_entry_component") || wrap;
+        comp.innerHTML = "";
+        comp.appendChild(toggle({ off: "Off", on: "On", value: value }, function (op, on) {
+            fn(on);
+        }));
+        entry.addEventListener("mouseenter", function () {
+            entry.classList.add("hover_effect");
+            view.details = { node: { name: name, title: name, desc: desc } };
+            renderDetails(selectedMod());
+        });
+        entry.addEventListener("mouseleave", function () {
+            entry.classList.remove("hover_effect");
+        });
+        ui.options.appendChild(wrap);
+    }
+
+    // The Repositories box (addTextBox's default spec)
+    var REPO_BOX = { label: "Link", title: "Repository link", hint: "https://github.com/flameaway/bl4-fix", type: "box_type", stop: "box_stop" };  // prettier-ignore
+
+    // A text box: Python reads the keys (none reach this page) and sends the text in its state.
+    // spec (optional, REPO_BOX by default): label, title (details pane), hint (shown while empty),
+    // and the ops that start and stop typing
+    function addTextBox(box, desc, spec) {
+        spec = spec || REPO_BOX;
         var wrap = make("regular", "menu_options_regular_entry");
         wrap.classList.add("bl4mm_entry_wrap");
         var entry = q(wrap, ".menu_options_entry") || wrap;
+        entry.classList.add("bl4mm_textbox_entry");
         var label = q(wrap, ".menu_options_entry_text");
-        if (label) label.textContent = "Link";
+        if (label) label.textContent = spec.label;
         var comp = q(wrap, ".menu_options_entry_component") || wrap;
         comp.innerHTML = "";
         var field = el("div", "bl4mm_textbox" + (box.typing ? " bl4mm_typing" : ""));
         var text = el("p", "bl4mm_textbox_text" + (box.text || box.typing ? "" : " bl4mm_textbox_hint"),
-            box.text || (box.typing ? "" : "https://github.com/flameaway/bl4-fix"));  // prettier-ignore
+            box.text || (box.typing ? "" : spec.hint));  // prettier-ignore
         field.appendChild(text);
         if (box.typing) field.appendChild(el("div", "bl4mm_caret"));
         comp.appendChild(field);
         onClick(entry, function () {
-            send({ op: box.typing ? "box_stop" : "box_type" });
+            send({ op: box.typing ? spec.stop : spec.type });
         });
         entry.addEventListener("mouseenter", function () {
             entry.classList.add("hover_effect");
-            view.details = { node: { name: "Link", title: "Repository link", desc: desc } };
+            view.details = { node: { name: spec.label, title: spec.title, desc: desc } };
             renderDetails(selectedMod());
         });
         entry.addEventListener("mouseleave", function () {
@@ -1573,7 +2206,8 @@
         ui.options.appendChild(t);
     }
 
-    function addEntry(mod, node, path) {
+    // open (optional): what a nested page's Open does instead of going down a page (search results)
+    function addEntry(mod, node, path, open) {
         var wrap = make("regular", "menu_options_regular_entry");
         wrap.classList.add("bl4mm_entry_wrap");
         var entry = q(wrap, ".menu_options_entry") || wrap;
@@ -1590,6 +2224,8 @@
         });
 
         var act = function (op, value) {
+            // A rebind waits for a key, which the search's typing would swallow
+            if (op === "capture" && searchState().typing) send({ op: "search_stop" });
             if (node.kind === "enable") send({ op: "enable", mod: mod.name, value: value });
             else send({ op: op, mod: mod.name, path: path, value: value });
         };
@@ -1618,7 +2254,7 @@
                 break;
             case "nested":
                 comp.classList.add("menu_options_entry_button");
-                comp.appendChild(listButton("Open", function () {
+                comp.appendChild(listButton("Open", open || function () {
                     view.nested.push(path.slice(nestedPrefix().length).join("\u0001"));
                     view.details = null;
                     ui.options.scrollTop = 0;
@@ -1848,7 +2484,10 @@
             ui.detailsMeta.textContent = [item.author ? "by " + item.author : "", item.version, "from " + item.repo_name]
                 .filter(function (s) { return !!s; })
                 .join("   |   ");  // prettier-ignore
-            ui.detailsBody.textContent = (item.description || item.blurb || "") + (view.item ? "" : "\n\nClick for pictures and details.");
+            // Read from its download on Install (the confirm step), shown here too
+            var scanned = ((repoData() || {}).jobs || {})[item.id];
+            ui.detailsBody.textContent = (item.description || item.blurb || "") + (view.item ? "" : "\n\nClick for pictures and details.") +
+                (scanned && scanned.uses ? "\n\nIts code uses: " + usesText(scanned.uses) + ". " + (scanned.hint || "") : "");  // prettier-ignore
             var first = (item.images || [])[0];
             if (first && ui.detailsPic) ui.detailsPic.appendChild(picture(first, "bl4mm_details_shot"));
             return;
@@ -1856,6 +2495,8 @@
         if (d && d.node) {
             ui.detailsTitle.textContent = d.node.title || d.node.name;
             var meta = [];
+            // A search result: whose setting it is
+            if (view.mod === SEARCH && d.mod && d.mod.name) meta.push(d.mod.name);
             if (d.node.default !== undefined) meta.push("Default: " + d.node.default);
             if (d.node.kind === "keybind" && d.node.rebindable) meta.push("Click the key, then press the new one. Esc cancels.");
             ui.detailsMeta.textContent = meta.join("   |   ");
@@ -1878,8 +2519,35 @@
             ui.detailsMeta.textContent = "";
             ui.detailsBody.textContent =
                 "Where mods come from. BL4 Fix is built in; add any modder's GitHub repository (owner/name) or" +
-                " an https link to a repository index, and their mods show on Discover and update from Updates." +
+                " a link to an index file on GitHub, and their mods show on Discover and update from Updates. Only" +
+                " GitHub is allowed: repositories, downloads and pictures all come from there." +
                 "\n\nModders: see docs/mod-repos.md in the BL4 Fix repository for how to publish one.";  // prettier-ignore
+            return;
+        }
+        if (shown.pseudo === SEARCH) {
+            ui.detailsTitle.textContent = "Search";
+            ui.detailsMeta.textContent = "";
+            ui.detailsBody.textContent =
+                "Finds a setting in every mod at once. Type part of its name or description, or a mod's name: every" +
+                " match shows with its mod, and you can change it right there.";  // prettier-ignore
+            return;
+        }
+        if (shown.pseudo === PERF) {
+            ui.detailsTitle.textContent = "Performance";
+            ui.detailsMeta.textContent = "";
+            ui.detailsBody.textContent =
+                "How much each mod costs your frame rate. Run a benchmark, close the menus and play for a few seconds:" +
+                " every enabled mod is timed, other modders' mods too, and the results show here, most expensive" +
+                " first, with a text report to send to a mod's author.";  // prettier-ignore
+            return;
+        }
+        if (shown.pseudo === REPORT) {
+            ui.detailsTitle.textContent = "Report a problem";
+            ui.detailsMeta.textContent = "";
+            ui.detailsBody.textContent =
+                "Something broke? Make a bug report here and attach the zip to a new issue on GitHub (Open issue" +
+                " page). After a crash, start the game again first: the report then has the crashed session's log." +
+                "\n\nThe number is how many different errors the mods logged since the game started.";  // prettier-ignore
             return;
         }
         if (shown.pseudo) {
@@ -1891,7 +2559,8 @@
             return;
         }
         ui.detailsTitle.textContent = shown.name;
-        ui.detailsMeta.textContent = [shown.author ? "by " + shown.author : "", shown.version, shown.status, shown.coop]
+        ui.detailsMeta.textContent = [shown.author ? "by " + shown.author : "", shown.version, shown.status, shown.coop,
+                                      shown.errors ? errorsText(shown.errors) + " this session (Report a problem)" : ""]
             .filter(function (s) { return !!s; })
             .join("   |   ");
         ui.detailsBody.textContent = shown.desc || "";
@@ -2069,11 +2738,13 @@
 
     ns.teardown = function () {
         ns.gen = 0;
-        if (ui.scroller && ui.scroller.destroy) {
-            try {
-                ui.scroller.destroy();
-            } catch (err) {}
-        }
+        [ui.scroller, ui.modsScroller].forEach(function (scroller) {
+            if (scroller && scroller.destroy) {
+                try {
+                    scroller.destroy();
+                } catch (err) {}
+            }
+        });
         timers.forEach(clearTimeout);
         if (pollTimer !== null) clearTimeout(pollTimer);
         if (repoTimer !== null) clearTimeout(repoTimer);

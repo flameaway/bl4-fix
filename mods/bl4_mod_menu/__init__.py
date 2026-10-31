@@ -14,8 +14,8 @@ its options take effect from their on_change callback (or are read when used) ra
 at startup.
 
 Discover and Repositories (repos.py): add other modders' repositories (a GitHub "owner/name" or
-an https link to an index, docs/mod-repos.md), browse the mods you don't have with their pictures,
-install and update them without a restart (hotload.py). Mods dropped into sdk_mods (Open mods
+a link to an index on GitHub: only GitHub is ever contacted, docs/mod-repos.md), browse the mods
+you don't have with their pictures, install and update them without a restart (hotload.py). Mods dropped into sdk_mods (Open mods
 folder) load from the Discover page too, also without a restart.
 
 A mod can also open the menu on its own page, e.g. from a button in its own UI:
@@ -33,10 +33,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from mods_base import SETTINGS_DIR, BoolOption, ButtonOption, KeybindOption, Library, build_mod, command
+from mods_base import SETTINGS_DIR, BoolOption, ButtonOption, HiddenOption, KeybindOption, Library, build_mod, command
 from unrealsdk import logging
 
-from . import hotload, main_page, menu, pause_page, repos, uilink, updates, web
+from . import hotload, main_page, menu, pause_page, perf, reporting, repos, uilink, updates, web
 
 __version__ = "0.1.1"
 __version_info__ = (0, 1, 1)
@@ -52,15 +52,36 @@ open_key = KeybindOption(
 )
 
 
+# A Library enables itself while build_mod constructs it, before its saved settings load, so
+# _enable sees default values and loading the saved ones runs the on_change callbacks of an enabled
+# mod. True once build_mod returned (the saved values are in): _start_checks runs then.
+_settings_loaded = False
+
+
+def _update_option_changed(_: BoolOption, value: bool) -> None:
+    if not _settings_loaded:
+        return  # the saved value loading, not the player switching it (seen in the 0.2.1 -> 0.2.3 update rehearsal)
+    # Switched by BL4 Fix's Check at launch on Repositories (or the question): answers the question too
+    if not update_asked.value:
+        update_asked.value = True
+    updates.set_auto(value, asked=True)
+    if value and updates.U.status in ("idle", "off"):
+        updates.check_async(GAME_DIR)
+
+
+# Whether BL4 Fix's own release is checked once per launch. Hidden (2026-10-31, user ask): the only
+# switch for it is BL4 Fix's "Check at launch" on Repositories, next to every added repository's,
+# so there aren't two settings for the same thing. Still an option so the saved value carries over
 update_option = BoolOption(
     "Check for updates at launch",
     True,
-    description=(
-        "Once per launch, asks GitHub (on a background thread) whether there are newer versions of"
-        " the mods installed by BL4 Fix Setup. Nothing downloads until you press Update all on the"
-        " Updates page."
-    ),
+    is_hidden=True,
+    on_change_while_enabled=_update_option_changed,
 )
+
+# Whether the player answered "Check for updates automatically?" (the Updates page asks once, after
+# the Mod Menu is first installed). Until then nothing is checked on its own
+update_asked = HiddenOption("Asked about update checks", False)
 
 
 def _announce_changed(_: BoolOption, value: bool) -> None:
@@ -79,6 +100,16 @@ announce_option = BoolOption(
 )
 
 
+def _choose_update_checks(on: bool) -> None:
+    """The Updates page's answer to "Check for updates automatically?", or BL4 Fix's switch on
+    Repositories (web.py, game thread)."""
+    update_asked.value = True
+    update_option.value = on  # runs _update_option_changed
+    updates.set_auto(on, asked=True)
+    mod.save_settings()
+    web.say("Update checks at launch: on." if on else "Update checks at launch: off. Check for updates on the Updates page any time.")
+
+
 def _check_now(_: ButtonOption) -> None:
     if updates.check_async(GAME_DIR):
         web.say("Checking for updates...")
@@ -86,16 +117,9 @@ def _check_now(_: ButtonOption) -> None:
 
 check_button = ButtonOption("Check for updates now", on_press=_check_now, description="Asks GitHub right away.")
 
-# Only matters once the player added a repository, and adding one is asking for its mods: on
-repos_option = BoolOption(
-    "Check repositories at launch",
-    True,
-    description=(
-        "Once per launch, reads the mod repositories you added (on a background thread), so Discover"
-        " lists their mods and Updates their new versions. Nothing downloads until you press Install"
-        " or Update. With no repositories added, nothing is checked."
-    ),
-)
+# Before 0.2.3 one switch for every added repository; now each has its own (Repositories). Kept
+# hidden only so repositories added back then start with what this said (repos._load)
+repos_option = BoolOption("Check repositories at launch", True, is_hidden=True)
 
 
 def _say(text: str, *, error: bool = False) -> None:
@@ -108,7 +132,8 @@ def modrepo_command(args: argparse.Namespace) -> None:
     verb = words[0].lower() if words else "list"
     if verb == "add" and len(words) > 1:
         repos.add_async(words[1])
-        _say(f"Checking {words[1]}... confirm it on the Repositories page (MODS), or type modrepo confirm.")
+        _say(f"Checking {words[1]}... Before you add it: {repos.RISK_TEXT}")
+        _say("Confirm it on the Repositories page (MODS), or type modrepo confirm.")
     elif verb == "confirm":
         repos.confirm_add()
     elif verb == "remove" and len(words) > 1:
@@ -149,6 +174,13 @@ def modload_command(args: argparse.Namespace) -> None:
 modload_command.add_argument("name", nargs="?")
 
 
+@command("bugreport", description="Makes a bug report zip (sdk_mods/.bug_reports) to attach to an issue on GitHub.")
+def bugreport_command(_: argparse.Namespace) -> None:
+    # Also on the MODS screen (Report a problem); this works when the screen doesn't
+    if not reporting.make(GAME_DIR):
+        _say("A bug report is being made already.")
+
+
 def open_menu(mod_name: str | None = None) -> None:
     """Opens the menu, on the page of the mod with this name if one is given."""
     menu.open_preferred(mod_name)
@@ -176,32 +208,62 @@ def _enable() -> None:
                 logging.info(f"[Mod Menu] {line}")
         except Exception as ex:  # noqa: BLE001  # never let a file problem break the mod
             logging.error(f"[Mod Menu] Couldn't remove {page.PAK_NAME}: {ex}")
-    # Network and files only, on worker threads (updates.py)
+    if _settings_loaded:
+        _start_checks()  # else build_mod hasn't loaded the saved settings yet: it runs at the end of this file
+    perf.enable()  # MODS > Performance (was the separate BL4 Mod Profiler until 2026-10-29)
+
+
+def _start_checks() -> None:
+    """The update check and the repositories, with the player's saved settings (not the defaults
+    _enable sees while build_mod constructs this Library). Network and files on worker threads."""
     try:
+        if not update_asked.value and not update_option.value:
+            update_asked.value = True  # switched off before the question existed: that was the answer
         updates.set_announce(announce_option.value)
+        updates.set_auto(update_option.value, asked=update_asked.value)
+        updates.U.chooser = _choose_update_checks
         updates.resume(GAME_DIR)
-        if update_option.value:
+        if update_option.value and update_asked.value:
             updates.check_async(GAME_DIR)
     except Exception as ex:  # noqa: BLE001
         logging.error(f"[Mod Menu] Couldn't check for updates: {ex}")
     try:
-        repos.start(GAME_DIR, check=repos_option.value)
+        repos.start(GAME_DIR, legacy_auto=repos_option.value)
     except Exception as ex:  # noqa: BLE001
         logging.error(f"[Mod Menu] Couldn't read the mod repositories: {ex}")
 
 
 def _disable() -> None:
+    perf.disable()
     menu.uninstall()
     uilink.unregister(LINK_KEY)
     uilink.stop()
 
 
+# A manual install (the release's zip, Nexus) has no settings files, and mods_base loads such a mod
+# switched off: turn on new mods of ours, as the setup app does (firstrun.py)
+try:
+    import importlib
+
+    from . import firstrun
+
+    firstrun.enable_new(
+        GAME_DIR / "sdk_mods", SETTINGS_DIR, importlib.import_module("mods_base.mod_list").mod_list, logging.info,
+    )
+except Exception as ex:  # noqa: BLE001  # never stop the menu loading
+    logging.error(f"[Mod Menu] Couldn't switch on newly installed mods: {ex}")
+
+
 mod = build_mod(
     cls=Library,
-    options=[open_key, update_option, announce_option, check_button, repos_option],
+    options=[open_key, update_option, announce_option, check_button, repos_option, update_asked],
     keybinds=[],
     hooks=[],
-    commands=[modmenu_command, modrepo_command, modload_command],
+    commands=[modmenu_command, modrepo_command, modload_command, bugreport_command, perf.modprofile_command],
     on_enable=_enable,
     on_disable=_disable,
 )
+# build_mod enabled the Library (with defaults) and then loaded the saved settings: start now
+_settings_loaded = True
+if mod.is_enabled:
+    _start_checks()

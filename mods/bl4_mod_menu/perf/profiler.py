@@ -28,10 +28,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import unrealsdk
-from unrealsdk import hooks
+from unrealsdk import hooks, logging
 
 FRAME_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyPostProcess"
-FRAME_ID = "bl4_profiler.frame"
+FRAME_ID = "bl4_mod_menu.perf_frame"
 # Calls of the frame hook closer than this belong to one camera update: only the first asks the
 # engine for its frame number (~10 us a call)
 SAME_UPDATE_S = 0.0005
@@ -121,10 +121,18 @@ class Run:
     # Back-to-back hooks: when the last wrapper ended, on which function; the gaps measured
     last_end: float = 0.0
     last_func: str = ""
+    last_stat: Any = None  # the wrapper (its stat) that ran last
+    hook_calls: int = 0  # wrapped SDK hook calls (not frame tick callbacks)
+    tick_calls: int = 0  # frame tick callbacks run
+    tick_overhead_s: float = 0.0  # one callback wrapper's own cost, measured at start
     dispatch_s: float = 0.0
     dispatch_n: int = 0
     notes: list[str] = field(default_factory=list)
     world: str = ""
+    # Shared frame tick (shared/frametick): (entry, original fn, our wrapper) per callback, and the
+    # callbacks' time so far (the dispatcher's own time is its call minus what ran inside it)
+    ticks: list[tuple[Any, Callable[..., Any], Callable[..., Any]]] = field(default_factory=list)
+    tick_inner: float = 0.0
 
 
 class R:
@@ -213,53 +221,123 @@ def _packages(mods: list[Any]) -> dict[str, str]:
 # region Wrappers
 
 
+def _account(stat: HookStat, run: Run | None, start: float, end: float, took: float, hooked: str, args: Any = None) -> None:
+    """
+    Adds one timed call. `hooked`: the hooked function; "" for a frame tick callback. The gap to the
+    previous hook counts as the SDK's cost of calling a hook only between two different hooks on the
+    same function (the next hook of one engine call). One hook after itself is the next call: the gap
+    is the engine's own work in between (151 us measured with only the shared tick's hook left; the
+    args object is reused across calls, so it can't tell calls apart).
+    """
+    if run is not None and hooked:
+        run.hook_calls += 1
+        gap = start - run.last_end
+        if run.last_func is hooked and run.last_stat is not stat and 0.0 <= gap < DISPATCH_GAP_S:
+            run.dispatch_s += gap
+            run.dispatch_n += 1
+        run.last_end, run.last_func, run.last_stat = end, hooked, stat
+    stat.calls += 1
+    stat.total += took
+    if took > stat.worst:
+        stat.worst = took
+    if took > HITCH_S:
+        stat.over_5ms += 1
+    if run is not None:
+        mod = stat.mod
+        run.frame_py += took
+        run.frame_by_mod[mod] = run.frame_by_mod.get(mod, 0.0) + took
+        if took > SLOW_S:
+            if len(run.slow) < MAX_SLOW:
+                run.slow.append((run.frame_no, start - run.started, mod, stat.label, took))
+        elif took > stat.small_worst:
+            stat.small_worst = took
+
+
+_accounting_errors: set[str] = set()
+
+
+def _accounting_failed(ex: Exception) -> None:
+    """A wrapper's bookkeeping failed (the results would quietly miss it): logged once per message."""
+    if (message := repr(ex)) not in _accounting_errors:
+        _accounting_errors.add(message)
+        logging.error(f"[Performance] timing a call failed, results may be incomplete: {message}")
+
+
 def _timed(stat: HookStat, fn: Callable[..., Any], hooked: str = "") -> Callable[..., Any]:
     perf = time.perf_counter
-    mod = stat.mod
 
     def wrapper(obj: Any, args: Any, ret: Any, func: Any) -> Any:
         start = perf()
         result = fn(obj, args, ret, func)  # its exceptions reach the SDK as before
         end = perf()
-        took = end - start
         try:
-            run = R.run
-            if run is not None:
-                gap = start - run.last_end
-                if run.last_func is hooked and 0.0 <= gap < DISPATCH_GAP_S:
-                    run.dispatch_s += gap
-                    run.dispatch_n += 1
-                run.last_end, run.last_func = end, hooked
-            stat.calls += 1
-            stat.total += took
-            if took > stat.worst:
-                stat.worst = took
-            if took > HITCH_S:
-                stat.over_5ms += 1
-            if run is not None:
-                run.frame_py += took
-                run.frame_by_mod[mod] = run.frame_by_mod.get(mod, 0.0) + took
-                if took > SLOW_S:
-                    if len(run.slow) < MAX_SLOW:
-                        run.slow.append((run.frame_no, start - run.started, mod, stat.label, took))
-                elif took > stat.small_worst:
-                    stat.small_worst = took
-        except Exception:  # noqa: BLE001, S110 - the timing must never break the hook (or its Block)
-            pass
+            _account(stat, R.run, start, end, end - start, hooked, args)
+        except Exception as ex:  # noqa: BLE001 - the timing must never break the hook (or its Block)
+            _accounting_failed(ex)
         return result
 
     return wrapper
 
 
-def _calibrate() -> float:
-    """What a wrapper adds per call, so the report can say how much the run itself cost."""
-    stat = HookStat("", "")
+def _timed_tick(stat: HookStat, fn: Callable[[], Any]) -> Callable[[], Any]:
+    """A shared frame tick callback (no arguments). Its time also counts as the dispatcher's inner time."""
+    perf = time.perf_counter
+
+    def wrapper() -> Any:
+        start = perf()
+        try:
+            return fn()  # its exceptions reach the dispatcher (which logs them) as before
+        finally:
+            end = perf()
+            try:
+                run = R.run
+                _account(stat, run, start, end, end - start, "")
+                if run is not None:
+                    # Inside the dispatcher's time: the callback and our bookkeeping, measured. A
+                    # warm-loop estimate of the bookkeeping (tick_overhead_s) was ~3x too small in
+                    # the frame (cold caches): the shared tick showed 0.125 ms, 0.042 timed inline
+                    run.tick_inner += perf() - start
+                    run.tick_calls += 1
+            except Exception as ex:  # noqa: BLE001
+                _accounting_failed(ex)
+
+    return wrapper
+
+
+def _timed_dispatch(stat: HookStat, fn: Callable[..., Any], hooked: str = "") -> Callable[..., Any]:
+    """The shared frame tick's hook: its own time only (the callbacks are timed on their mods)."""
+    perf = time.perf_counter
+
+    def wrapper(obj: Any, args: Any, ret: Any, func: Any) -> Any:
+        run = R.run
+        inner0 = run.tick_inner if run is not None else 0.0
+        start = perf()
+        result = fn(obj, args, ret, func)
+        end = perf()
+        try:
+            # Its own time: minus the callbacks with our wrappers' bookkeeping (each measured)
+            inner = (run.tick_inner - inner0) if run is not None else 0.0
+            _account(stat, R.run, start, end, max(0.0, end - start - inner), hooked, args)
+        except Exception as ex:  # noqa: BLE001
+            _accounting_failed(ex)
+        return result
+
+    return wrapper
+
+
+def _calibrate() -> tuple[float, float]:
+    """
+    What a hook wrapper and a frame tick wrapper add per call (bookkeeping into a scratch run), so
+    the report can say what the run itself cost and the shared tick's own time can leave ours out.
+    """
+    hook_stat, tick_stat = HookStat("", ""), HookStat("", "")
 
     def noop(*_: Any) -> None:
         return None
 
-    wrapped = _timed(stat, noop)
-    saved, R.run = R.run, None
+    wrapped = _timed(hook_stat, noop)
+    wrapped_tick = _timed_tick(tick_stat, noop)
+    saved, R.run = R.run, Run()
     try:
         n = 2000
         t0 = time.perf_counter()
@@ -269,17 +347,62 @@ def _calibrate() -> float:
         t0 = time.perf_counter()
         for _ in range(n):
             wrapped(None, None, None, None)
-        return max(0.0, (time.perf_counter() - t0 - bare) / n)
+        hook_s = max(0.0, (time.perf_counter() - t0 - bare) / n)
+        t0 = time.perf_counter()
+        for _ in range(n):
+            noop()
+        bare = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        for _ in range(n):
+            wrapped_tick()
+        return hook_s, max(0.0, (time.perf_counter() - t0 - bare) / n)
     finally:
         R.run = saved
 
 
-def _install(run: Run, func: str, kind: Any, ident: str, fn: Callable[..., Any], mod: str, label: str, module: str = "", attr: str = "") -> None:
+def _install(run: Run, func: str, kind: Any, ident: str, fn: Callable[..., Any], mod: str, label: str, module: str = "", attr: str = "",
+             wrap: Callable[..., Callable[..., Any]] = _timed) -> None:  # fmt: skip
     stat = run.stats.setdefault(f"{mod}\x00{label}", HookStat(mod, label))
-    wrapper = _timed(stat, fn, sys.intern(func))
+    wrapper = wrap(stat, fn, sys.intern(func))
     hooks.remove_hook(func, kind, ident)
     hooks.add_hook(func, kind, ident, wrapper)
     run.installed.append(Installed(func, kind, ident, fn, wrapper, module, attr))
+
+
+FRAMETICK_HUB = "_bl4_frametick"
+FRAMETICK_MOD = "BL4 Frame Tick (shared)"
+
+
+def _install_ticks(run: Run, skip: str) -> None:  # skip: our own frame tick key
+    """Times each mod's callback in the shared frame tick (on its mod) and the dispatcher's own share."""
+    hub = sys.modules.get(FRAMETICK_HUB)
+    owner = getattr(hub, "owner", None)
+    if hub is None or owner is None or not getattr(hub, "hooked", False):
+        return
+    for entry in list(hub.entries.values()):
+        mod = run.packages.get(entry.mod, entry.mod)
+        if entry.key == skip:
+            continue
+        label = f"{entry.key} [frame tick]"
+        stat = run.stats.setdefault(f"{mod}\x00{label}", HookStat(mod, label))
+        original = entry.fn
+        entry.fn = _timed_tick(stat, original)
+        run.ticks.append((entry, original, entry.fn))
+        if mod not in run.mods_seen:
+            run.mods_seen.append(mod)
+    func, ident = owner.TICK_FUNC, owner.HOOK_ID
+    if hooks.has_hook(func, hooks.Type.POST, ident):
+        _install(run, func, hooks.Type.POST, ident, owner._dispatch, FRAMETICK_MOD, f"dispatch [{_short(func)}]",  # noqa: SLF001
+                 owner.__name__, "_dispatch", wrap=_timed_dispatch)  # fmt: skip
+
+
+def _restore_ticks(run: Run) -> None:
+    """Puts the callbacks back, unless a reload or a disable replaced or removed one meanwhile."""
+    hub = sys.modules.get(FRAMETICK_HUB)
+    while run.ticks:
+        entry, original, wrapper = run.ticks.pop()
+        if hub is not None and hub.entries.get(entry.key) is entry and entry.fn is wrapper:
+            entry.fn = original
 
 
 def _short(func: str) -> str:
@@ -349,14 +472,14 @@ def elapsed() -> float:
 
 
 def start(length: float, skip: str, world: str = "") -> str:
-    """Starts a run (game thread). skip: our own mod's name (its tick isn't what's measured)."""
+    """Starts a run (game thread). skip: our own frame tick key (its tick isn't what's measured)."""
     if R.run is not None:
         stop()
     R.ks = unrealsdk.find_class("KismetSystemLibrary").ClassDefaultObject
     run = Run(length=length, world=world)
-    run.overhead_s = _calibrate()
+    run.overhead_s, run.tick_overhead_s = _calibrate()
     mods = mod_list()
-    enabled = [m for m in mods if getattr(m, "is_enabled", False) and m.name != skip]
+    enabled = [m for m in mods if getattr(m, "is_enabled", False)]
     run.mods_off = sum(1 for m in mods if not getattr(m, "is_enabled", False))
     run.mods_seen = [m.name for m in enabled]
     run.packages = _packages(mods)
@@ -375,6 +498,7 @@ def start(length: float, skip: str, world: str = "") -> str:
             continue
         owner = run.packages.get(module_name.partition(".")[0], module_name.partition(".")[0])
         _install(run, func, kind, ident, fn, owner, f"{attr} [{_short(func)}]", module_name, attr)
+    _install_ticks(run, skip)
     run.notes.append("Hooks other mods add outside mods_base, and their page scripts, can't be seen.")
     _drop_gc_callback()
     gc.callbacks.append(_on_gc)
@@ -396,7 +520,10 @@ def _restore(run: Run) -> list[str]:
     while run.installed:
         item = run.installed.pop()
         newer: Any = current.get(item.ident)
-        if item.attr and item.module in sys.modules:
+        if item.attr == "_dispatch":
+            # The shared frame tick's hook: a newer copy may have taken it over meanwhile
+            newer = getattr(getattr(sys.modules.get(FRAMETICK_HUB), "owner", None), "_dispatch", None)
+        elif item.attr and item.module in sys.modules:
             newer = getattr(sys.modules[item.module], item.attr, None)
         if newer is not None and newer is not item.original and getattr(newer, "__func__", None) is not getattr(item.original, "__func__", 0):
             left.append(item.ident)  # a hot reload re-registered its hook over our wrapper
@@ -422,6 +549,7 @@ def stop() -> dict[str, Any] | None:
     hooks.remove_hook(FRAME_FUNC, hooks.Type.POST, FRAME_ID)
     _drop_gc_callback()
     _restore(run)
+    _restore_ticks(run)
     threads = _thread_cpu(threading.get_native_id())
     return _results(run, span, max(engine_frames, 1), threads)
 
@@ -435,6 +563,7 @@ def abort() -> None:
     hooks.remove_hook(FRAME_FUNC, hooks.Type.POST, FRAME_ID)
     _drop_gc_callback()
     _restore(run)
+    _restore_ticks(run)
 
 
 def _results(run: Run, span: float, frames_n: int, threads: dict[tuple[int, str], float]) -> dict[str, Any]:
@@ -556,8 +685,8 @@ def _results(run: Run, span: float, frames_n: int, threads: dict[tuple[int, str]
         # The SDK's cost of calling each hook, outside every wrapper: the average back-to-back gap
         # (it includes our wrapper's entry, so it's an upper bound) times every hook call
         "dispatch_us": run.dispatch_s * 1e6 / run.dispatch_n if run.dispatch_n else 0.0,
-        "dispatch_ms_frame": (run.dispatch_s / run.dispatch_n * calls_all * 1000 / frames_n) if run.dispatch_n else 0.0,
-        "calls_frame": calls_all / frames_n,
+        "dispatch_ms_frame": (run.dispatch_s / run.dispatch_n * run.hook_calls * 1000 / frames_n) if run.dispatch_n else 0.0,
+        "calls_frame": run.hook_calls / frames_n,  # SDK hook calls (frame tick callbacks are Python calls)
         "gc": [{"gen": g, "count": e[0], "avg_ms": e[1] * 1000 / e[0], "worst_ms": e[2] * 1000} for g, e in sorted(gc_by_gen.items())],
         "spikes": [{"t": t, "label": f"{m}: {label}", "ms": took * 1000, "cause": why} for _f, t, m, label, took, why in slow if took > SPIKE_S][-30:],
         "shared_frames": shared_frames,
@@ -586,7 +715,7 @@ def verdict(ms_frame: float, worst_ms: float, threads_ms_s: float) -> str:
 
 def report_text(res: dict[str, Any]) -> str:
     lines = [
-        f"BL4 Mod Profiler, {res['at']}" + (f", {res['world']}" if res["world"] else ""),
+        f"BL4 Mod Menu performance report, {res['at']}" + (f", {res['world']}" if res["world"] else ""),
         f"{res['seconds']:.1f} s, {res['frames']} frames ({res['fps']:.0f} fps): median {res['median_ms']:.2f} ms,"
         f" p99 {res['p99_ms']:.2f} ms, worst {res['worst_ms']:.1f} ms, {res['hitches']} frames over {res['hitch_ms']:.0f} ms",
         f"All mods' hooks: {res['mods_ms_frame']:.3f} ms per frame ({res['share'] * 100:.1f}% of a median frame);"

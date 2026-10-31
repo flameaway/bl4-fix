@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import sys
 import time
+import traceback
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,31 +45,27 @@ from mods_base import (
     SliderOption,
     SpinnerOption,
     ValueOption,
+    SETTINGS_DIR,
     get_ordered_mod_list,
     get_pc,
     html_to_plain_text,
 )
-from unrealsdk import hooks, logging
-from unrealsdk.hooks import Type
+from unrealsdk import logging
 from unrealsdk.unreal import WeakPointer
 
-from . import health, keys, uilink, web
+from . import errors, frametick, health, keys, reporting, uilink, web
 from .widgets import DESIGN_H, DESIGN_W, Canvas, Color, Hint, call, make_overlay, viewport_scale, widget_lib
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-HOOK_ID = "bl4_mod_menu.menu"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
+# Ticked once per engine frame through the shared frametick (one camera hook for all our mods)
+TICK_KEY = "bl4_mod_menu.menu"
 # Above BL4 Direct's F6 panel (999998)
 Z_ORDER = 999999
 VK_PRIOR, VK_NEXT = 0x21, 0x22
 CHANGE_CHECK_S = 0.5
 MESSAGE_S = 8.0
 WEB_WAIT_S = 4.0
-# How long a posted Esc is held. A time, not a count of tick calls: the tick hook fires several
-# times a frame, so 6 calls could be under a frame at ~100 fps and the game missed the press (F8
+# How long a posted Esc is held. A time, not a count of ticks: when it counted camera hook calls
+# (several a frame), 6 could be under a frame at ~100 fps and the game missed the press (F8
 # opened nothing, traced 2026-10-24: one press held 18 ms worked, the misses didn't)
 ESC_HOLD_S = 0.08
 
@@ -154,8 +151,6 @@ class MenuState:
     web_wait: tuple[float, str | None, Callable[[], None] | None] | None = None
     signature: Any = None
     checked_at: float = 0.0
-    ticked_at: float = 0.0
-    last_call: float = 0.0
     scale: tuple[float, float] = (1.0, 1.0)
     hint: Hint | None = None
     canvas: Canvas | None = None
@@ -163,6 +158,12 @@ class MenuState:
     overlay: WeakPointer = field(default_factory=WeakPointer)
     hint_title: WeakPointer = field(default_factory=WeakPointer)
     hint_text: WeakPointer = field(default_factory=WeakPointer)
+    # _cursor_pc: the controller for the per-frame cursor read, and until when it's trusted
+    cursor_pc: WeakPointer = field(default_factory=WeakPointer)
+    cursor_pc_at: float = 0.0
+    cursor_at: float = 0.0  # the next cursor read in play (_tick)
+    cursor_up: bool = False  # a game menu showed (its cursor) at the last read, our panel not open
+    health_at: float = 0.0  # the next health.tick
 
 
 S = MenuState()
@@ -605,7 +606,7 @@ def _set_enabled(mod: Mod, enabled: bool) -> None:
             mod.disable()
         _say(f"{mod.name} {'enabled' if mod.is_enabled else 'disabled'}.")
     except Exception as ex:  # noqa: BLE001
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
         _say(f"Couldn't {'enable' if enabled else 'disable'} {mod.name}: {ex}", error=True)
     _draw()
 
@@ -617,7 +618,7 @@ def _set_value(mod: Mod, option: ValueOption[Any], value: Any) -> bool:
         option.value = value
         mod.save_settings()
     except Exception as ex:  # noqa: BLE001
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
         _say(f"Couldn't change {option.display_name}: {ex}", error=True)
         ok = False
     _draw()
@@ -632,7 +633,7 @@ def _press(option: ButtonOption) -> None:
             if option.on_press is not None:
                 option.on_press(option)
         except Exception as ex:  # noqa: BLE001
-            logging.exception(ex)
+            logging.error("".join(traceback.format_exception(ex)))
             _say(f"{option.display_name} failed: {ex}", error=True)
         if S.is_open:
             _draw()
@@ -764,7 +765,13 @@ def _release_after(seconds: float, vk: int) -> None:
 
 
 def press_escape() -> None:
-    """Esc for the game: opens the pause menu in gameplay, closes the open menu otherwise."""
+    """
+    What Esc does for the game: opens the pause menu in gameplay, closes the open menu otherwise.
+    The pause menu through the game's own UI state (the UI Link's pause_menu: no key sent); Esc is
+    posted to the window only where that doesn't apply (another menu up, a cinematic).
+    """
+    if uilink.pause_menu():
+        return
     if keys.post_key(keys.VK_ESCAPE, down=True):
         _release_after(ESC_HOLD_S, keys.VK_ESCAPE)
 
@@ -798,10 +805,9 @@ def open_preferred(mod_name: str | None = None, fallback: Callable[[], None] | N
         return
     own_menu = not pc.bShowMouseCursor
     if own_menu:
-        # In gameplay with no menu up: press Esc for the game, which opens the pause menu (the
-        # MODS screen lives in that page, whose scripts only run while a menu is showing). Hold it
-        # for a few frames: the game samples keys once a frame and ignores a same-frame tap. The
-        # page hides itself as it wakes until it has asked us what to show, so the pause menu
+        # In gameplay with no menu up: open the pause menu (the MODS screen lives in that page,
+        # whose scripts only run while a menu is showing), through its UI state (press_escape).
+        # The page hides itself as it wakes until it has asked us what to show, so the pause menu
         # itself never shows (menu.js, "Waking up").
         press_escape()
     web.request_open(mod_name, own_menu=own_menu)
@@ -817,8 +823,8 @@ def _close_other_panels() -> None:
     if state is not None and getattr(state, "is_open", False):
         try:
             panel.close()  # pyright: ignore[reportOptionalMemberAccess]
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as ex:  # noqa: BLE001
+            logging.warning(f"[Mod Menu] couldn't close BL4 Direct's panel: {ex}")
 
 
 def _other_panel_open() -> bool:
@@ -837,12 +843,31 @@ def _edge(vk: int) -> bool:
     return down and not was
 
 
-def _on_tick(*_: Any) -> None:
+def _on_tick() -> None:
+    """Once per engine frame (frametick)."""
     try:
+        errors.tick()  # logged errors for bug reports (a list check while there are none)
         _tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         logging.error(f"[Mod Menu] {ex!r}")
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
+
+
+# The controller the per-frame cursor read uses is looked up again this often (or when it's gone):
+# get_pc is a chain of property reads, ~10 us of every frame in play (2026-10-29)
+CURSOR_PC_S = 1.0
+CURSOR_S = 0.05  # the cursor read in play (see _tick)
+HEALTH_S = 0.25  # health.tick has nothing to do more often
+
+
+def _cursor_pc(now: float) -> Any:
+    """The player controller, from a WeakPointer kept CURSOR_PC_S (never a raw UObject across frames)."""
+    pc = S.cursor_pc() if now < S.cursor_pc_at else None
+    if pc is None:
+        pc = get_pc(possibly_loading=True)
+        S.cursor_pc = WeakPointer(pc) if pc is not None else WeakPointer()
+        S.cursor_pc_at = now + CURSOR_PC_S
+    return pc
 
 
 def _tick() -> None:
@@ -853,16 +878,23 @@ def _tick() -> None:
             keys.post_key(vk, down=False)
         return
 
-    now = time.perf_counter()
-    gap, S.last_call = now - S.last_call, now
-    if gap < FRAME_GAP_S and now - S.ticked_at < MAX_WAIT_S:
-        return
-    S.ticked_at = now
-    pc = get_pc(possibly_loading=True)
-    if pc is None:
-        return
-    web.tick(bool(pc.bShowMouseCursor) and not S.is_open)
-    health.tick()  # our mods' "needs an update" statuses and notice (a clock compare most frames)
+    now = time.monotonic()
+    link = web.Link
+    # Whether a game menu is up (the cursor) every frame while one is, a page poll waits, an action
+    # is queued or our panel shows; in play every CURSOR_S (nothing needs it sooner: the page's
+    # first poll when a menu opens gets a fresh read)
+    if S.is_open or link.menus_up or link.asked != link.answered or link.actions or now >= S.cursor_at:
+        # The panel open: the controller itself every frame (map changes); else the kept one
+        pc = get_pc(possibly_loading=True) if S.is_open else _cursor_pc(now)
+        if pc is None:
+            S.cursor_at = 0.0
+            return
+        S.cursor_at = now + CURSOR_S
+        S.cursor_up = bool(pc.bShowMouseCursor) and not S.is_open
+    web.tick(S.cursor_up)
+    if now >= S.health_at:
+        S.health_at = now + HEALTH_S
+        health.tick()  # our mods' "needs an update" statuses and notice
     uilink.tick()  # the BL4 UI Link, which loads our page (works once a frame across all our mods)
 
     if S.pending is not None:
@@ -938,13 +970,15 @@ def _tick() -> None:
 def install(open_key: Callable[[], str | None], game_dir: Path) -> None:
     global _open_key
     _open_key = open_key
+    errors.install(SETTINGS_DIR, game_dir / reporting.LOG_DIR / reporting.LOG_NAME)
+    reporting.start_log_keeper(game_dir)
     S.toggle_was_down = True  # if the key is held right now, wait for a fresh press
     try:
         web.start(game_dir)
     except OSError as ex:
         logging.error(f"[Mod Menu] couldn't start the link to the HTML menu ({ex}); using the basic menu")
     web.close_game_menu = press_escape
-    hooks.add_hook(TICK_FUNC, Type.POST, HOOK_ID, _on_tick)
+    frametick.add(TICK_KEY, _on_tick)
 
 
 def uninstall() -> None:
@@ -952,8 +986,9 @@ def uninstall() -> None:
     if S.release is not None:
         keys.post_key(S.release[1], down=False)
         S.release = None
-    hooks.remove_hook(TICK_FUNC, Type.POST, HOOK_ID)
+    frametick.remove(TICK_KEY)
     web.stop()
+    errors.uninstall()
 
 
 # endregion

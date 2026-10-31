@@ -13,17 +13,25 @@ SUBMODULES = (
     "bl4_mod_menu.pak",
     "bl4_mod_menu.pause_page",
     "bl4_mod_menu.main_page",
+    "bl4_mod_menu.signing",
     "bl4_mod_menu.updates",
     "bl4_mod_menu.hotload",
+    "bl4_mod_menu.codescan",
+    "bl4_mod_menu.undo",
     "bl4_mod_menu.repos",
+    "bl4_mod_menu.gamekeys",
     "bl4_mod_menu.keys",
-    "bl4_mod_menu.keyboard",
     "bl4_mod_menu.widgets",
     "bl4_mod_menu.model",
     "bl4_mod_menu.extensions",
+    "bl4_mod_menu.errors",
+    "bl4_mod_menu.report",
+    "bl4_mod_menu.reporting",
     "bl4_mod_menu.web",
     "bl4_mod_menu.menu",
 )
+# Only reloaded when the copy has them (the bug report collector is imported when first used)
+OPTIONAL = {"bl4_mod_menu.report"}
 
 old = sys.modules.get("bl4_mod_menu")
 if old is None:
@@ -38,6 +46,8 @@ else:
     for name in SUBMODULES:
         if name in sys.modules:
             importlib.reload(sys.modules[name])
+        elif name in OPTIONAL and importlib.util.find_spec(name) is None:
+            continue
         else:
             importlib.import_module(name)  # new since the game loaded the mod
     # Re-run the copy that's loaded: importlib.reload would look the package up again and could

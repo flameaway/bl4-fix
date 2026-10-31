@@ -9,6 +9,7 @@ after-exit helper run against the fake folder. Never touches the real game or la
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import http.server
 import io
@@ -27,6 +28,27 @@ REPO = Path(__file__).resolve().parents[1]
 RELEASE = REPO / "dist" / "release"
 sys.path.insert(0, str(REPO / "mods" / "bl4_mod_menu"))
 import updates  # noqa: E402  # plain Python: no SDK imports at module level
+
+sys.path.insert(0, str(REPO / "tools"))
+import release_key  # noqa: E402  # Windows' crypto helpers (signs with throwaway keys here)
+
+
+def throwaway_key() -> bytes:
+    """A new ECDSA P-256 private key blob, never saved."""
+    import ctypes  # noqa: PLC0415
+
+    _, bc = release_key._libs()
+    alg, key = release_key.handle(), release_key.handle()
+    release_key._ok(bc.BCryptOpenAlgorithmProvider(ctypes.byref(alg), "ECDSA_P256", None, 0), "open")
+    try:
+        release_key._ok(bc.BCryptGenerateKeyPair(alg, ctypes.byref(key), 256, 0), "generate")
+        release_key._ok(bc.BCryptFinalizeKeyPair(key, 0), "finalize")
+        try:
+            return release_key._export_bc(bc, key, "ECCPRIVATEBLOB")
+        finally:
+            bc.BCryptDestroyKey(key)
+    finally:
+        bc.BCryptCloseAlgorithmProvider(alg, 0)
 
 results: list[tuple[bool, str]] = []
 
@@ -70,7 +92,41 @@ def main() -> int:  # noqa: PLR0915
     updates.ALLOW_HTTP = True
     updates.manifest_url = lambda repo: f"{base}/{manifest['release']}/manifest.json"
     updates.asset_url = lambda repo, tag, asset: f"{base}/{tag}/{asset}"
+    # The served manifest is signed by a throwaway key the test trusts (never the real release key)
+    served = site / manifest["release"] / "manifest.json"
+    private = throwaway_key()
+    updates.TRUSTED_KEYS = (base64.b64encode(release_key.backup_public(private)).decode(),)
+
+    def sign_served() -> None:
+        raw = release_key._sign_backup(private, hashlib.sha256(served.read_bytes()).digest())
+        served.with_name("manifest.json.sig").write_bytes(base64.b64encode(raw) + b"\n")
+
+    sign_served()
     try:
+        # --- the release signature ---
+        good_manifest = served.read_bytes()
+        check(updates.fetch_manifest("x/y")["release"] == manifest["release"], "signed manifest accepted")
+        served.write_bytes(good_manifest.replace(b'"format": 1', b'"format": 1, "x": 1', 1))
+        try:
+            updates.fetch_manifest("x/y")
+            check(False, "a changed manifest is refused")
+        except RuntimeError as ex:
+            check("isn't signed by BL4 Fix's release key" in str(ex), "a changed manifest is refused (signature)")
+        served.write_bytes(good_manifest)
+        served.with_name("manifest.json.sig").unlink()
+        try:
+            updates.fetch_manifest("x/y")
+            check(False, "an unsigned release is refused")
+        except RuntimeError as ex:
+            check("isn't signed" in str(ex), "an unsigned release is refused")
+        sign_served()
+        trusted, updates.TRUSTED_KEYS = updates.TRUSTED_KEYS, (base64.b64encode(release_key.backup_public(throwaway_key())).decode(),)
+        try:
+            updates.fetch_manifest("x/y")
+            check(False, "a release signed by another key is refused")
+        except RuntimeError:
+            check(True, "a release signed by another key is refused")
+        updates.TRUSTED_KEYS = trusted
         game = tmp / "Borderlands 4"
         mods_dir = game / "sdk_mods"
         (mods_dir / "settings").mkdir(parents=True)
@@ -176,6 +232,40 @@ def main() -> int:  # noqa: PLR0915
 
         updates.check(game, repo="test/repo")
         check(updates.U.status == "current" and not updates.U.items, f"after: all current ({updates.U.message})")
+
+        # --- Roll back (undo.py): the helper kept the copy it replaced; Roll back stages it back ---
+        import undo  # noqa: PLC0415
+
+        rb = mods_dir / updates.ROLLBACK
+        latest_mm = str(manifest["mods"]["bl4_mod_menu"]["version"])
+        check(updates._zip_version(rb / "bl4_mod_menu.sdkmod", "bl4_mod_menu") == "0.0.1", "rollback: the helper kept the copy it replaced (0.0.1)")
+        check(not (rb / "bl4_dialog_skipper.sdkmod").exists(), "rollback: no copy for a newly installed mod")
+        undo.scan(game)
+        listed = {r["id"]: r for r in undo.B.rollbacks}
+        check(list(listed) == ["bl4_mod_menu"] and listed["bl4_mod_menu"]["installed"] == latest_mm and listed["bl4_mod_menu"]["previous"] == "0.0.1",
+              f"rollback: listed as {latest_mm} -> back to 0.0.1 ({undo.B.rollbacks})")  # fmt: skip
+        old_copy = (rb / "bl4_mod_menu.sdkmod").read_bytes()
+        undo.roll_back(game, "bl4_mod_menu")
+        check((updates.staging(game) / "bl4_mod_menu.sdkmod").read_bytes() == old_copy, "rollback: the earlier copy is staged as an update")
+        check(undo.B.jobs["bl4_mod_menu"]["state"] == "staged", "rollback: the Mod Menu itself (FRAMEWORK) just waits for the restart")
+        check(updates.held("bl4_mod_menu", latest_mm) and not updates.held("bl4_mod_menu", "999.0"), "rollback: the version rolled back from is held, a newer one isn't")
+        # The same bytes staged again (a reinstall) must not replace the kept copy
+        shutil.copyfile(mods_dir / "bl4_less_fog.sdkmod", updates.staging(game) / "bl4_less_fog.sdkmod")
+        (rb / "bl4_less_fog.sdkmod").write_bytes(b"older less fog")
+        res = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                             capture_output=True, text=True, timeout=60, check=False)  # fmt: skip
+        check(res.returncode == 0, f"rollback helper: ran ({res.stderr.strip()[:200]})")
+        check((mods_dir / "bl4_mod_menu.sdkmod").read_bytes() == old_copy, "rollback helper: the earlier copy moved back into sdk_mods")
+        check((rb / "bl4_mod_menu.sdkmod").read_bytes() == good, "rollback helper: the older kept copy replaced by the one it replaced")
+        check((rb / "bl4_less_fog.sdkmod").read_bytes() == b"older less fog", "rollback helper: an identical staged file keeps the older copy")
+        (rb / "bl4_less_fog.sdkmod").unlink()
+        updates.check(game, repo="test/repo")
+        check(not any(i["id"] == "bl4_mod_menu" for i in updates.U.items), "rollback: the version rolled back from isn't offered again this session")
+        updates.U.held = {}  # the next launch
+        updates.check(game, repo="test/repo")
+        check(any(i["id"] == "bl4_mod_menu" and i["state"] == "update" for i in updates.U.items), "rollback: offered again at the next launch")
+        undo.scan(game)
+        check([(r["installed"], r["previous"]) for r in undo.B.rollbacks] == [("0.0.1", latest_mm)], "rollback: now lists going back to the newer copy")
 
         # --- SDK too old for the release ---
         marker.write_text('[mod_manager]\ndisplay_version = "0.1"\n', encoding="utf-8")

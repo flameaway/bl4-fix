@@ -18,7 +18,7 @@ DEV = REPO / "mods" / "bl4_mod_menu"
 # Parents before children, libraries before the modules that use them (dev/reload_mod_menu.py's order)
 SUBMODULES = (
     "pak", "uilink", "uilink.pak", "health", "health.notice", "pause_page", "main_page", "updates", "hotload",
-    "repos", "keys", "keyboard", "widgets", "model", "extensions", "web", "menu",
+    "repos", "gamekeys", "keys", "widgets", "model", "extensions", "web", "menu",
 )  # fmt: skip
 
 old = sys.modules["bl4_mod_menu"]

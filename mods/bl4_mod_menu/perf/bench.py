@@ -23,10 +23,10 @@ from unrealsdk.unreal import WeakPointer
 from . import profiler
 from .notice import Notice
 
-REPORT = SETTINGS_DIR / "bl4_profiler_report.txt"
+REPORT = SETTINGS_DIR / "bl4_performance_report.txt"
 SETTLE_S = 2.0
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-CLEANUP_ID = "bl4_profiler.notice_cleanup"
+CLEANUP_ID = "bl4_mod_menu.perf_notice_cleanup"
 # Shorter than this after a map change: nothing worth showing
 MIN_S = 3.0
 
@@ -40,7 +40,7 @@ class B:
     pc: WeakPointer | None = None
     result: dict[str, Any] | None = None
     message = ""
-    skip = ""  # our own mod's name
+    skip = ""  # our own frame tick key (its tick isn't what's measured)
     on_change: Any = None
 
 
@@ -51,7 +51,7 @@ def _changed() -> None:
 
 def say(text: str) -> None:
     B.message = text
-    logging.info(f"[Mod Profiler] {text}")
+    logging.info(f"[Performance] {text}")
     _changed()
 
 
@@ -133,17 +133,17 @@ def finish(note: str) -> None:
         res["notes"].insert(0, note)
     B.result = res
     text = profiler.report_text(res)
-    threading.Thread(target=_write, args=(text,), name="bl4_profiler report", daemon=True).start()
+    threading.Thread(target=_write, args=(text,), name="bl4_mod_menu perf report", daemon=True).start()
     top = res["mods"][0] if res["mods"] else None
     say(
         f"Done: mods cost {res['mods_ms_frame']:.2f} ms per frame"
         + (f", most {top['name']} ({top['ms_frame']:.2f} ms)" if top and top["ms_frame"] >= 0.01 else "")
-        + ". Results on the Mod Profiler page.",
+        + ". Results: MODS > Performance.",
     )
     details = [f"All mods: {res['mods_ms_frame']:.2f} ms per frame ({res['share'] * 100:.0f}% of a frame)"]
     if top is not None and top["ms_frame"] >= 0.01:
         details.append(f"Most: {top['name']}, {top['ms_frame']:.2f} ms")
-    details.append("Results: MODS > BL4 Mod Profiler" + (f" ({note})" if note else ""))
+    details.append("Results: MODS > Performance" + (f" ({note})" if note else ""))
     _notice("Benchmark done", details)
 
 
@@ -160,7 +160,7 @@ def _write(text: str) -> None:
         tmp.write_text(text, encoding="utf-8")
         tmp.replace(REPORT)
     except OSError as ex:
-        logging.warning(f"[Mod Profiler] couldn't write {REPORT}: {ex}")
+        logging.warning(f"[Performance] couldn't write {REPORT}: {ex}")
 
 
 def open_report() -> bool:
@@ -172,9 +172,9 @@ def open_report() -> bool:
         try:
             os.startfile(REPORT)  # noqa: S606 - our own text file
         except OSError as ex:
-            logging.warning(f"[Mod Profiler] couldn't open the report: {ex}")
+            logging.warning(f"[Performance] couldn't open the report: {ex}")
 
-    threading.Thread(target=run, name="bl4_profiler open", daemon=True).start()
+    threading.Thread(target=run, name="bl4_mod_menu perf open", daemon=True).start()
     return True
 
 
@@ -189,7 +189,7 @@ def shutdown() -> None:
             hooks.remove_hook(TICK_FUNC, hooks.Type.POST, CLEANUP_ID)
             Notice.remove()
         except Exception as ex:  # noqa: BLE001
-            logging.error(f"[Mod Profiler] {ex!r}")
+            logging.error(f"[Performance] {ex!r}")
 
     hooks.add_hook(TICK_FUNC, hooks.Type.POST, CLEANUP_ID, once)
     B.pc = None

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import functools
 import importlib
+import traceback
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -246,7 +247,7 @@ def set_value(mod: Mod, option: ValueOption[Any], value: Any) -> None:
         option.value = value
         mod.save_settings()
     except Exception as ex:
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
         raise ChangeError(f"Couldn't change {option.display_name}: {ex}") from ex
 
 
@@ -280,7 +281,7 @@ def press(option: BaseOption) -> None:
     try:
         option.on_press(option)
     except Exception as ex:
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
         raise ChangeError(f"{option.display_name} failed: {ex}") from ex
 
 
@@ -291,7 +292,7 @@ def set_enabled(mod: Mod, enabled: bool) -> str:
         else:
             mod.disable()
     except Exception as ex:
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
         raise ChangeError(f"Couldn't {'enable' if enabled else 'disable'} {mod.name}: {ex}") from ex
     return f"{mod.name} {'enabled' if mod.is_enabled else 'disabled'}."
 

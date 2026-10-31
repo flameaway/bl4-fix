@@ -31,6 +31,7 @@ import itertools
 import json
 import threading
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -169,7 +170,7 @@ def apply(action: dict[str, Any]) -> None:
         ext.act(action)
     except Exception as ex:  # noqa: BLE001 - one broken extension shouldn't break the menu
         logging.error(f"[Mod Menu] {ext.key} failed: {ex!r}")
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
     ext.dirty = True
 
 

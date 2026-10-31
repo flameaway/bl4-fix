@@ -1,20 +1,21 @@
 "use strict";
 
-// The Mod Profiler's page in the BL4 Mod Menu screen (BL4 Mod Profiler in MODS).
+// The Performance page of the MODS screen (with Updates, Discover, Repositories): a benchmark of
+// what every mod costs. Was the separate BL4 Mod Profiler's page until 2026-10-29.
 //
-// Same shape as BL4 Direct Connect's page (bl4_direct/ui/direct.js): the Mod Menu runs this file in
-// its menu page (extensions.js) and again whenever it changes, so it tears its last copy down first,
-// then registers ns.modPages[MOD]: render() draws the page with the Mod Menu's own rows and buttons
-// above the mod's remaining options. Python (bl4_profiler/page.py) serves the state through
-// GET /ext?k=bl4profiler while the page shows and takes clicks as {op: "ext", ext: "bl4profiler", do}.
+// The Mod Menu runs this file in its menu page as one of its own extensions (extensions.js) and again
+// whenever it changes, so it tears its last copy down first, then registers ns.modPages[MOD], where
+// MOD is menu.js's key for this page: render() draws it with the Mod Menu's own rows and buttons.
+// Python (bl4_mod_menu/perf/page.py) serves the state through GET /ext?k=bl4perf while the page
+// shows and takes clicks as {op: "ext", ext: "bl4perf", do}.
 
 (function () {
     var ns = window.bl4ModMenu;
     if (!ns || !ns.ext) return;
     var ext = ns.ext;
-    var KEY = "bl4profiler";
-    var MOD = "BL4 Mod Profiler";
-    var BASE = "coui://uiresources/bl4profiler/";
+    var KEY = "bl4perf";
+    var MOD = "\u0002perf"; // menu.js's PERF
+    var BASE = "coui://uiresources/bl4modmenu/";
     var POLL_SHOWN_MS = 500;
     var WATCH_MS = 500;
     var CSS_MS = 2000;
@@ -25,7 +26,7 @@
         } catch (err) {}
     }
     // Survives reloads of this file; each copy takes a new, ever higher number
-    var pf = ns.bl4pf || (ns.bl4pf = {});
+    var pf = ns.bl4perfPage || (ns.bl4perfPage = {});
     pf.counter = Math.max(pf.counter || 0, pf.gen || 0) + 1;
     var gen = pf.counter;
     pf.gen = gen;
@@ -156,7 +157,7 @@
         }
         var busy = s.phase !== "idle";
         var runDesc = "Close the menus and play normally for " + Math.round(s.length) + " s: every enabled mod is timed meanwhile, " +
-            "other modders' mods too. A fight or the open world shows the most. The length is under More.";  // prettier-ignore
+            "other modders' mods too. A fight or the open world shows the most. Notices on screen say when it starts and ends.";  // prettier-ignore
         if (!busy) {
             api.row("Run benchmark", runDesc, [
                 button(api, "Run", function () {
@@ -175,6 +176,12 @@
                 })
             ]);
         }
+        api.row("Length", "How long a benchmark measures. Longer runs average out more, and catch rarer hitches.", [
+            value(api, Math.round(s.length) + " s"),
+            button(api, "Change", function () {
+                send({ do: "length" });
+            })
+        ]);
         if (s.message) api.row("Last message", s.message, [value(api, s.message, "bl4pf_small")]);
 
         var r = s.result;
@@ -224,16 +231,11 @@
         ]);
     }
 
-    function keep(node) {
-        var hide = (pf.state && pf.state.hide) || [];
-        return hide.indexOf(node.id) < 0 && hide.indexOf(node.name) < 0;
-    }
-
     // endregion
     // region Stylesheet
 
     function checkCss() {
-        ns.get(BASE + "profiler.css", function (css) {
+        ns.get(BASE + "perf.css", function (css) {
             if (!alive()) return;
             if (css && css !== pf.cssText) {
                 pf.cssText = css;
@@ -259,7 +261,7 @@
     };
 
     ns.modPages = ns.modPages || {};
-    ns.modPages[MOD] = { gen: gen, render: render, keep: keep, moreTitle: "More" };
+    ns.modPages[MOD] = { gen: gen, render: render };
     pf.stateText = null;
     checkCss();
     watch();

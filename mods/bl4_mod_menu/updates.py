@@ -23,6 +23,9 @@ updates itself where the player keeps it (installer/selfupdate.py). Setup apps b
 kept a ~100 MB copy of themselves in sdk_mods/.bl4_direct/ (and older Mod Menus downloaded each new
 one into it); remove_old_app() deletes it.
 
+Only GitHub is ever contacted, here and in repos.py: _get refuses any other host, also on a
+redirect (github_url, OPENER).
+
 Plain Python only (network and file I/O, never unreal calls): everything runs on worker threads
 and the game thread only reads snapshot().
 """
@@ -38,10 +41,17 @@ import sys
 import threading
 import time
 import tomllib
+import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
+
+try:
+    from . import signing
+except ImportError:  # offline tests import the folder's modules directly
+    import signing  # type: ignore[no-redef]
 
 try:
     from unrealsdk import logging
@@ -61,6 +71,8 @@ MAX_MANIFEST = 1 << 20
 MAX_ASSET = 256 << 20
 CHUNK = 64 << 10
 STAGING = ".bl4_updates"  # in sdk_mods
+# In sdk_mods: the copy each update replaced, one per mod (the helper keeps it; undo.py rolls back to it)
+ROLLBACK = ".bl4_rollback"
 # In sdk_mods: where setup apps before 2026-10-28 kept a copy of themselves (installer core.TOOLS_DIR_REL)
 APP_DIR = ".bl4_direct"
 APP_EXE = "BL4DirectSetup.exe"
@@ -76,6 +88,14 @@ STEAM_APP_ID = "1285190"  # bl4_direct.shared.STEAM_APP_ID
 SDK_MARKER_REL = Path("OakGame/Binaries/Win64/Plugins/unrealsdk.toml")
 # Tests serve releases from a local http server; real downloads must stay on https
 ALLOW_HTTP = False
+# The release keys a manifest must be signed by; None = signing.PUBLIC_KEYS (tests sign their own)
+TRUSTED_KEYS: tuple[str, ...] | None = None
+# The only hosts the Mod Menu connects to or opens (github_url): github.com and its subdomains
+# (api.github.com), and githubusercontent.com's (release files and raw files are served from there)
+GITHUB_HOSTS = ("github.com",)
+GITHUB_DOMAINS = (".github.com", ".githubusercontent.com")
+# A mod's module name (hotload.MOD_ID): what a manifest may name a mod
+MOD_ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 
 def _log(text: str, *, error: bool = False) -> None:
@@ -88,7 +108,9 @@ def manifest_url(repo: str) -> str:
 
 
 def asset_url(repo: str, tag: str, asset: str) -> str:
-    return f"https://github.com/{repo}/releases/download/{tag}/{asset}"
+    # The tag and name come from a manifest: quoted, so neither can reach another path on github.com
+    quote = urllib.parse.quote
+    return f"https://github.com/{repo}/releases/download/{quote(tag, safe='')}/{quote(asset, safe='')}"
 
 
 def releases_page(repo: str) -> str:
@@ -125,6 +147,16 @@ class U:
     announce = True
     # New mods the player was already shown (SEEN_FILE); None until read
     seen: set[str] | None = None
+    # BL4 Mod Menu's "Check for updates at launch", and whether the player hasn't answered the
+    # first-run question about it yet (until then nothing is checked on its own: the Updates page
+    # asks, with the "!")
+    auto = False
+    ask = False
+    # Sets the option for the page (Yes/No on the question, BL4 Fix's switch on Repositories)
+    chooser: Any = None
+    # Mod id -> the version the player rolled back from this session (undo.py): that version (and
+    # older) isn't offered again until the next launch. Session only on purpose
+    held: dict[str, str] = {}
 
 
 _lock = threading.Lock()
@@ -134,6 +166,22 @@ def _set(**changes: Any) -> None:
     with _lock:
         for key, value in changes.items():
             setattr(U, key, value)
+        U.revision += 1
+
+
+def held(mod_id: str, version: str) -> bool:
+    """The player rolled this mod back from this version (or a newer one) this session: don't offer it."""
+    rolled_from = U.held.get(mod_id)
+    return rolled_from is not None and version_key(version) <= version_key(rolled_from)
+
+
+def hold(mod_id: str, version: str) -> None:
+    """Roll back (undo.py): this session, updates.py and repos.py offer nothing up to `version` for the mod."""
+    with _lock:
+        U.held = {**U.held, mod_id: version}
+        U.items = [i for i in U.items if not (i["id"] == mod_id and held(mod_id, i["latest"]))]
+        if U.status == "available" and not any(i["state"] == "update" for i in U.items):
+            U.status, U.message = "current", "All mods are up to date."
         U.revision += 1
 
 
@@ -169,7 +217,29 @@ def snapshot() -> dict[str, Any]:
             "updates": waiting,
             "can_restart": can_restart(U.game_dir),
             "page": releases_page(U.repo),
+            "auto": U.auto,
+            "ask": U.ask,
         }
+
+
+def set_auto(on: bool, *, asked: bool) -> None:
+    """The option's value and whether the first-run question was answered (BL4 Mod Menu)."""
+    with _lock:
+        changed = (U.auto, U.ask) != (on, not asked)
+        U.auto, U.ask = on, not asked
+        if U.status == "idle":
+            U.message = (
+                "Choose below whether to check for updates automatically." if U.ask
+                else "" if on else "Automatic update checks are off: Check again asks GitHub now."
+            )  # fmt: skip
+        if changed:
+            U.revision += 1
+
+
+def choose(on: bool) -> None:
+    """The page's answer (or BL4 Fix's switch on Repositories): sets the option through the mod."""
+    if U.chooser is not None:
+        U.chooser(on)
 
 
 # region Reading what's installed
@@ -275,11 +345,45 @@ def installed_sdk(game_dir: Path) -> str | None:
 # region Network
 
 
+def github_url(url: Any) -> bool:
+    """Whether the Mod Menu may connect to this link: https on GitHub only (http to the offline tests'
+    local server). Every manifest, index, download and picture comes from there, BL4 Fix's and
+    other modders' alike, and so does every link it opens in the browser."""
+    if not isinstance(url, str):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = (parts.hostname or "").lower()
+        _ = parts.port  # a bad port raises
+    except ValueError:
+        return False
+    if parts.username is not None or parts.password is not None:
+        return False  # "https://github.com@evil.example" reads as GitHub and isn't
+    if parts.scheme.lower() == "http" and ALLOW_HTTP:
+        return host == "127.0.0.1"
+    return parts.scheme.lower() == "https" and (host in GITHUB_HOSTS or host.endswith(GITHUB_DOMAINS))
+
+
+class _GitHubRedirects(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only within GitHub, before connecting to it (release files redirect from
+    github.com to *.githubusercontent.com)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201, PLR0913
+        if not github_url(newurl):
+            raise urllib.error.HTTPError(newurl, code, f"refused a redirect away from GitHub ({newurl[:200]})", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+OPENER = urllib.request.build_opener(_GitHubRedirects())
+
+
 def _get(url: str, limit: int, progress: Any = None) -> bytes:
+    if not github_url(url):
+        raise RuntimeError(f"refused a link that isn't on GitHub: {url[:200]}")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:  # noqa: S310 - https only
-        if not (response.geturl().startswith("https://") or ALLOW_HTTP):
-            raise RuntimeError(f"refused a non-https download: {response.geturl()}")
+    with OPENER.open(request, timeout=TIMEOUT_S) as response:
+        if not github_url(response.geturl()):
+            raise RuntimeError(f"refused a download that isn't on GitHub: {response.geturl()[:200]}")
         data = bytearray()
         while chunk := response.read(CHUNK):
             data += chunk
@@ -291,11 +395,30 @@ def _get(url: str, limit: int, progress: Any = None) -> bytes:
 
 
 def fetch_manifest(repo: str) -> dict[str, Any]:
-    manifest = json.loads(_get(manifest_url(repo), MAX_MANIFEST).decode("utf-8"))
+    """The release's manifest.json, once its signature checks out (signing.py): a release on the right
+    repository that BL4 Fix's release key didn't sign (a taken-over account, a swapped file) is
+    refused, and with it every file it lists (they're pinned by the manifest's SHA-256s)."""
+    url = manifest_url(repo)
+    data = _get(url, MAX_MANIFEST)
+    try:
+        signature = _get(url + signing.SIGNATURE_SUFFIX, 4096)
+    except urllib.error.HTTPError as ex:
+        ex.close()  # (its response would be left open: a ResourceWarning in the log)
+        if ex.code != 404:  # noqa: PLR2004
+            raise
+        raise RuntimeError("the newest release isn't signed by BL4 Fix's release key, so nothing from it is trusted") from ex
+    try:
+        signing.verify(data, signature, TRUSTED_KEYS)
+    except signing.SignatureError as ex:
+        # Also when a release came out between the two downloads: the next check gets a matching pair
+        raise RuntimeError(f"{ex}, so nothing from it is trusted (try again later; if it stays, tell BL4 Fix)") from ex
+    manifest = json.loads(data.decode("utf-8"))
     if not isinstance(manifest, dict) or manifest.get("format") != MANIFEST_FORMAT:
         raise RuntimeError("the release's manifest.json is in a format this Mod Menu doesn't know; update it with BL4 Fix Setup")
     if not isinstance(manifest.get("mods"), dict) or not manifest.get("release"):
         raise RuntimeError("the release's manifest.json is incomplete")
+    # Mod names become file names (sdk_mods/<id>.sdkmod, settings/<id>.json): plain module names only
+    manifest["mods"] = {k: v for k, v in manifest["mods"].items() if isinstance(v, dict) and MOD_ID.match(str(k))}
     return manifest
 
 
@@ -313,7 +436,7 @@ def compare(game_dir: Path, manifest: dict[str, Any]) -> tuple[list[dict[str, An
         latest = str(info.get("version", ""))
         name = str(info.get("name") or mod_id)
         if mod_id in versions:
-            if not newer(latest, versions[mod_id]):
+            if not newer(latest, versions[mod_id]) or held(mod_id, latest):
                 continue
             staged = _zip_version(staged_dir / f"{mod_id}.sdkmod", mod_id) == latest
             items.append({
@@ -541,7 +664,7 @@ def helper_script(game_dir: Path, process: str = "Borderlands4") -> str:
     return (
         # Every copy of the game, not just this process (two instances, a dev tool)
         f"while (Get-Process -Name {process} -ErrorAction SilentlyContinue) {{ Start-Sleep 2 }}; "
-        f"$s = {_ps(staged)}; $m = {_ps(mods_dir)}; "
+        f"$s = {_ps(staged)}; $m = {_ps(mods_dir)}; $b = Join-Path $m '{ROLLBACK}'; "
         "for ($i = 0; $i -lt 30; $i++) { try { "
         # <id>.remove: a mod removed in game (repos.remove_mod) goes now
         "Get-ChildItem -LiteralPath $s -Filter *.remove -File | ForEach-Object { "
@@ -549,7 +672,13 @@ def helper_script(game_dir: Path, process: str = "Borderlands4") -> str:
         "if (Test-Path -LiteralPath $t) { Remove-Item -LiteralPath $t -Force -ErrorAction Stop }; "
         "Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop }; "
         "Get-ChildItem -LiteralPath $s -Filter *.sdkmod -File | ForEach-Object { "
-        "Move-Item -LiteralPath $_.FullName -Destination (Join-Path $m $_.Name) -Force -ErrorAction Stop }; "
+        "$t = Join-Path $m $_.Name; "
+        # The copy it replaces goes to .bl4_rollback first, one per mod (Roll back on the Updates
+        # page, undo.py); not when the staged file is the same bytes (that would lose the older copy)
+        "if ((Test-Path -LiteralPath $t -PathType Leaf) -and ((Get-FileHash -LiteralPath $t).Hash -ne (Get-FileHash -LiteralPath $_.FullName).Hash)) { "
+        "[IO.Directory]::CreateDirectory($b) | Out-Null; "
+        "Copy-Item -LiteralPath $t -Destination (Join-Path $b $_.Name) -Force -ErrorAction Stop }; "
+        "Move-Item -LiteralPath $_.FullName -Destination $t -Force -ErrorAction Stop }; "
         "break } catch { Start-Sleep 1 } }; "
         f"$r = Test-Path -LiteralPath (Join-Path $s '{RELAUNCH_FLAG}'); "
         "if (-not (Get-ChildItem -LiteralPath $s -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.sdkmod', '.remove' })) { "

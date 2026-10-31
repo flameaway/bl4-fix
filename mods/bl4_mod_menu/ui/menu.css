@@ -83,6 +83,41 @@
     margin: 0;
 }
 
+/* Pushes the search bar to the header's right end */
+.bl4mm_header_gap {
+    flex: 1 1;
+    min-width: 2rem;
+}
+
+/* The search bar (every page): the text box, its match count on its left */
+.bl4mm_searchbar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    align-self: center;
+    flex: 0 0 auto;
+}
+
+.bl4mm_search_field.bl4mm_textbox {
+    width: 46rem;
+}
+
+.bl4mm_search_field.bl4mm_search_hover {
+    border-color: rgba(228, 217, 206, 0.8);
+}
+
+.bl4mm_search_field.bl4mm_typing {
+    border-color: #ffbb00;
+}
+
+.bl4mm_search_count {
+    font-family: Industry-Normal;
+    font-size: 1.8rem;
+    color: #00c6ff;
+    margin: 0 1.6rem 0 0;
+    white-space: nowrap;
+}
+
 /* endregion */
 /* region Columns */
 
@@ -94,12 +129,29 @@
     min-height: 0;
 }
 
-.bl4mm_mods {
-    justify-content: flex-start;
-    width: 38rem;
-    flex: 0 0 38rem;
-    margin-right: 3rem;
+/* The mods column and the game's scrollbar next to it (like the page column's wrap below) */
+.bl4mm_mods_wrap {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    width: 40.6rem;
+    flex: 0 0 40.6rem;
+    height: 100%;
     max-height: 100%;
+    margin-right: 3rem;
+}
+
+.bl4mm_mods {
+    flex: 1 1;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    /* Room for the scrollbar on the right */
+    padding-right: 2.6rem;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-content: flex-start;
     overflow-y: scroll;
 }
 
@@ -219,6 +271,11 @@
 
 .bl4mm_status_warn {
     color: #ffbb00;
+}
+
+/* "2 errors" before a mod's status (errors.py) */
+.bl4mm_errors {
+    padding-right: 1rem;
 }
 
 .bl4mm_run.list_btn {
@@ -424,6 +481,17 @@
     font-size: 2rem;
     color: #e4d9ce;
     margin: 1rem 2rem;
+}
+
+/* What adding a repository (or installing another modder's mod) means: shown every time */
+.bl4mm_risk {
+    color: #ffbb00;
+}
+
+/* A switch that belongs to the row above (a repository's Check at launch) */
+.bl4mm_sub_row .menu_options_entry_text {
+    padding-left: 3rem;
+    opacity: 0.85;
 }
 
 /* A mod's one-line description under its Not installed row */
@@ -717,17 +785,21 @@
 
 /* The game's scrollbar on our page column: the game's look, but brighter and wider than its
    default (5 px at half opacity was easy to miss) */
-.bl4mm_options_wrap .oakscroll-v.is-active {
+.bl4mm_options_wrap .oakscroll-v.is-active,
+.bl4mm_mods_wrap .oakscroll-v.is-active {
     opacity: 0.9;
 }
 
-.bl4mm_options_wrap .oakscroll-v.is-active .oakscroll-vtrackVisual {
+.bl4mm_options_wrap .oakscroll-v.is-active .oakscroll-vtrackVisual,
+.bl4mm_mods_wrap .oakscroll-v.is-active .oakscroll-vtrackVisual {
     opacity: 1;
     width: 1rem;
 }
 
 .bl4mm_options_wrap .oakscroll-v.is-active:hover .oakscroll-vtrackVisual,
-.bl4mm_options_wrap .oakscroll-v.is-active.trackDragging .oakscroll-vtrackVisual {
+.bl4mm_options_wrap .oakscroll-v.is-active.trackDragging .oakscroll-vtrackVisual,
+.bl4mm_mods_wrap .oakscroll-v.is-active:hover .oakscroll-vtrackVisual,
+.bl4mm_mods_wrap .oakscroll-v.is-active.trackDragging .oakscroll-vtrackVisual {
     opacity: 1;
     width: 1.4rem;
 }

@@ -1,16 +1,15 @@
 """
-The Mod Profiler's page in the BL4 Mod Menu screen: Run / Stop, then the last run's results, one
+The Performance page in the MODS screen: Run / Stop, the length, then the last run's results, one
 row per mod (hover a row for its hooks and threads).
 
-Same approach as BL4 Direct Connect's page (bl4_direct/page.py): bl4_mod_menu.extensions loads
-ui/profiler.js into the menu page, which draws through the Mod Menu's ns.modPages hook with the
-Mod Menu's own rows and buttons. State comes from state() (GET /ext?k=bl4profiler), clicks back
-through act(). Without the Mod Menu the mod still works: the options and the `modprofile` command.
+menu.js draws it as one of its own pages (with Updates, Discover, Repositories); the content comes
+from ui/perf.js, which this module registers as one of the Mod Menu's extensions (extensions.py) and
+which draws through the same ns.modPages hook other mods' pages use, under the page key PAGE.
+State comes from state() (GET /ext?k=bl4perf), clicks back through act().
 """
 
 from __future__ import annotations
 
-import sys
 import time
 from importlib import resources
 from pathlib import Path
@@ -19,38 +18,31 @@ from typing import Any
 from mods_base import SETTINGS_DIR
 from unrealsdk import logging
 
+from .. import extensions
 from . import bench
 
-KEY = "bl4profiler"
-MOD_NAME = "BL4 Mod Profiler"
+KEY = "bl4perf"
 GAME_DIR = SETTINGS_DIR.parent.parent
-UI_DIR = "OakGame/Content/uiresources/bl4profiler"
-SCRIPT_URL = "coui://uiresources/bl4profiler/profiler.js"
-UI_FILES = ("profiler.js", "profiler.css")
+UI_DIR = "OakGame/Content/uiresources/bl4modmenu"
+SCRIPT_URL = "coui://uiresources/bl4modmenu/perf.js"
+UI_FILES = ("perf.js", "perf.css")
 PUBLISH_S = 1.0
+_PACKAGE = __package__.rpartition(".")[0]  # bl4_mod_menu: ui/ lives there
 # Loaded from a folder (the dev junction): its files can change while the game runs
-DEV = (Path(__file__).parent / "ui").is_dir()
-REGISTER_RETRY_S = 1.0
+DEV = (Path(__file__).parent.parent / "ui").is_dir()
 SHOWN_S = 1.5
-# Options the page replaces with its own rows (they stay in other menus)
-HIDDEN_OPTIONS = ("Run benchmark",)
+LENGTHS = (10.0, 20.0, 30.0, 60.0)
 
 
 class S:
     registered = False
-    register_tried = 0.0
     published_at = 0.0
     toast: dict[str, Any] = {"id": 0, "text": "", "error": False}  # noqa: RUF012
-    length = lambda: 20.0  # noqa: E731 - set by __init__ (the slider)
-
-
-def _exts() -> Any:
-    return sys.modules.get("bl4_mod_menu.extensions")
+    length = 20.0
 
 
 def changed() -> None:
-    if (exts := _exts()) is not None:
-        exts.changed(KEY)
+    extensions.changed(KEY)
 
 
 def toast(text: str, *, error: bool = False) -> None:
@@ -62,21 +54,25 @@ def state() -> dict[str, Any]:
     return {
         "phase": bench.B.phase,
         "left": round(bench.left(), 1),
-        "length": S.length(),
+        "length": S.length,
         "message": bench.B.message,
         "result": bench.B.result,
         "report": str(bench.REPORT),
         "toast": S.toast,
-        "hide": HIDDEN_OPTIONS,
     }
 
 
 def act(action: dict[str, Any]) -> None:
     match action.get("do"):
         case "run":
-            bench.request(S.length())
+            bench.request(S.length)
         case "stop":
             bench.cancel()
+        case "length":
+            # The next length in LENGTHS (cycles)
+            later = [x for x in LENGTHS if x > S.length]
+            S.length = later[0] if later else LENGTHS[0]
+            changed()
         case "open":
             if not bench.open_report():
                 toast("No report yet: run a benchmark first.", error=True)
@@ -84,34 +80,27 @@ def act(action: dict[str, Any]) -> None:
             pass
 
 
-def _register() -> None:
-    now = time.monotonic()
-    if S.registered or now - S.register_tried < REGISTER_RETRY_S:
-        return
-    S.register_tried = now
-    exts = _exts()
-    if exts is None:
-        return
+def register() -> None:
     publish(force=True)
-    exts.register(KEY, SCRIPT_URL, state, act)
+    extensions.register(KEY, SCRIPT_URL, state, act)
     S.registered = True
 
 
 def unregister() -> None:
-    if S.registered and (exts := _exts()) is not None:
-        exts.unregister(KEY)
+    if S.registered:
+        extensions.unregister(KEY)
     S.registered = False
 
 
 def publish(*, force: bool = False) -> None:
-    """Copies the page's files to uiresources/bl4profiler/, touching only files that changed."""
+    """Copies the page's files to uiresources/bl4modmenu/, touching only files that changed."""
     now = time.monotonic()
     if not force and now - S.published_at < PUBLISH_S:
         return
     S.published_at = now
     for name in UI_FILES:
         try:
-            content = (resources.files(__package__) / "ui" / name).read_bytes()
+            content = (resources.files(_PACKAGE) / "ui" / name).read_bytes()
             target = Path(GAME_DIR) / UI_DIR / name
             try:
                 if target.read_bytes() == content:
@@ -123,13 +112,10 @@ def publish(*, force: bool = False) -> None:
             tmp.write_bytes(content)
             tmp.replace(target)
         except OSError as ex:
-            logging.dev_warning(f"[Mod Profiler] couldn't publish {name}: {ex}")
+            logging.dev_warning(f"[Performance] couldn't publish {name}: {ex}")
 
 
 def tick() -> None:
-    """A few times a second, from the mod's tick."""
-    if not S.registered:
-        _register()
-        return
-    if DEV and (exts := _exts()) is not None and exts.page_open(KEY, SHOWN_S):
+    """A few times a second: dev hot reload of the page's files while it shows."""
+    if DEV and extensions.page_open(KEY, SHOWN_S):
         publish()

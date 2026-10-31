@@ -6,7 +6,11 @@ A repository is one of:
 - a GitHub repository, "owner/name" (or its github.com link). Its newest release's manifest.json
   is read, the same file tools/release.py writes for BL4 Fix. A repository without one still works:
   every .sdkmod attached to its newest release is offered (GitHub's release API, the tag as version).
-- any https link to a JSON index in the same format (download links relative to the index).
+- a link to a JSON index in the same format on GitHub (raw.githubusercontent.com: a file in a
+  repository; download links relative to the index).
+
+Everything comes from GitHub and nothing else: repositories, indexes, downloads, every redirect,
+pictures, and the web pages a player can open (updates.github_url).
 
     {"format": 1, "name": "My Mods", "description": "...", "homepage": "https://...",
      "mods": {"<module id>": {"name", "version", "asset" or "url", "sha256", "size",
@@ -18,15 +22,30 @@ docs/mod-repos.md is the guide for modders; tools/make_repo.py writes the index.
 BL4 Fix's own release (updates.REPO) is the built-in first repository: updates.py checks it, and
 its mods the player doesn't have show on Discover next to everyone else's.
 
-Installing: download (size cap, SHA-256 when given, a zip with one <id>/ folder holding
-__init__.py), write sdk_mods/<id>.sdkmod (a new file: nothing has it open) and load it at once
-(hotload.py, on the game thread). Updating a loaded mod: stage the new file in
+Installing: download (size cap, SHA-256 required from added repositories, a zip with one <id>/
+folder holding __init__.py); for another modder's mod, a confirm step first that says what its code
+uses (codescan.py; for an update, what's new since the installed copy) and keeps the checked bytes
+for the confirmed install; then write sdk_mods/<id>.sdkmod (a new file: nothing has it open) and
+load it at once (hotload.py, on the game thread). Updating a loaded mod: stage the new file in
 sdk_mods/.bl4_updates/ (the update helper moves it in after the game closes) and reload the mod
 from there. Removing: the mod turns off now, its file goes when the game closes.
 
+An added GitHub repository is pinned to GitHub's permanent number for it (_check_identity): a link
+that later leads to another repository (a taken-over name) is blocked until the player trusts it
+again.
+
 A mod belongs to the repository it was installed from (settings/bl4_mod_menu_repos.json), so an
 added repository can't replace another's mod or BL4 Fix's. Repositories run code on the player's PC
-like any mod: the page says so before one is added.
+like any mod: the page warns about it every time one is added. Each repository has its own "check
+at launch" switch (off unless the player turns it on when adding it); Refresh reads them all.
+
+A repository's index is someone else's file, so everything in it is treated as untrusted data
+(_entry, _from_manifest): known fields only, capped lengths, text without control or invisible
+characters, links on GitHub only (also after redirects, no user:password@ part), asset names
+without paths, no mod names the SDK, BL4 Fix,
+Python or Windows use, no repository calling itself BL4 Fix. The page shows all of it as plain text
+(textContent), never as HTML. Downloads are checked again (size, SHA-256, one <id>/ folder, no odd
+paths, an unpacked size cap). What a mod does once installed is up to the mod: that's the warning.
 
 Pictures (icons, screenshots) download on demand into a loose folder next to the page
 (uiresources/bl4modmenu/img/cache), PNG or JPEG only, size-capped, and the cache is trimmed at start.
@@ -44,6 +63,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import sys
 import threading
 import time
@@ -58,9 +78,11 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from . import hotload, updates
+    from . import codescan, hotload, undo, updates
 except ImportError:  # offline tests import the folder's modules directly
+    import codescan  # type: ignore[no-redef]
     import hotload  # type: ignore[no-redef]
+    import undo  # type: ignore[no-redef]
     import updates  # type: ignore[no-redef]
 
 try:
@@ -74,6 +96,12 @@ MAX_SOURCES = 32
 MAX_MODS = 300  # per repository
 MAX_INDEX = 2 << 20
 API_URL = "https://api.github.com/repos/{}/releases/latest"
+# GitHub's permanent number for a repository: a name taken over by someone else gets a new one
+REPO_API_URL = "https://api.github.com/repos/{}"
+ID_RECHECK_S = 3600.0  # a confirmed repository's number isn't asked again for this long (60 API calls an hour)
+# Downloads waiting for the player's OK on the install / update confirm step, all together
+REVIEW_HOLD_MAX = 192 << 20
+REVIEW_TTL_S = 30 * 60.0
 IMAGE_DIR = "OakGame/Content/uiresources/bl4modmenu/img/cache"
 IMAGE_URL = "coui://uiresources/bl4modmenu/img/cache/"
 MAX_IMAGE = 3 << 20
@@ -86,11 +114,37 @@ IDLE_S = 20.0
 GITHUB = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/?#].*)?$", re.I)
 SHORT = re.compile(r"^([\w.-]+)/([\w.-]+)$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+# A release asset's file name: no folders, no "..", nothing a link would read as more than a name
+ASSET = re.compile(r"^(?!\.)[\w.+-]{1,200}$")
+# Control characters (newline and tab are handled by _text) and the invisible ones that reorder or
+# hide text (bidi overrides, zero-width, fillers): a name with them can read as something it isn't
+HIDDEN_CHARS = re.compile(
+    "[\x00-\x08\x0b-\x1f\x7f-\x9f­؜ᅟᅠ᠎​-‏ -‮⁠-⁯"
+    "ㅤ︀-️﻿￹-￻]"
+)
+# Module names the SDK, Python and Windows already use: a repository may not ship a mod called that
+WINDOWS_NAMES = frozenset({"con", "prn", "aux", "nul", *(f"com{i}" for i in range(10)), *(f"lpt{i}" for i in range(10))})
+# BL4 Fix's mods (installer/catalog.py; dev/repos_test.py fails when one is missing here): no other
+# repository may list them, even before BL4 Fix's release was ever read (its update check off).
+# Newer ones come from that release's manifest (R.official_ids)
+OFFICIAL_IDS = frozenset({
+    "bl4_backpack_size", "bl4_builds", "bl4_crisp_numbers", "bl4_damage_meter", "bl4_dialog_skipper", "bl4_direct",
+    "bl4_echo_anywhere", "bl4_encore_tweaks", "bl4_grapple_anywhere", "bl4_ground_loot", "bl4_instant_tabs",
+    "bl4_instant_travel", "bl4_item_cards", "bl4_item_pictures", "bl4_less_fog", "bl4_minimap", "bl4_mod_menu", "bl4_perf",
+    "bl4_reroll", "bl4_respec", "bl4_save_backup", "bl4_shoot_open", "bl4_skip_intro", "bl4_slam_tweaks", "bl4_sprint_toggle",
+    "bl4_third_person", "bl4_tidy_pause", "bl4_unstuck", "bl4_uvh_teleport", "bl4_vehicles_anywhere", "bl4_weapondex",
+})  # fmt: skip
+# A download is unpacked by the zip reader to check it: caps against a zip bomb
+MAX_ZIP_FILES = 20_000
+MAX_UNPACKED = 1 << 30
+MAX_TOML = 1 << 20
 
 
 def _log(text: str, *, error: bool = False) -> None:
+    # A warning, not an error: these are about a repository (offline, refused, blocked), not faults
+    # in our code, and logged errors count on "Report a problem" (errors.py records logging.error)
     if logging is not None:
-        (logging.error if error else logging.info)(f"[Mod Menu] {text}")
+        (logging.warning if error else logging.info)(f"[Mod Menu] {text}")
 
 
 class R:
@@ -102,11 +156,14 @@ class R:
     events = 0
     game_dir: Path | None = None
     loaded = False  # the sources file was read
-    # Saved: what the player added, in order. {"key", "url", "added"}
+    # Saved: what the player added, in order. {"key", "url", "added", "auto"}; auto: read at launch
     sources: list[dict[str, Any]] = []
     # Saved: the player removed BL4 Fix's built-in repository (its mods leave Discover; installed
     # ones still update through updates.py)
     official_hidden = False
+    # Saved: the mod names in BL4 Fix's release (lowercase). Other repositories can't list them, even
+    # on a launch where BL4 Fix's release wasn't read (its update check off)
+    official_ids: frozenset[str] = frozenset()
     # key -> {"status": checking/ok/error, "message", "name", "description", "homepage", "release", "mode"}
     info: dict[str, dict[str, Any]] = {}
     # key -> {mod id: entry}, entries cleaned by _entry()
@@ -120,10 +177,13 @@ class R:
     updates: list[dict[str, Any]] = []
     # Remote picture url -> coui url ("" = couldn't be fetched)
     images: dict[str, str] = {}
-    # A repository checked and waiting for the player's OK: {"key", "url", "name", "count", "description"}
+    # A repository checked and waiting for the player's OK: {"key", "url", "name", "count", "description",
+    # "auto" (the check-at-launch switch on the confirm page, off at first)}
     pending: dict[str, Any] | None = None
     message: dict[str, Any] = {"id": 0, "text": "", "error": False}
     refreshing = False
+    # Repository key -> time.monotonic() its GitHub number was last confirmed (this session)
+    id_checked: dict[str, float] = {}
     # (what it was built from, its revision, json) of the last snapshot_json
     cached: tuple[Any, int, bytes] = (None, 0, b"")
 
@@ -152,10 +212,11 @@ def _say(text: str, *, error: bool = False) -> None:
     _log(text, error=error)
 
 
-def _job(mod_id: str, state: str, message: str = "", progress: tuple[int, int] | None = None) -> None:
+def _job(mod_id: str, state: str, message: str = "", progress: tuple[int, int] | None = None, **extra: Any) -> None:
+    """extra: more for the page (the confirm step's scan: kind, uses, new_uses, size, ...)."""
     with _lock:
         prev = R.jobs.get(mod_id, {}).get("state")
-        R.jobs[mod_id] = {"state": state, "message": message, "progress": list(progress or (0, 0))}
+        R.jobs[mod_id] = {"state": state, "message": message, "progress": list(progress or (0, 0)), **extra}
         R.revision += 1
         if prev != state:
             R.events += 1  # not for each downloaded chunk
@@ -193,7 +254,8 @@ class _Worker:
             try:
                 job()
             except Exception as ex:  # noqa: BLE001 - a job reports its own errors; never kill the worker
-                _log(f"{self.name}: {ex}", error=True)
+                if logging is not None:  # a job that crashed: a fault of ours, so a real error
+                    logging.error(f"[Mod Menu] {self.name}: {ex}")
 
 
 _net = _Worker("bl4_mod_menu.repos")
@@ -208,7 +270,9 @@ def settings_file(game_dir: Path) -> Path:
     return updates.sdk_mods(game_dir) / "settings" / SOURCES_FILE
 
 
-def _load(game_dir: Path) -> None:
+def _load(game_dir: Path, legacy_auto: bool = True) -> None:
+    """legacy_auto: what a repository saved before its own switch existed gets (the old "Check
+    repositories at launch" option's value: those were all read at launch)."""
     path = settings_file(game_dir)
     data: dict[str, Any] = {}
     try:
@@ -219,23 +283,41 @@ def _load(game_dir: Path) -> None:
         data = {}
     except (OSError, ValueError) as ex:
         # Keep the broken file for the player, start empty (the next save writes a good one)
+        bad = path.with_name(f"{path.stem}.bad-{int(time.time())}.json")
         try:
-            path.replace(path.with_name(f"{path.stem}.bad-{int(time.time())}.json"))
+            path.replace(bad)
+            kept = "set aside"
         except OSError:
-            pass
-        _log(f"{path.name} couldn't be read ({ex}); set aside", error=True)
+            try:
+                shutil.copyfile(path, bad)
+                kept = "copied aside"
+            except OSError as copy_ex:
+                kept = f"couldn't be kept ({copy_ex}): the next save overwrites it"
+        _log(f"{path.name} couldn't be read ({ex}); {kept}", error=True)
         data = {}
     sources = []
     for item in data.get("sources") or []:
+        if isinstance(item, dict) and normalize(str(item.get("url") or item.get("key") or "")) is None:
+            # Saved by a Mod Menu that took links to any site (before 0.2.3): only GitHub now
+            _log(f"dropped the repository {str(item.get('url') or item.get('key'))[:200]}: only GitHub repositories are allowed now")
         if isinstance(item, dict) and (norm := normalize(str(item.get("url") or item.get("key") or ""))):
             if all(s["key"] != norm for s in sources) and norm != official_key():
-                sources.append({"key": norm, "url": str(item.get("url") or norm), "added": item.get("added", 0)})
+                auto = item.get("auto")
+                sources.append({"key": norm, "url": str(item.get("url") or norm), "added": item.get("added", 0),
+                                "auto": auto if isinstance(auto, bool) else legacy_auto})  # fmt: skip
+                # GitHub's number for it (_check_identity), and the other one its link led to last
+                for field in ("repo_id", "blocked_id"):
+                    if isinstance(rid := item.get(field), int) and not isinstance(rid, bool) and rid > 0:
+                        sources[-1][field] = rid
     installed = {
         str(k): {"repo": str(v.get("repo", "")), "version": str(v.get("version", "")), "sha256": str(v.get("sha256", ""))}
         for k, v in (data.get("installed") or {}).items()
         if isinstance(v, dict) and hotload.MOD_ID.match(str(k))
     }
-    _set(sources=sources[:MAX_SOURCES], installed=installed, official_hidden=data.get("official_hidden") is True, loaded=True)
+    ids = data.get("official_ids")
+    official_ids = frozenset(str(i).lower() for i in ids if isinstance(i, str) and hotload.MOD_ID.match(i)) if isinstance(ids, list) else frozenset()
+    _set(sources=sources[:MAX_SOURCES], installed=installed, official_hidden=data.get("official_hidden") is True,
+         official_ids=official_ids, loaded=True)  # fmt: skip
 
 
 def _save() -> None:
@@ -243,9 +325,11 @@ def _save() -> None:
     if game_dir is None:
         return
     with _lock:
-        data = {"format": 1, "sources": [dict(s) for s in R.sources], "installed": {k: dict(v) for k, v in R.installed.items()}}
+        data: dict[str, Any] = {"format": 1, "sources": [dict(s) for s in R.sources], "installed": {k: dict(v) for k, v in R.installed.items()}}
         if R.official_hidden:
             data["official_hidden"] = True
+        if R.official_ids:
+            data["official_ids"] = sorted(R.official_ids)
     updates._write(settings_file(game_dir), json.dumps(data, indent=4).encode("utf-8"))
 
 
@@ -266,7 +350,7 @@ def normalize(text: str) -> str | None:
         return f"{m.group(1)}/{m.group(2)}"
     if (m := SHORT.match(text)) and not text.lower().startswith(("http", "www.")):
         return f"{m.group(1)}/{m.group(2)}"
-    if text.lower().startswith("https://") or (updates.ALLOW_HTTP and text.lower().startswith("http://")):
+    if safe_url(text):
         return text
     return None
 
@@ -275,31 +359,77 @@ def is_github(key: str) -> bool:
     return SHORT.match(key) is not None and not key.lower().startswith("http")
 
 
-def _text(value: Any, limit: int) -> str:
-    return str(value or "")[:limit] if isinstance(value, (str, int, float)) else ""
+# What a repository's index may say: it's someone else's file, so all of it is untrusted data
+
+
+def _text(value: Any, limit: int, *, lines: bool = False) -> str:
+    """A text field of an index: plain text, no control or invisible characters, capped. lines:
+    keeps line breaks (descriptions, notes); else it's one line (names, versions)."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return ""
+    text = str(value)[: limit * 2].replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\t", " ") if lines else text.replace("\n", " ").replace("\t", " ")
+    return HIDDEN_CHARS.sub("", text).strip()[:limit]
+
+
+def safe_url(url: Any) -> bool:
+    """
+    A link the Mod Menu may fetch or open for a repository: on GitHub only (updates.github_url:
+    https, github.com or githubusercontent.com, no user:password@ part), and no spaces, control or
+    invisible characters or backslashes.
+    """
+    if not isinstance(url, str) or not url or len(url) > 1000 or "\\" in url or HIDDEN_CHARS.search(url):
+        return False
+    if any(c.isspace() for c in url):
+        return False
+    return updates.github_url(url)
 
 
 def _https(value: Any, base: str = "") -> str:
     if not isinstance(value, str) or not value or len(value) > 1000:
         return ""
-    url = urllib.parse.urljoin(base, value) if base else value
-    ok = url.lower().startswith("https://") or (updates.ALLOW_HTTP and url.lower().startswith("http://"))
-    return url if ok else ""
+    try:
+        url = urllib.parse.urljoin(base, value) if base else value
+    except ValueError:
+        return ""
+    return url if safe_url(url) else ""
 
 
-def _entry(mod_id: str, raw: Any, download: str, *, base: str = "", version_from_tag: str = "") -> dict[str, Any] | None:
+def reserved(mod_id: str) -> bool:
+    """A module name no added repository may list: the SDK's and the Mod Menu's, the mods BL4 Fix
+    needs or ships, Python's own modules, Windows device names. Case-blind (so are Windows' files)."""
+    low = mod_id.lower()
+    return (
+        low in {m.lower() for m in hotload.FRAMEWORK | hotload.REQUIRED}
+        or low in OFFICIAL_IDS
+        or low in R.official_ids
+        or low in WINDOWS_NAMES
+        or low in sys.stdlib_module_names
+    )
+
+
+def _size(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        size = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return size if 0 < size <= updates.MAX_ASSET else 0
+
+
+def _entry(mod_id: str, raw: Any, download: str, *, base: str = "", version_from_tag: str = "",
+           check_reserved: bool = True) -> dict[str, Any] | None:  # fmt: skip
     """A repository's mod, cleaned: only known fields, capped lengths, https links (pictures may be
-    relative to base, the index's url)."""
+    relative to base, the index's url). None for a mod no repository may list."""
     if not isinstance(raw, dict) or not hotload.MOD_ID.match(mod_id) or mod_id in hotload.FRAMEWORK:
+        return None
+    if check_reserved and reserved(mod_id):
         return None
     games = raw.get("games") or raw.get("supported_games")
     if isinstance(games, list) and games and not any(str(g).upper() in ("BL4", "OAK2") for g in games):
         return None
     sha = str(raw.get("sha256") or "").lower()
-    try:
-        size = int(raw.get("size") or 0)
-    except (TypeError, ValueError):
-        size = 0
     pictures = raw.get("images") if isinstance(raw.get("images"), list) else []
     images = [u for u in (_https(i, base) for i in pictures[:MAX_IMAGES]) if u]
     return {
@@ -308,47 +438,74 @@ def _entry(mod_id: str, raw: Any, download: str, *, base: str = "", version_from
         "version": _text(raw.get("version"), 32) or version_from_tag,
         "author": _text(raw.get("author"), 80),
         "blurb": _text(raw.get("blurb"), 300),
-        "description": _text(raw.get("description"), 4000),
-        "notes": _text(raw.get("notes"), 2000),
+        "description": _text(raw.get("description"), 4000, lines=True),
+        "notes": _text(raw.get("notes"), 2000, lines=True),
         "homepage": _https(raw.get("homepage")),
         "icon": _https(raw.get("icon"), base),
         "images": images,
         "sha256": sha if SHA256.match(sha) else "",
-        "size": size if 0 < size <= updates.MAX_ASSET else 0,
+        "size": _size(raw.get("size")),
         "download": download,
         "tag_version": bool(version_from_tag),
     }
 
 
-def _from_manifest(manifest: Any, download_base: Callable[[str], str], index_url: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+def _asset(value: Any) -> str:
+    """A release asset's file name, or "" if it's anything more than a plain name."""
+    return value if isinstance(value, str) and ASSET.match(value) else ""
+
+
+def _from_manifest(manifest: Any, download_base: Callable[[str], str], index_url: str, *,
+                   official: bool = False) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:  # fmt: skip
     if not isinstance(manifest, dict) or manifest.get("format") != updates.MANIFEST_FORMAT or not isinstance(manifest.get("mods"), dict):
         raise RuntimeError("this isn't a mod repository (no manifest in a format this Mod Menu knows)")
     mods: dict[str, dict[str, Any]] = {}
+    unchecked: list[str] = []  # mods an added repository lists without a SHA-256: left out
     for mod_id, raw in list(manifest["mods"].items())[:MAX_MODS]:
         if not isinstance(raw, dict):
             continue
-        url = _https(raw.get("url")) or (download_base(str(raw["asset"])) if isinstance(raw.get("asset"), str) and "/" not in raw["asset"] and "\\" not in raw["asset"] else "")
-        if url and (entry := _entry(str(mod_id), raw, url, base=index_url)) is not None:
+        asset = _asset(raw.get("asset"))
+        url = _https(raw.get("url")) or (_https(download_base(asset)) if asset else "")
+        if url and (entry := _entry(str(mod_id), raw, url, base=index_url, check_reserved=not official)) is not None:
+            if not official and not entry["sha256"]:
+                unchecked.append(entry["id"])
+                continue
             mods[entry["id"]] = entry
     info = {
         "name": _text(manifest.get("name"), 80),
-        "description": _text(manifest.get("description"), 1000),
+        "description": _text(manifest.get("description"), 1000, lines=True),
         "homepage": _https(manifest.get("homepage")),
         "release": _text(manifest.get("release"), 60),
         "mode": "manifest",
+        "no_checksum": unchecked[:20],
     }
     return info, mods
 
 
+def _own_name(name: str, key: str) -> str:
+    """An added repository's name, unless it passes itself off as BL4 Fix (then its link)."""
+    letters = re.sub(r"[^a-z0-9]", "", name.lower())
+    return key if not letters or "bl4fix" in letters else name
+
+
+def _no_constant(name: str) -> None:
+    raise ValueError(f"{name} isn't a number JSON allows")
+
+
 def _get_json(url: str, headers: dict[str, str] | None = None) -> Any:
+    if not safe_url(url):
+        raise RuntimeError(f"refused the link {url[:200]}")
     request = urllib.request.Request(url, headers={"User-Agent": updates.USER_AGENT, "Cache-Control": "no-cache", **(headers or {})})
-    with urllib.request.urlopen(request, timeout=updates.TIMEOUT_S) as response:  # noqa: S310 - https checked
-        if not (response.geturl().startswith("https://") or updates.ALLOW_HTTP):
-            raise RuntimeError(f"refused a non-https link: {response.geturl()}")
+    with updates.OPENER.open(request, timeout=updates.TIMEOUT_S) as response:
+        if not safe_url(response.geturl()):
+            raise RuntimeError(f"refused the link {response.geturl()[:200]}")
         data = response.read(MAX_INDEX + 1)
     if len(data) > MAX_INDEX:
         raise RuntimeError("the repository's index is too large")
-    return json.loads(data.decode("utf-8"))
+    try:
+        return json.loads(data.decode("utf-8"), parse_constant=_no_constant)
+    except RecursionError as ex:
+        raise ValueError("nested too deeply") from ex
 
 
 def _from_github_api(key: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
@@ -358,6 +515,7 @@ def _from_github_api(key: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]
         raise RuntimeError("GitHub answered something unexpected")
     tag = _text(release.get("tag_name"), 60)
     mods: dict[str, dict[str, Any]] = {}
+    unchecked: list[str] = []  # assets GitHub gives no SHA-256 digest for: left out
     for asset in (release.get("assets") or [])[:MAX_MODS]:
         if not isinstance(asset, dict):
             continue
@@ -372,11 +530,16 @@ def _from_github_api(key: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]
             "notes": release.get("body") or "",
         }
         if (entry := _entry(name[: -len(".sdkmod")], raw, _https(asset.get("browser_download_url")), version_from_tag=tag)) and entry["download"]:
+            if not entry["sha256"]:
+                unchecked.append(entry["id"])
+                continue
             mods[entry["id"]] = entry
     if not mods:
+        if unchecked:
+            raise RuntimeError(f"{key}'s newest release has no .sdkmod files with a SHA-256 checksum (GitHub gave no digest for {', '.join(unchecked[:5])})")
         raise RuntimeError(f"{key}'s newest release has no .sdkmod files")
     info = {"name": key, "description": _text(release.get("name"), 200), "homepage": f"https://github.com/{key}",
-            "release": tag, "mode": "github"}  # fmt: skip
+            "release": tag, "mode": "github", "no_checksum": unchecked[:20]}  # fmt: skip
     return info, mods
 
 
@@ -384,8 +547,116 @@ def api_url(key: str) -> str:
     return API_URL.format(key)
 
 
+# Takeover detection: GitHub's permanent number of the repository a link leads to
+
+# Shown on a repository's row when its link now leads to a different repository
+TAKEOVER_TEXT = (
+    "This link now points to a different repository than the one you added: updates from it are blocked."
+    " Remove it, or press Trust again if you know why."
+)
+
+
+def repo_ident(key: str) -> str | None:
+    """The GitHub repository ("owner/name") behind an added repository: the key itself, or for an
+    index file on raw.githubusercontent.com the repository it's in. None: not on a repository."""
+    if is_github(key):
+        return key
+    try:
+        parts = urllib.parse.urlsplit(key)
+    except ValueError:
+        return None
+    if (parts.hostname or "").lower() != "raw.githubusercontent.com":
+        return None
+    bits = [urllib.parse.unquote(b) for b in parts.path.split("/") if b]
+    return f"{bits[0]}/{bits[1]}" if len(bits) >= 2 and SHORT.match(f"{bits[0]}/{bits[1]}") else None  # noqa: PLR2004
+
+
+def repo_api_url(ident: str) -> str:
+    return REPO_API_URL.format(ident)
+
+
+def _repo_id(ident: str) -> int:
+    """GitHub's number for the repository (blocking, workers only; one API call)."""
+    data = _get_json(repo_api_url(ident), {"Accept": "application/vnd.github+json"})
+    rid = data.get("id") if isinstance(data, dict) else None
+    if isinstance(rid, bool) or not isinstance(rid, int) or not 0 < rid < 1 << 63:
+        raise RuntimeError("GitHub didn't say which repository it is")
+    return rid
+
+
+def _check_identity(key: str) -> None:
+    """
+    After an added repository was read: is its link still the repository the player added? Pins
+    GitHub's number the first time (source "repo_id"); another number later blocks the repository
+    (source "blocked_id", saved: it stays blocked until the number matches again or the player
+    trusts it again). Asked at most once an hour per repository; when GitHub can't be asked
+    (offline, rate limit) nothing is blocked and the last known state stays. Workers only.
+    """
+    ident = repo_ident(key)
+    if ident is None:
+        return
+    with _lock:
+        source = next((s for s in R.sources if s["key"] == key), None)
+        last = R.id_checked.get(key)
+    if source is None or (last is not None and time.monotonic() - last < ID_RECHECK_S):
+        return
+    try:
+        rid = _repo_id(ident)
+    except Exception as ex:  # noqa: BLE001 - never block on a failed check
+        with _lock:
+            R.info[key] = {**R.info.get(key, {}), "id_note": f"Couldn't confirm it's still the repository you added ({_reason(ex)}); asked again at the next check."}
+            R.revision += 1
+            R.events += 1
+        _log(f"repository {key}: couldn't confirm which repository it is ({_reason(ex)})")
+        return
+    with _lock:
+        R.id_checked[key] = time.monotonic()
+        before = (source.get("repo_id"), source.get("blocked_id"))
+        if not source.get("repo_id"):
+            source["repo_id"] = rid  # added before this check existed, or GitHub couldn't be asked then
+        if source["repo_id"] == rid:
+            source.pop("blocked_id", None)
+        else:
+            source["blocked_id"] = rid
+        changed = before != (source.get("repo_id"), source.get("blocked_id"))
+        R.info[key] = {**R.info.get(key, {}), "id_note": ""}
+        R.revision += 1
+        R.events += 1
+    if changed:
+        _save()
+        if source.get("blocked_id"):
+            _log(f"repository {key}: its link now leads to another GitHub repository (number {rid}, added as {source['repo_id']}): blocked", error=True)
+
+
+def trust_again(key: str) -> bool:
+    """The player pressed Trust again on a blocked repository (after its warning): the repository
+    the link leads to now is the one they trust from here on."""
+    with _lock:
+        source = next((s for s in R.sources if s["key"] == key), None)
+        if source is None or not source.get("blocked_id"):
+            return False
+        source["repo_id"] = source.pop("blocked_id")
+        R.id_checked[key] = time.monotonic()
+        info = R.info.get(key, {})
+        count = len(R.catalog.get(key, {}))
+        R.info[key] = {**info, "status": "ok" if key in R.catalog else "", "message": f"{count} mod{'s' if count != 1 else ''}" if key in R.catalog else ""}
+        R.revision += 1
+        R.events += 1
+    _net.put(lambda: (_save(), _recompute()))
+    _say(f"Trusting {_source_name(key)} again: its mods are back on Discover and Updates.")
+    return True
+
+
 def fetch(key: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """(repository info, its mods). Blocking: workers only."""
+    """(repository info, its mods). Blocking: workers only. Mods listed without a SHA-256 are left
+    out (logged once per check)."""
+    info, mods = _fetch(key)
+    if unchecked := info.get("no_checksum"):
+        _log(f"repository {key}: left out {len(unchecked)} mod{'s' if len(unchecked) != 1 else ''} without a SHA-256 checksum ({', '.join(unchecked)})")
+    return info, mods
+
+
+def _fetch(key: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     if is_github(key):
         url = updates.manifest_url(key)
         try:
@@ -394,13 +665,15 @@ def fetch(key: str) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
             if ex.code != 404:  # noqa: PLR2004
                 raise
             return _from_github_api(key)
-        tag = str(manifest.get("release") or "") if isinstance(manifest, dict) else ""
+        tag = _text(manifest.get("release"), 60) if isinstance(manifest, dict) else ""
         info, mods = _from_manifest(manifest, lambda asset: updates.asset_url(key, tag, asset), url)
         info["homepage"] = info["homepage"] or f"https://github.com/{key}"
-        info["name"] = info["name"] or key
+        info["name"] = _own_name(info["name"], key)
         return info, mods
     manifest = _get_json(key)
-    return _from_manifest(manifest, lambda asset: urllib.parse.urljoin(key, asset), key)
+    info, mods = _from_manifest(manifest, lambda asset: urllib.parse.urljoin(key, asset), key)
+    info["name"] = _own_name(info["name"], key)
+    return info, mods
 
 
 def _official() -> tuple[dict[str, Any], dict[str, dict[str, Any]]] | None:
@@ -411,7 +684,7 @@ def _official() -> tuple[dict[str, Any], dict[str, dict[str, Any]]] | None:
     key = official_key()
     tag = str(manifest.get("release") or "")
     try:
-        info, mods = _from_manifest(manifest, lambda asset: updates.asset_url(key, tag, asset), updates.manifest_url(key))
+        info, mods = _from_manifest(manifest, lambda asset: updates.asset_url(key, tag, asset), updates.manifest_url(key), official=True)
     except RuntimeError:
         return None
     info["name"] = OFFICIAL_NAME
@@ -446,7 +719,7 @@ def _announce() -> None:
     _recompute()  # with BL4 Fix's release as just read
     with _lock:
         checked = len(R.sources) + (0 if R.official_hidden else 1)
-        failed = [s["key"] for s in R.sources if R.info.get(s["key"], {}).get("status") == "error"]
+        failed = [s["key"] for s in R.sources if R.info.get(s["key"], {}).get("status") == "error" or s.get("blocked_id")]
         new, waiting = len(R.discover), len(R.updates)
     parts = [f"{new} new mod{'s' if new != 1 else ''} on Discover"]
     if waiting:
@@ -472,6 +745,7 @@ def _refresh(keys: list[str] | None, *, announce: bool = False) -> None:
                     R.catalog[key] = mods
                     R.revision += 1
                     R.events += 1
+                _check_identity(key)  # still the repository the player added? (else its mods leave the lists)
             except Exception as ex:  # noqa: BLE001 - offline, gone, not a repository: say so
                 with _lock:
                     R.info[key] = {**R.info.get(key, {}), "status": "error", "message": _reason(ex)}
@@ -502,7 +776,7 @@ def add_async(text: str, replace: str | None = None) -> None:
     """
     key = normalize(text)
     if key is None:
-        _say("That isn't a repository link: use owner/name, a github.com link, or an https link to an index.", error=True)
+        _say("That isn't a GitHub repository: use owner/name, its github.com link, or a raw.githubusercontent.com link to an index.", error=True)
         return
     if key == official_key():
         if replace is not None:
@@ -533,12 +807,22 @@ def add_async(text: str, replace: str | None = None) -> None:
             _set(pending=None)
             _say(f"Couldn't add {key}: {_reason(ex)}", error=True)
             return
+        # GitHub's number for the repository, pinned when it's added (_check_identity)
+        rid, id_note = None, ""
+        if (ident := repo_ident(key)) is not None:
+            try:
+                rid = _repo_id(ident)
+            except Exception as ex:  # noqa: BLE001 - added all the same; pinned at its next check
+                id_note = f"Couldn't ask GitHub which repository this is ({_reason(ex)}): it's pinned at the next check."
         with _lock:
             if R.pending is None or R.pending["key"] != key:
                 return  # cancelled
+            # An edited repository keeps its switch; a new one starts with it off
+            auto = next((s.get("auto", False) for s in R.sources if s["key"] == replace), False) if replace else False
             R.pending = {"key": key, "url": text.strip(), "status": "ready", "name": info.get("name") or key,
                          "count": len(mods), "description": info.get("description", ""), "mods": [m["name"] for m in mods.values()][:12],
-                         "replace": replace, "replace_name": _source_name(replace) if replace else ""}  # fmt: skip
+                         "replace": replace, "replace_name": _source_name(replace) if replace else "", "auto": auto,
+                         "repo_id": rid, "id_note": id_note, "no_checksum": info.get("no_checksum", [])}  # fmt: skip
             R.info[key] = {**info, "status": "ok", "message": f"{len(mods)} mod{'s' if len(mods) != 1 else ''}"}
             R.catalog[key] = mods
             R.revision += 1
@@ -564,7 +848,10 @@ def confirm_add() -> bool:
         pending = R.pending
         if pending is None or pending.get("status") != "ready":
             return False
-        new = {"key": pending["key"], "url": pending["url"], "added": int(time.time())}
+        new = {"key": pending["key"], "url": pending["url"], "added": int(time.time()), "auto": pending.get("auto") is True}
+        if isinstance(pending.get("repo_id"), int):
+            new["repo_id"] = pending["repo_id"]
+            R.id_checked[new["key"]] = time.monotonic()
         old = pending.get("replace")
         at = next((i for i, s in enumerate(R.sources) if s["key"] == old), None) if old else None
         if at is None:
@@ -587,6 +874,39 @@ def confirm_add() -> bool:
 
 def cancel_add() -> None:
     _set(pending=None)
+
+
+# Shown on the confirm page every time a repository is added (snapshot_json's "risk") and logged
+# when one is added from the console
+RISK_TEXT = (
+    "Mods are Python programs. Once installed they run with the same rights as the game: they can read,"
+    " change and delete your files and saves, and use the internet. BL4 Fix doesn't check other"
+    " modders' mods. Whoever controls this repository (or takes over its account) decides what you"
+    " install and what its updates bring. Only add repositories from modders you trust."
+)
+
+
+def set_pending_auto(on: bool) -> None:
+    """The check-at-launch switch on the confirm page."""
+    with _lock:
+        if R.pending is None or R.pending.get("auto") is on:
+            return
+        R.pending = {**R.pending, "auto": on}
+        R.revision += 1
+        R.events += 1
+
+
+def set_auto(key: str, on: bool) -> None:
+    """An added repository's check-at-launch switch (BL4 Fix's sets the Mod Menu's
+    hidden option: updates.choose)."""
+    with _lock:
+        source = next((s for s in R.sources if s["key"] == key), None)
+        if source is None or source.get("auto") is on:
+            return
+        source["auto"] = on
+        R.revision += 1
+        R.events += 1
+    _net.put(_save)
 
 
 def source_url(key: str) -> str | None:
@@ -628,6 +948,7 @@ def remove_source(key: str) -> None:
             return
         R.catalog.pop(key, None)
         R.info.pop(key, None)
+        R.id_checked.pop(key, None)  # added again later: its number is asked again
         R.revision += 1
         R.events += 1
     _net.put(lambda: (_save(), _recompute()))
@@ -682,13 +1003,26 @@ def _recompute() -> None:
     if game_dir is None:
         return
     official = _official()
+    manifest = updates.U.manifest
+    ids = R.official_ids
+    if official and isinstance(manifest, dict) and isinstance(manifest.get("mods"), dict):
+        ids = frozenset(str(i).lower() for i in manifest["mods"] if hotload.MOD_ID.match(str(i)))
     with _lock:
+        new_ids = ids != R.official_ids
+        if new_ids:
+            # BL4 Fix's names, kept for launches that don't read its release; a mod another repository
+            # listed under one of them leaves its list
+            R.official_ids = ids
+            R.catalog = {k: v if k == official_key() else {i: e for i, e in v.items() if i.lower() not in ids} for k, v in R.catalog.items()}
         sources = [(official_key(), official[1])] if official and not R.official_hidden else []
         if official:
             R.info[official_key()] = {**official[0], "status": "ok", "message": f"{len(official[1])} mods"}
             R.catalog[official_key()] = official[1]
-        sources += [(s["key"], R.catalog.get(s["key"], {})) for s in R.sources]
+        # A repository whose link now leads elsewhere (_check_identity) lists nothing until trusted again
+        sources += [(s["key"], R.catalog.get(s["key"], {})) for s in R.sources if not s.get("blocked_id")]
         installed = dict(R.installed)
+    if new_ids and R.loaded:  # never before the file was read: that would save an empty list over it
+        _save()
     discover: list[dict[str, Any]] = []
     listed: set[str] = set()
     pending_updates: list[dict[str, Any]] = []
@@ -706,6 +1040,8 @@ def _recompute() -> None:
             have = record["version"] if record and record["repo"] == key and record["version"] else _installed_version(game_dir, mod_id)
             if entry["tag_version"] and record and record["version"] == entry["version"]:
                 continue
+            if updates.held(mod_id, entry["version"]):
+                continue  # rolled back from this version this session (undo.py)
             if updates.newer(entry["version"], have) and (have is None or updates.version_key(entry["version"]) != updates.version_key(have)):
                 pending_updates.append({**entry, "repo": key, "repo_name": _source_name(key), "installed": have or "?"})
     _set(discover=discover, updates=pending_updates)
@@ -732,12 +1068,23 @@ def _find(mod_id: str) -> tuple[str, dict[str, Any]] | None:
 def _verify(data: bytes, mod_id: str, version: str | None) -> None:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            names = zf.namelist()
+            infos = zf.infolist()
+            names = [i.filename for i in infos]
             if f"{mod_id}/__init__.py" not in names or any(not n.startswith(f"{mod_id}/") for n in names):
                 raise RuntimeError(f"the download isn't the {mod_id} mod (it must hold one {mod_id}/ folder)")
+            # Nothing that reads differently to another zip reader or points outside the folder
+            # when unpacked: "..", absolute or drive paths, backslashes, the same name twice, links
+            for info in infos:
+                parts = info.filename.split("/")
+                if "\\" in info.filename or ":" in info.filename or any(p in (".", "..") for p in parts) or (info.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise RuntimeError(f"the download holds a file with an unsafe name ({info.filename[:120]!r})")
+            if len(set(n.lower() for n in names)) != len(names):
+                raise RuntimeError("the download holds the same file twice")
+            if len(infos) > MAX_ZIP_FILES or sum(i.file_size for i in infos) > MAX_UNPACKED:
+                raise RuntimeError("the download unpacks to far too much (over 1 GB or 20,000 files)")
             if zf.testzip() is not None:
                 raise RuntimeError("the download is damaged")
-            if version and f"{mod_id}/pyproject.toml" in names:
+            if version and f"{mod_id}/pyproject.toml" in names and zf.getinfo(f"{mod_id}/pyproject.toml").file_size <= MAX_TOML:
                 toml = tomllib.loads(zf.read(f"{mod_id}/pyproject.toml").decode("utf-8"))
                 found = toml.get("tool", {}).get("sdkmod", {}).get("version") or toml.get("project", {}).get("version")
                 if found and str(found) != version:
@@ -753,6 +1100,8 @@ def _download(mod_id: str, entry: dict[str, Any]) -> bytes:
     def progress(n: int) -> None:
         _job(mod_id, "downloading", "Downloading...", (n, size))
 
+    if not entry.get("sha256") and entry.get("repo", official_key()) != official_key():
+        raise RuntimeError("its repository lists no SHA-256 checksum for it")  # _from_manifest drops those already
     data = updates._get(entry["download"], limit, progress)
     if size and len(data) != size:
         raise RuntimeError(f"got {len(data)} bytes, the repository says {size}")
@@ -772,21 +1121,27 @@ def _record(mod_id: str, key: str, entry: dict[str, Any], data: bytes) -> None:
     _save()
 
 
-def install_async(mod_id: str) -> bool:
-    """Downloads a mod from Discover, puts it in sdk_mods and loads it now."""
+def install_async(mod_id: str, *, held: dict[str, Any] | None = None) -> bool:
+    """Downloads a mod from Discover, puts it in sdk_mods and loads it now. Another modder's mod
+    first waits on the confirm step (_review: what its code uses); held: the download the player
+    confirmed there (install_confirm), used as it is, not fetched again."""
     game_dir = R.game_dir
-    found = _find(mod_id)
+    found = (held["key"], held["entry"]) if held else _find(mod_id)
     if game_dir is None or found is None:
         _say("That mod isn't in your repositories any more.", error=True)
         return False
     key, entry = found
-    if R.jobs.get(mod_id, {}).get("state") == "downloading":
+    if R.jobs.get(mod_id, {}).get("state") in ("downloading", "review") and not held:
         return False
-    _job(mod_id, "downloading", "Downloading...", (0, int(entry.get("size") or 0)))
+    if not held:
+        _job(mod_id, "downloading", "Downloading...", (0, int(entry.get("size") or 0)))
 
     def run() -> None:
         try:
-            data = _download(mod_id, entry)
+            data = held["data"] if held else _download(mod_id, entry)
+            if not held and key != official_key():
+                _review(mod_id, "install", key, entry, data)
+                return
             target = updates.sdk_mods(game_dir) / f"{mod_id}.sdkmod"
             # A file the game loaded (now or at start, even if that failed) must not be written over
             removal = updates.staging(game_dir) / f"{mod_id}.remove"
@@ -809,8 +1164,9 @@ def install_async(mod_id: str) -> bool:
             _job(mod_id, "failed", f"Couldn't install: {_reason(ex)}")
             _say(f"Couldn't install {entry['name']}: {_reason(ex)}", error=True)
             return
-        _job(mod_id, "loading", "Loading...")
-        _queue(kind, mod_id, path, lambda text, error: _after_load(mod_id, entry, text, error, installed=True))
+        note = _backup_saves(key, entry)
+        _job(mod_id, "loading", note + "Loading...")
+        _queue(kind, mod_id, path, lambda text, error: _after_load(mod_id, entry, text, error, installed=True, note=note))
 
     _net.put(run)
     return True
@@ -821,26 +1177,33 @@ def _enable_setting(game_dir: Path, mod_id: str) -> None:
     updates._enable_setting(game_dir, mod_id)
 
 
-def update_async(mod_ids: list[str]) -> int:
-    """Downloads updates from the repositories, stages them, and reloads each mod that can."""
+def update_async(mod_ids: list[str], *, held: dict[str, dict[str, Any]] | None = None) -> int:
+    """Downloads updates from the repositories, stages them, and reloads each mod that can. Each
+    first waits on the confirm step (_review: what's new in its code); held: mod id -> the download
+    the player confirmed there (update_confirm), used as it is."""
     game_dir = R.game_dir
     if game_dir is None:
         return 0
     started = 0
     for mod_id in mod_ids:
+        mine = (held or {}).get(mod_id)
         with _lock:
-            entry = next((u for u in R.updates if u["id"] == mod_id), None)
-        if entry is None or R.jobs.get(mod_id, {}).get("state") == "downloading":
+            entry = mine["entry"] if mine else next((u for u in R.updates if u["id"] == mod_id), None)
+        if entry is None or (not mine and R.jobs.get(mod_id, {}).get("state") in ("downloading", "review")):
             continue
         if hotload.H.loaded_from.get(mod_id) == str(updates.staging(game_dir) / f"{mod_id}.sdkmod"):
             _job(mod_id, "staged", "Already updated once this session: restart the game first.")
             continue
-        _job(mod_id, "downloading", "Downloading...", (0, int(entry.get("size") or 0)))
+        if not mine:
+            _job(mod_id, "downloading", "Downloading...", (0, int(entry.get("size") or 0)))
         started += 1
 
-        def run(mod_id: str = mod_id, entry: dict[str, Any] = entry) -> None:
+        def run(mod_id: str = mod_id, entry: dict[str, Any] = entry, mine: dict[str, Any] | None = mine) -> None:
             try:
-                data = _download(mod_id, entry)
+                data = mine["data"] if mine else _download(mod_id, entry)
+                if not mine:
+                    _review(mod_id, "update", entry["repo"], entry, data)
+                    return
                 path = updates.staging(game_dir) / f"{mod_id}.sdkmod"
                 updates._write(path, data)
                 updates.start_helper(game_dir)
@@ -849,14 +1212,146 @@ def update_async(mod_ids: list[str]) -> int:
                 _job(mod_id, "failed", f"Couldn't update: {_reason(ex)}")
                 _say(f"Couldn't update {entry['name']}: {_reason(ex)}", error=True)
                 return
-            _job(mod_id, "loading", "Reloading...")
-            _queue("reload", mod_id, path, lambda text, error: _after_load(mod_id, entry, text, error, installed=False))
+            note = _backup_saves(entry["repo"], entry)
+            _job(mod_id, "loading", note + "Reloading...")
+            _queue("reload", mod_id, path, lambda text, error: _after_load(mod_id, entry, text, error, installed=False, note=note))
 
         _net.put(run)
     return started
 
 
-def _after_load(mod_id: str, entry: dict[str, Any], text: str, error: bool, *, installed: bool) -> None:
+# The confirm step. Another modder's download, checked (_download) and read (codescan), waits here
+# for the player's OK, and the confirmed install or update uses these same bytes (no second
+# download). Mod id -> {"kind": install/update, "key", "entry", "data", "at"}. Never in the snapshot.
+_held: dict[str, dict[str, Any]] = {}
+REVIEW_HINT = "This is a hint, not a guarantee: code can hide what it does."
+
+
+def _blocked(key: str) -> bool:
+    """The repository's link now leads to a different GitHub repository than the one added."""
+    with _lock:
+        return any(s["key"] == key and s.get("blocked_id") for s in R.sources)
+
+
+def _installed_scan(mod_id: str) -> tuple[dict[str, Any] | None, int]:
+    """(what the installed copy's code uses, its file size) to compare an update with; None: not readable."""
+    game_dir = R.game_dir
+    if game_dir is None:
+        return None, 0
+    path = updates.sdk_mods(game_dir) / f"{mod_id}.sdkmod"
+    folder = updates.sdk_mods(game_dir) / mod_id
+    try:
+        if path.is_file():
+            size = path.stat().st_size
+            return (codescan.scan_zip(path.read_bytes()) if size <= updates.MAX_ASSET else None), size
+        if folder.is_dir():
+            return codescan.scan_folder(folder), 0
+    except OSError:
+        pass
+    return None, 0
+
+
+def _review(mod_id: str, kind: str, key: str, entry: dict[str, Any], data: bytes) -> None:
+    """Worker: reads what the download's code uses (for an update: what's new since the installed
+    copy) and puts it on the confirm step (job state "review")."""
+    scan = codescan.scan_zip(data)
+    extra: dict[str, Any] = {"kind": kind, "uses": scan["uses"], "where": {k: _text(v, 200) for k, v in scan["where"].items()},
+                             "version": entry.get("version", ""), "size": len(data), "hint": REVIEW_HINT}  # fmt: skip
+    if kind == "update":
+        old, old_size = _installed_scan(mod_id)
+        extra.update(old_version=entry.get("installed", ""), old_size=old_size, old_read=old is not None,
+                     new_uses=[u for u in scan["uses"] if old is None or u not in old["uses"]])  # fmt: skip
+    now = time.monotonic()
+    with _lock:
+        for other, h in list(_held.items()):
+            if now - h["at"] > REVIEW_TTL_S:  # nobody answered: let the bytes go
+                del _held[other]
+                if R.jobs.get(other, {}).get("state") == "review":
+                    del R.jobs[other]
+        if sum(len(h["data"]) for h in _held.values() if h is not _held.get(mod_id)) + len(data) > REVIEW_HOLD_MAX:
+            raise RuntimeError("too many downloads wait for your OK: confirm or cancel those first")
+        _held[mod_id] = {"kind": kind, "key": key, "entry": entry, "data": data, "at": now}
+    _job(mod_id, "review", "Waiting for your OK.", **extra)
+
+
+def _take(mod_id: str, kind: str) -> dict[str, Any] | None:
+    """The download waiting on this mod's confirm step, taken off it (None: nothing waits)."""
+    with _lock:
+        held = _held.get(mod_id)
+        if held is None or held["kind"] != kind or R.jobs.get(mod_id, {}).get("state") != "review":
+            return None
+        del _held[mod_id]
+    if time.monotonic() - held["at"] > REVIEW_TTL_S:
+        _job(mod_id, "failed", "The download waited too long for your OK: press it again.")
+        return None
+    if _blocked(held["key"]):
+        _job(mod_id, "failed", "Its repository's link now leads to a different repository (see Repositories): nothing was installed.")
+        return None
+    return held
+
+
+def install_confirm(mod_id: str) -> bool:
+    """The player said Install on the confirm step: installs the bytes they reviewed."""
+    held = _take(mod_id, "install")
+    if held is None:
+        return False
+    _job(mod_id, "loading", "Installing...")
+    return install_async(mod_id, held=held)
+
+
+def update_confirm(mod_ids: list[str]) -> int:
+    """The player said Update on the confirm step (one mod or Update all): stages what they reviewed."""
+    held: dict[str, dict[str, Any]] = {}
+    for mod_id in mod_ids:
+        if (one := _take(mod_id, "update")) is not None:
+            held[mod_id] = one
+            _job(mod_id, "loading", "Updating...")
+    return update_async(list(held), held=held) if held else 0
+
+
+def review_cancel(mod_ids: list[str]) -> None:
+    """Cancel on the confirm step: the downloaded bytes are dropped, Install / Update shows again."""
+    with _lock:
+        for mod_id in mod_ids:
+            _held.pop(mod_id, None)
+            if R.jobs.get(mod_id, {}).get("state") == "review":
+                del R.jobs[mod_id]
+        R.revision += 1
+        R.events += 1
+
+
+SAVE_BACKUP_WAIT_S = 10.0
+SAVES_NOTE = "Saves backed up first. "
+
+
+def _backup_saves(key: str, entry: dict[str, Any]) -> str:
+    """
+    Before another modder's mod loads (installed or updated from an added repository, not BL4 Fix's):
+    asks Save Backups, when it's loaded and on, to copy the saves now (read-only copies into its own
+    folder, on its worker), waiting up to SAVE_BACKUP_WAIT_S. Returns the note for the job's message
+    ("" without Save Backups, or when it couldn't). Called on our worker, never the game thread.
+    """
+    if key == official_key():
+        return ""
+    module = sys.modules.get("bl4_save_backup")
+    if module is None:
+        return ""
+    # Save Backups 0.1.0's __init__ has no backup_now (its backups module may, after a hot reload)
+    backup_now = getattr(module, "backup_now", None) or getattr(sys.modules.get("bl4_save_backup.backups"), "backup_now", None)
+    if not callable(backup_now):
+        return ""
+    try:
+        ok = bool(backup_now(f"before {entry.get('name') or 'a mod'} loads", SAVE_BACKUP_WAIT_S))
+    except Exception as ex:  # noqa: BLE001 - never stop an install over it
+        _log(f"Save Backups couldn't back up first ({ex}); going on.", error=True)
+        return ""
+    if not ok:
+        _log(f"Save Backups didn't back up within {SAVE_BACKUP_WAIT_S:.0f} s (or is off); going on.")
+    return SAVES_NOTE if ok else ""
+
+
+def _after_load(mod_id: str, entry: dict[str, Any], text: str, error: bool, *, installed: bool, note: str = "") -> None:
+    text = note + text
     if error and not installed:
         # Staged all the same: the helper moves it in when the game closes
         _job(mod_id, "staged", f"{text} Installs when the game closes.")
@@ -1057,20 +1552,22 @@ def open_link(url: str) -> None:
     threading.Thread(target=lambda: os.startfile(url), name="bl4_mod_menu.link", daemon=True).start()  # noqa: S606
 
 
-def start(game_dir: Path, *, check: bool) -> None:
-    """At enable: read the saved repositories, trim the picture cache, check them if asked."""
+def start(game_dir: Path, *, legacy_auto: bool = True) -> None:
+    """At enable: read the saved repositories, trim the picture cache, check the ones whose
+    check-at-launch switch is on. legacy_auto: see _load."""
     R.game_dir = game_dir
 
     def run() -> None:
-        _load(game_dir)
+        _load(game_dir, legacy_auto)
         trim_images(game_dir)
         hotload.take_baseline(game_dir)
         hotload.publish_icons(game_dir)
+        undo.scan(game_dir)
         _recompute()
+        if auto := [s["key"] for s in R.sources if s.get("auto")]:
+            refresh_async(auto)
 
     _net.put(run)
-    if check:
-        _net.put(lambda: refresh_async() if R.sources else None)
 
 
 def official_checked() -> None:
@@ -1083,7 +1580,7 @@ def summary() -> dict[str, Any]:
     with _lock:
         waiting = sum(1 for u in R.updates if R.jobs.get(u["id"], {}).get("state") not in ("staged", "reloaded", "downloading", "loading"))
         found = len(hotload.H.found)
-        return {"rev": R.events + hotload.H.revision, "updates": waiting, "discover": len(R.discover),
+        return {"rev": R.events + hotload.H.revision + undo.B.revision, "updates": waiting, "discover": len(R.discover),
                 "found": found, "sources": len(R.sources) + 1, "message": R.message}  # fmt: skip
 
 
@@ -1091,17 +1588,23 @@ def snapshot_json() -> tuple[int, bytes]:
     """(revision, json) of everything the Discover, Repositories and Updates pages show. Built on the
     server thread, only when the revision moved."""
     with _lock:
-        built_from = (R.revision, hotload.H.revision)
+        # BL4 Fix's switch is the Mod Menu's hidden option (updates.py)
+        built_from = (R.revision, hotload.H.revision, updates.U.auto, updates.U.ask, undo.B.revision)
         if R.cached[0] == built_from:
             return R.cached[1], R.cached[2]
         rev = next(_revs)
         official = official_key()
         sources = [{"key": official, "name": OFFICIAL_NAME, "official": True, "hidden": R.official_hidden,
+                    "auto": updates.U.auto and not updates.U.ask,  # nothing checks until the question is answered
                     **{k: R.info.get(official, {}).get(k, "") for k in ("status", "message", "homepage", "release")}}]  # fmt: skip
         for s in R.sources:
             info = R.info.get(s["key"], {})
             sources.append({"key": s["key"], "url": s["url"], "official": False, "name": info.get("name") or s["key"],
-                            **{k: info.get(k, "") for k in ("status", "message", "homepage", "release", "description")}})  # fmt: skip
+                            "auto": s.get("auto") is True,
+                            **{k: info.get(k, "") for k in ("status", "message", "homepage", "release", "description", "id_note")},
+                            "no_checksum": info.get("no_checksum") or []})  # fmt: skip
+            if s.get("blocked_id"):  # its link leads to another repository now (_check_identity), also before it's read
+                sources[-1].update(status="error", message=TAKEOVER_TEXT, blocked=True)
         state = {
             "rev": rev,
             "sources": sources,
@@ -1111,9 +1614,11 @@ def snapshot_json() -> tuple[int, bytes]:
             "jobs": R.jobs,
             "images": {k: v for k, v in R.images.items() if v is not None},
             "pending": R.pending,
+            "risk": RISK_TEXT,
             "refreshing": R.refreshing,
             "message": R.message,
             **hotload.snapshot(),
+            "undo": undo.snapshot(),  # Roll back (Updates), safe mode (Discover, Repositories)
         }
         R.cached = (built_from, rev, json.dumps(state, separators=(",", ":"), default=str).encode("utf-8"))
         return R.cached[1], R.cached[2]
