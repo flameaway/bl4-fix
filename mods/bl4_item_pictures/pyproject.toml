@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Instant Item Pictures"
+version = "0.1.0"
+description = "Your items' pictures are ready before you open the backpack: keeps the game's own item pictures instead of redrawing them, and draws missing ones in the background (bank too, optional)."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

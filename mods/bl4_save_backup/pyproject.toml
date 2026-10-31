@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Save Backups"
+version = "0.1.0"
+description = "Backs up every character and your profile (with the bank) each time the game starts. History per character and for the bank, with restores (applied when you quit the game). MODS > BL4 Save Backups."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

@@ -1,0 +1,55 @@
+/* BL4 Save Backups' page in the BL4 Mod Menu screen. Rows, dividers and buttons are the Mod
+   Menu's (the game's Options parts, see bl4_mod_menu/ui/menu.css); this only sizes a row's
+   right-hand side: the value text and small buttons. Same sizes as BL4 Direct Connect's page.
+   Reloaded live by backups.js in a dev setup. */
+
+.bl4sb_value {
+    flex: 1 1 auto;
+    font-family: Industry-Normal;
+    font-size: 2.1rem;
+    color: #e4d9ce;
+    margin: 0 1.4rem 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-align: left;
+}
+
+.bl4sb_small {
+    font-size: 1.8rem;
+    color: #a0aeb1;
+}
+
+.bl4sb_on {
+    color: #6fe08a;
+}
+
+.bl4sb_off {
+    color: #ff7a61;
+}
+
+.bl4sb_warn {
+    color: #ffbb00;
+}
+
+/* The game's list button, sized for a row's right side (several fit next to each other) */
+.bl4sb_btn.list_btn {
+    flex: 0 0 12rem;
+    width: 12rem;
+    height: 4.3rem;
+    min-height: 4.3rem;
+    max-height: 4.3rem;
+    margin: 0 0 0 1rem;
+    align-self: center;
+}
+
+.bl4sb_btn .button_inner {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    padding: 0;
+}
+
+.bl4sb_btn .button_txt {
+    font-size: 2rem;
+    text-align: center;
+}
