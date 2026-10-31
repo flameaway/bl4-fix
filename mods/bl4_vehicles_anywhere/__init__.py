@@ -10,20 +10,14 @@ The host checks summons (ServerRequestPersonalVehicle), so in co-op the host sho
 
 from __future__ import annotations
 
-import time
-from typing import Any
-
-from mods_base import BoolOption, build_mod, hook
+from mods_base import BoolOption, build_mod
 from unrealsdk import logging
-from unrealsdk.hooks import Type
-from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import rules
+from . import frametick, rules
 
 __version__ = "0.1.0"
 __version_info__ = (0, 1, 0)
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 INTERVAL = 1.0  # s
 
 
@@ -42,16 +36,9 @@ zones_option = BoolOption(
     on_change=_zones_changed,
 )
 
-_next_check = 0.0
-
-
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    global _next_check
-    now = time.monotonic()
-    if now < _next_check:
-        return
-    _next_check = now + INTERVAL
+# Once a second through the shared frame tick (frametick/); the first one right after enabling
+@frametick.tick("bl4_vehicles_anywhere", every=INTERVAL)
+def tick() -> None:
     try:
         rules.apply(zones=zones_option.value)
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
@@ -65,14 +52,8 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
 _logged_errors: set[str] = set()
 
 
-def _enable() -> None:
-    global _next_check
-    _next_check = 0.0
-
-
 mod = build_mod(
     options=[zones_option],
     hooks=[tick],
-    on_enable=_enable,
     on_disable=rules.restore,
 )

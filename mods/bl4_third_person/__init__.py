@@ -22,28 +22,20 @@ How it fits together:
 from __future__ import annotations
 
 import ctypes
-import sys
 import time
 from typing import Any
 
 import unrealsdk
-from mods_base import BoolOption, KeybindOption, SliderOption, build_mod, get_pc, hook
+from mods_base import BoolOption, KeybindOption, SliderOption, build_mod, get_pc
 from unrealsdk import logging
-from unrealsdk.hooks import Type
-from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
+from unrealsdk.unreal import UObject, WeakPointer
 
-from . import camera_defs, health
+from . import camera_defs, frametick, gamekeys, health
 from .crosshair import Crosshair
 
-__version__ = "0.1.0"
-__version_info__ = (0, 1, 0)
+__version__ = "0.1.2"
+__version_info__ = (0, 1, 2)
 
-# Fires several times a frame during the camera update (the bridge uses it too); we act on the
-# first call of each frame
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyPostProcess"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates): act once a frame
-SAME_FRAME_S = 0.003
-_ticked_at = 0.0
 HIP_MODE = "camMode_exo_heavyarms"
 AIM_MODE = "ThirdPerson_OverShoulder"
 OUR_MODES = (HIP_MODE, AIM_MODE)
@@ -55,8 +47,8 @@ PREWARM_DELAY_S = 60.0  # after the first pawn, the background camera scan start
 SWAP_BLEND = 0.2
 DEFAULT_ZOOM_BLEND = 0.2
 
-# ctypes.windll, not PyDLL: these calls must let go of the GIL (GetAsyncKeyState can take ~100 ms,
-# e.g. while the desktop is streamed). Keys go through BL4 Mod Menu's key thread when it's loaded.
+# ctypes.windll, not PyDLL: these calls must let go of the GIL. Only the focus check uses them; keys
+# come from the game's own input (gamekeys).
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 _character_class = unrealsdk.find_class("OakCharacter")
@@ -191,22 +183,23 @@ def _game_window_focused() -> bool:
 
 def _async_down(vk: int) -> bool:
     """
-    Whether a key is held while the game is in front. Read by BL4 Mod Menu's key thread when it's
-    loaded: GetAsyncKeyState can take ~100 ms on the game thread (a streamed desktop, 2026-10-24).
+    Whether a key is held, from the game's own input (gamekeys, shared by our mods; False while the
+    game isn't in front). Until 2026-10-30 this read Windows (GetAsyncKeyState, through BL4 Mod
+    Menu's key thread when it was loaded).
     """
-    keys = sys.modules.get("bl4_mod_menu.keys")
-    if keys is not None and hasattr(keys, "_Keys"):
-        return keys.vk_down(vk)
-    return _game_window_focused() and bool(_user32.GetAsyncKeyState(vk) & 0x8000)
-
+    return gamekeys.vk_down(vk)
 
 class Keys:
     was_down: dict[int, bool] = {}  # noqa: RUF012
+    codes: dict[str | None, int | None] = {}  # noqa: RUF012 - key name -> virtual_key(name) (string work, ~5 us)
 
     @classmethod
     def pressed(cls, option: KeybindOption) -> bool:
         """True once per press of the option's key."""
-        vk = virtual_key(option.value)
+        name = option.value
+        vk = cls.codes.get(name, -1)
+        if vk == -1:
+            vk = cls.codes[name] = virtual_key(name)
         if vk is None:
             return False
         down = _async_down(vk)
@@ -229,6 +222,10 @@ class State:
     ours = False  # whether we put the camera in the mode it's in (not, say, Exo's action skill)
     restore_at: float | None = None  # camera clock time to put the vanilla definitions back
     prewarm_at = 0.0  # time.monotonic() to start the camera scan in the background (0 = no)
+    # Third person off with nothing to put back (see _idle_frame): the next full pass, and a
+    # toggle press waiting for it (toggle, swap)
+    full_at = 0.0
+    keys: tuple[bool, bool] | None = None
 
 
 def _restore_defs() -> None:
@@ -321,6 +318,7 @@ def set_third_person(on: bool) -> None:
     saved_on_option.value = on
     mod.save_settings()
     if on:
+        Keys.was_down.clear()  # a key held now (H itself) only counts once it's pressed again
         return
     State.restore_at = State.frame_time + ENTER_BLEND
     pc = get_pc(possibly_loading=True)
@@ -334,15 +332,44 @@ def set_third_person(on: bool) -> None:
     Crosshair.show(pc, False)
 
 
-@hook(TICK_FUNC, Type.PRE)
-def on_frame(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    global _ticked_at
-    started = time.perf_counter()
-    if started - _ticked_at < SAME_FRAME_S:
-        return
-    _ticked_at = started
+OFF_FULL_S = 0.5  # third person off: the character (prewarm, crosshair) is looked at this often
+
+
+def _idle_frame() -> bool:
+    """
+    Third person off with nothing to put back (the usual state): only the keys every frame, the
+    full pass (get_pc, the character, the camera clock: ~45 us a frame, 2026-10-29) every
+    OFF_FULL_S. A toggle press reads the camera clock now and leaves the press to the next frame's
+    full pass, which acts on it only if the clock moved (not paused in a menu, as before): +1 frame
+    for H. True when this frame needs nothing more.
+    """
+    if State.keys is not None or time.monotonic() >= State.full_at:
+        return False
+    # The swap key does nothing while off: not read here (set_third_person(True) forgets the keys'
+    # last states, so a K held from before doesn't count as a press then)
+    if not Keys.pressed(toggle_key):
+        return True
+    pc = get_pc(possibly_loading=True)
+    camera = pc.PlayerCameraManager if pc is not None else None
+    if camera is not None:
+        State.frame_time = camera.CameraModeInputs.CurrentTime
+        State.keys = (True, False)
+    return True
+
+
+@frametick.tick("bl4_third_person")
+def on_frame() -> None:
+    """
+    Once per engine frame (the shared frame tick: the first camera update's modifiers, as the
+    BlueprintModifyPostProcess PRE hook this was before). Needs none of the hook's arguments.
+    """
     try:
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
+        if not State.on and State.restore_at is None and not Crosshair.shown:
+            if _idle_frame():
+                return
+            State.full_at = time.monotonic() + OFF_FULL_S
+        keys, State.keys = State.keys, None
         pc = get_pc(possibly_loading=True)
         pawn = pc.Pawn if pc else None
         if pawn is None or not pawn.Class._inherits(_character_class):
@@ -367,12 +394,14 @@ def on_frame(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunctio
             State.prewarm_at = 0.0
             camera_defs.Finder.start()
 
-        if _game_window_focused():
-            if Keys.pressed(toggle_key):
-                set_third_person(not State.on)
-            if Keys.pressed(swap_key) and State.on:
-                State.side = -State.side
-                State.dirty = True
+        # (No focus check here: _async_down is False while the game isn't in front, through the Mod
+        # Menu's key snapshot or its own check. This one was 3 Win32 calls a frame, 2026-10-29)
+        toggle, swap = keys if keys is not None else (Keys.pressed(toggle_key), Keys.pressed(swap_key))
+        if toggle:
+            set_third_person(not State.on)
+        if swap and State.on:
+            State.side = -State.side
+            State.dirty = True
         _update(pc, pawn)
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         logging.error(f"[Third Person] {ex!r}")
@@ -388,6 +417,8 @@ def _enable() -> None:
     State.ours = False
     State.restore_at = None
     State.prewarm_at = 0.0
+    State.full_at = 0.0
+    State.keys = None
     Keys.was_down.clear()
 
 

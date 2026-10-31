@@ -26,17 +26,13 @@ menu's tabs use the same code and switch instantly too.
 from __future__ import annotations
 
 import json
-import time
 from importlib import resources
 from pathlib import Path
-from typing import Any
 
-from mods_base import SETTINGS_DIR, BoolOption, build_mod, hook
+from mods_base import SETTINGS_DIR, BoolOption, build_mod
 from unrealsdk import logging
-from unrealsdk.hooks import Type
-from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import health, pages, patch, uilink
+from . import frametick, health, pages, patch, uilink
 
 __version__ = "0.2.1"
 __version_info__ = (0, 2, 1)
@@ -79,22 +75,10 @@ def _publish(skip_fade: bool) -> None:
 
 _errors: set[str] = set()
 
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
-_last_call = _ticked_at = 0.0
 
-
-@hook("/Script/Engine.CameraModifier:BlueprintModifyCamera", Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
+@frametick.tick("bl4_instant_tabs")  # once per engine frame (the shared Frame Tick, frametick/)
+def tick() -> None:
     """Only drives the shared link and health checks (other mods' copies may do it instead)."""
-    global _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
     try:
         uilink.tick()  # runs the fade skip in the menu page (shared/uilink; at most once a frame overall)
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)

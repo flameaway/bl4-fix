@@ -75,6 +75,8 @@ class Crosshair:
 
     @classmethod
     def show(cls, pc: Any, visible: bool) -> None:
+        if not visible and not cls.shown:
+            return  # already hidden (or never built): no WeakPointer reads, every frame in first person
         widget = cls.widget()
         if widget is None or cls.owner() is not pc:
             if not visible:

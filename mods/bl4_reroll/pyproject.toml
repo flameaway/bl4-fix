@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Reroll"
-version = "0.3.1"
+version = "0.3.2"
 description = "Reroll the modifiers on class mods and enhancements for Eridium (25 to reroll them all, 50 to replace one), or a whole legendary or pearl (100), rolled with the game's own odds. Prices are in its settings. Hover the item and press T, use its page in the mod menu (F7), or type reroll in the console."
 authors = [{ name = "flame" }]
 

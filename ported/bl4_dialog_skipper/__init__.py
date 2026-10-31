@@ -3,7 +3,8 @@ Dialog Skipper for Borderlands 4: skip voice lines with a key, or have them skip
 they start. Two more keys speed the game up and put it back.
 
 A port of Yeti's Dialog Skipper (GPL-3.0, see ported/README.md), rewritten to run on the game
-thread and cost nothing between lines.
+thread and cost nothing between lines. Modified by flameaway from 2026-10-24 (changes since in git
+history).
 
 Every line starts through GbxDialogProvider.NetMulticast_StartDialog. We note the provider and the
 line's thread id; when the delay is up (checked by a tick hook that only runs while a line is
@@ -27,10 +28,11 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
+from . import frametick
+
 __version__ = "0.1.0"
 __version_info__ = (0, 1, 0)
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 START_FUNC = "/Script/GbxGame.GbxDialogProvider:NetMulticast_StartDialog"
 FADE_S = 0.1
 MAX_PENDING = 32
@@ -192,9 +194,9 @@ def on_line_start(obj: UObject, args: WrappedStruct, _ret: Any, _func: BoundFunc
         logging.error(f"[Dialog Skipper] {ex!r}")
 
 
-# Not in the mod's hook list: on only while a line is waiting
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
+# Not in the mod's hook list: on only while a line is waiting (once per frame, shared hook: frametick/)
+@frametick.tick("bl4_dialog_skipper")
+def tick() -> None:
     try:
         now = time.monotonic()
         if not State.pending:

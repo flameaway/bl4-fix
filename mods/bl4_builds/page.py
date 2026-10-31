@@ -17,9 +17,9 @@ Right-click a square to save over it: no right-button events reach page scripts,
 button from Windows (like the respec mod) while the script says the mouse is on a square, and
 send a prompt in the state; the page asks "Save over Build N?" and saves if you say yes.
 
-Naming: "Name" starts typing (keyboard.py reads the keys from Windows and keeps them from the
-game); the text goes to the page in the state, Enter keeps it, Esc cancels, and so does closing
-the menu.
+Naming: "Name" starts typing (the UI Link's TextBox: the game's own text input, its keys kept from
+the game's menus); the text goes to the page in the state, Enter keeps it, Esc cancels, and so does
+closing the menu.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from typing import Any
 
 from unrealsdk import logging
 
-from . import builds, health, keyboard, uilink
+from . import builds, health, uilink
 
 KEY = "builds"
 UI_DIR = "OakGame/Content/uiresources/bl4builds"
@@ -45,16 +45,19 @@ class S:
     game_dir: Path | None = None
     published_at = 0.0
     published: dict[str, tuple[int, int]] = {}  # noqa: RUF012 - file -> (size, mtime) last copied
+    # The page files come from a source folder (dev junction), not a packed .sdkmod; set at register
+    from_source = False
     toast: dict[str, Any] = {"id": 0}  # noqa: RUF012
     # Set by __init__: whether loading includes skills / specializations
     options: Callable[[], tuple[bool, bool]] = lambda: (True, True)
     # The build being named, and its typing
     naming: int = 0
-    typing: keyboard.Typing | None = None
+    typing: uilink.TextBox | None = None
     # The square the mouse is on (the script says), and the save-over prompts sent for right-clicks
     hover: int = 0
     prompt: dict[str, Any] = {"id": 0, "n": 0}  # noqa: RUF012
     right_down = True
+    slow_at = 0.0  # the next health / publish look (tick)
 
 
 def _changed() -> None:
@@ -83,8 +86,7 @@ def start_naming(n: int) -> None:
     build = builds.presets.get(char, n) if char else None
     if build is None:
         return
-    # Starts its hook on its own thread; a hook Windows refused shows up in _poll_naming
-    typing = keyboard.Typing(build.get("name") or "", builds.MAX_NAME)
+    typing = uilink.TextBox(build.get("name") or "", builds.MAX_NAME)
     S.naming, S.typing = n, typing
     _changed()
 
@@ -107,11 +109,7 @@ def _poll_naming() -> None:
     typing = S.typing
     if typing is None:
         return
-    if typing.failed:
-        stop_naming(keep=False)
-        say("Couldn't read the keyboard for typing; use `build rename` in the console.", error=True)
-        return
-    # The menu closed (the page stopped polling): don't keep swallowing keys
+    # The menu closed (the page stopped polling): the game's keys work again
     if not uilink.polling(KEY):
         stop_naming(keep=False)
         return
@@ -187,27 +185,48 @@ def unregister() -> None:
     uilink.stop()
 
 
+# health and the dev publish are looked at this often (they have their own slower clocks)
+SLOW_S = 0.25
+
+
 def tick() -> None:
-    """Every frame: the link, the page's files, the squares' cache, the typing."""
+    """
+    Every frame: the link, the squares' cache while the inventory asks, the typing, a right-click
+    on a hovered square; health and the page's files every SLOW_S. Each part is gated here, so a
+    frame in play makes no call that would only find nothing to do (2026-10-29).
+    """
     uilink.tick()
-    health.tick()
-    publish()
-    if builds.watch():
-        _changed()
-    _poll_naming()
-    _poll_right_click()
+    now = time.monotonic()
+    if now >= S.slow_at:
+        S.slow_at = now + SLOW_S
+        health.tick()
+        publish()
+    view = builds._view  # noqa: SLF001
+    if view.active or now - view.wanted_at < builds.ACTIVE_S:  # the script asks (watch() winds down itself)
+        if builds.watch():
+            _changed()
+    if S.typing is not None:
+        _poll_naming()
+    if S.hover:
+        _poll_right_click()
+    else:
+        S.right_down = True  # what _poll_right_click does off a square
 
 
 def publish(*, force: bool = False) -> None:
     """Copies the page's files to uiresources/bl4builds/, touching only files that changed."""
-    now = time.monotonic()
-    if S.game_dir is None or (not force and now - S.published_at < PUBLISH_S):
+    if not force and not S.from_source:
+        # A packed .sdkmod can't change while the game runs: copied once, at register. Checked
+        # before anything else: resources.files() on a packed mod opens its zip (every second, 0.9 ms)
         return
+    now = time.monotonic()
+    if S.game_dir is None or (not force and (now - S.published_at < PUBLISH_S or not uilink.polling(KEY))):
+        return  # dev: only while the inventory's script runs (it re-reads the files itself)
     S.published_at = now
     root = resources.files(__package__)
-    from_source = isinstance(root, Path)
+    from_source = S.from_source = isinstance(root, Path)
     if not force and not from_source:
-        return  # a packed .sdkmod can't change while the game runs: copied once, at register
+        return
     for name in UI_FILES:
         try:
             source = root / "ui" / name

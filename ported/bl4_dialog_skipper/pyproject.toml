@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Dialog Skipper"
-version = "0.1.0"
+version = "0.1.1"
 description = "Skip voice lines with a key or automatically; speed the game up."
 authors = [{ name = "flame" }, { name = "Yeti (original mod)" }]
 license = "GPL-3.0-only"

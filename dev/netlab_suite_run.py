@@ -56,6 +56,7 @@ ARMS = {
                "gbx.LightProjectile.LagCompMagnetismMaxAngle": 12.0, "gbx.LightProjectile.LagCompMagnetismMaxPing": 100.0},
 }
 TRUST_ARMS = {"trust"}
+SMOOTH_HOLD = "import sys; m = sys.modules.get('bl4_direct.smooth'); print(m is not None and (setattr(m, 'HOLD', {0}), {0} or m.restore()))"
 
 
 def bridge(bid: str, code: str, timeout: float = 20) -> str:
@@ -91,6 +92,8 @@ def main() -> None:
 
     print(bridge(a.host, f"exec(open(r'{SUITE}').read())"))
     print(bridge(a.client, f"exec(open(r'{SUITE}').read())"))
+    # BL4 Direct holds its smoother-enemies values on a host with friends: stand it down for the run
+    print("smooth hold off", bridge(a.host, SMOOTH_HOLD.format(False)))
     original = value(a.host, f"suite_get({list(GAME)!r})")
     spot = value(a.client, "(lambda l: (l.X, l.Y, l.Z))(get_pc().Pawn.K2_GetActorLocation())")
     print("client spot", tuple(round(x) for x in spot), "| host values before", original, flush=True)
@@ -136,6 +139,7 @@ def main() -> None:
         bridge(a.host, "suite_mover_stop(); suite_host_stop()")
         print("trust off", bridge(a.host, "print(suite_trust(False))"))
         print("restored", bridge(a.host, f"print(suite_set({original!r}))"))
+        print("smooth hold on", bridge(a.host, SMOOTH_HOLD.format(True)))
 
 
 if __name__ == "__main__":

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import time
+import traceback
 from typing import Any
 
 from mods_base import (
@@ -50,17 +51,12 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import bake, celebrate, data, owned, progress, savegame, screen, thumbs, tracker
+from . import bake, celebrate, data, frametick, owned, progress, savegame, screen, thumbs, tracker, uilink
 
 __version__ = "0.2.0"
 __version_info__ = (0, 2, 0)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
 BOSS_DIED_FUNC = "/Script/OakGame.OakBossFight:BossDied"
 
 
@@ -334,7 +330,8 @@ class S:
     pending_open = 0.0
     key_was_down = True
     registered = False
-    ticked_at = last_call = 0.0
+    slow_at = 0.0  # the next full pass (_all) with nothing under way
+    busy = False  # screen.busy() / a bake after the last full pass: the next one runs next frame
 
 
 @hook(BOSS_DIED_FUNC, Type.PRE)
@@ -347,21 +344,40 @@ def boss_died(_obj: UObject, args: WrappedStruct, _ret: Any, _func: BoundFunctio
         logging.error(f"[Kairosdex] {ex!r}")
 
 
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    now = time.perf_counter()
-    gap, S.last_call = now - S.last_call, now
-    if gap < FRAME_GAP_S and now - S.ticked_at < MAX_WAIT_S:
-        return
-    S.ticked_at = now
+@frametick.tick("bl4_weapondex")  # once per engine frame (shared hook, frametick/)
+def tick() -> None:
     try:
         _tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         logging.error(f"[Kairosdex] {ex!r}")
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
+
+
+# With nothing under way (screen.busy(), a picture bake, a watched boss) everything but the link
+# and the open key is looked at this often (2026-10-29: it all ran every frame, ~0.11 ms a frame in
+# play, mostly calls that found nothing to do)
+SLOW_S = 0.25
 
 
 def _tick() -> None:
+    uilink.tick()  # every frame: the page's polls wait for it (works once a frame across our mods)
+    now = time.monotonic()
+    if S.busy or screen.S.wake or now >= S.slow_at:
+        screen.S.wake = False
+        S.slow_at = now + SLOW_S
+        _all(now)
+        S.busy = screen.busy() or bake.running() or bool(bake._LATE)  # noqa: SLF001
+    elif tracker._watched:  # noqa: SLF001 - a watched boss is checked every frame (it may die)
+        tracker.tick(beaten)
+    # The key snapshot first (a dict read); the controller only on a press (get_pc is a chain of
+    # property reads: not worth doing every frame to learn that nothing was pressed)
+    down = uilink.key_down(open_key.value)  # the game's own key state (gamekeys, no Win32)
+    if down and not S.key_was_down and not screen.S.typing and get_pc(possibly_loading=True) is not None:
+        screen.toggle()
+    S.key_was_down = down
+
+
+def _all(now: float) -> None:
     if not S.registered:
         S.registered = screen.register(GAME_DIR)
     screen.tick()
@@ -369,18 +385,14 @@ def _tick() -> None:
     savegame.tick(screen._changed)  # noqa: SLF001
     celebrate.tick()
     bake.tick()
-    if S.pending_open and time.monotonic() > S.pending_open:
+    if S.pending_open and now > S.pending_open:
         S.pending_open = 0.0
         screen.request_open()
-    if get_pc(possibly_loading=True) is not None:
-        down = screen.key_down(open_key.value)
-        if down and not S.key_was_down and not screen.S.typing:
-            screen.toggle()
-        S.key_was_down = down
 
 
 def _enable() -> None:
     S.key_was_down = True
+    S.slow_at = 0.0
     celebrate.setup(GAME_DIR, lambda: bool(celebrate_option.value))
     celebrate.sync(bool(celebrate_option.value))
     S.registered = screen.register(GAME_DIR)

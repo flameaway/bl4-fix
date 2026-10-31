@@ -820,6 +820,7 @@
             // Redraw open cards when an option that changes their content flips
             if (ns.settingsText !== undefined && text !== ns.settingsText) {
                 for (var i = 0; i < ns.cards.length; i++) ns.refresh(ns.cards[i]);
+                refreshSlots();
             }
             ns.settingsText = text;
             setTimeout(loadSettings, SETTINGS_POLL_MS);
@@ -985,6 +986,174 @@
         });
     };
 
+    // region Legendary names on the inventory's equip slots and switch grid
+
+    // The equip screen's slots only show the item's picture. We add the legendary's own name:
+    // "Churned Aching Golden God" -> "Golden God". The slot's data has the full rolled name
+    // (`name`, prefixes in front) and a generic `basename` ("Ripper Shotgun"); the legendary names
+    // are drops.json's keys, so prefixes come off the same way as for drop sources.
+    // Weapons: in the slot's picture frame (.wheel-slot__weapon-slot), which the game turns
+    // upright in all four (rotated) wheel slots, at its top: the 2:1 thumbnail (512x256) leaves a
+    // ~2rem empty band there in the 15.5 x 12 rem frame (measured 2026-10-29), and the slot's pips,
+    // logo, element icons and number all sit outside the frame.
+    // Gear (shield, grenade, repair kit, enhancement, class mod): the picture fills the slot and the
+    // pips, type icon and firmware/element icons take its top, so the name runs along the bottom,
+    // clear of the mark icon in the bottom corner (item_cards.css).
+    var SLOT_NAME_RARITIES = { legendary: 1, pearl: 1, pearlescent: 1 };
+    var SLOT_IDENT = /^([a-z_]+?)(\d+)$/;
+
+    // The "Full legendary names" option keeps the rolled prefixes
+    function legendaryName(entry) {
+        var words = String(entry.name || "").trim().split(/\s+/);
+        if (!words[0]) return "";
+        if ((ns.settings || {}).full_names === true) return words.join(" ");
+        for (var i = 0; ns.drops && i < words.length; i++) {
+            var name = words.slice(i).join(" ");
+            if (ns.drops[name.toLowerCase()]) return name;
+        }
+        return words.join(" ");  // a name drops.json doesn't know (another language, a new item)
+    }
+
+    // Long names get a smaller size: limits = the most characters at the normal, small and tiny
+    // sizes. Measured in the weapon frame: 20 fit at normal ("Jail-Broken Gatling"), 22 at small
+    // ("Upgraded Finnity XXX-L"), 27 at tiny ("Superconducting Plasma Coil", the longest base
+    // name). Longer (full names with prefixes, a translation): tiny on up to two lines
+    function nameSize(text, limits) {
+        if (text.length <= limits[0]) return "";
+        if (text.length <= limits[1]) return " bl4d_slot_name_small";
+        return text.length <= limits[2] ? " bl4d_slot_name_tiny" : " bl4d_slot_name_tiny bl4d_slot_name_wrap";
+    }
+
+    function slotNameSize(text, gear) {
+        return nameSize(text, gear ? [13, 16, 19] : [20, 23, 27]);
+    }
+
+    // The element the name goes in: the weapon's upright picture frame, or the gear slot's box
+    function slotHost(slot, type) {
+        if (type === "weapon") return slot.querySelector(".wheel-slot__weapon-slot");
+        var colour = slot.querySelector(".oak_equip_slot_color");
+        return colour && colour.parentNode;
+    }
+
+    function setSlotName(host, text, className) {
+        var label = host.querySelector(".bl4d_slot_name");
+        if (!text) {
+            if (label) label.parentNode.removeChild(label);
+            return;
+        }
+        if (!label) {
+            label = ours(element("p", className));
+            host.appendChild(label);
+        }
+        if (label.textContent !== text) label.textContent = text;
+        if (label.className !== className) label.className = className;
+    }
+
+    function renderSlotNames(menu) {
+        var on = (ns.settings || {}).slot_names !== false;
+        var slots = menu.querySelectorAll("oak-equip-slot[slot-ident]");
+        for (var i = 0; i < slots.length; i++) {
+            var ident = SLOT_IDENT.exec(slots[i].getAttribute("slot-ident") || "");
+            var host = ident && slotHost(slots[i], ident[1]);
+            if (!host) continue;
+            var data = on ? menu.GetEquipementSlotDataFromTypeAndSubIndex(ident[1], parseInt(ident[2], 10)) : null;
+            var text = data && !data.isempty && SLOT_NAME_RARITIES[data.rarityident] ? legendaryName(data) : "";
+            var gear = ident[1] !== "weapon";
+            setSlotName(host, text, "bl4d_slot_name" + (gear ? " bl4d_gear_name" : "") + slotNameSize(text, gear));
+        }
+    }
+
+    // The switch grid (a slot's items, the game's backpack popup) is made of InventoryItemCells
+    // (239x168 at 1408px high). The bottom left shows the filter's / sort's stat, so the name goes
+    // in the top row: after the pips, before the element icons (right edge). A new item's NEW
+    // badge (a 5rem diamond on the middle of the top edge) covers that row: until it's seen, the
+    // name sits under the type icon instead. Other cell grids (vendors, bank, Lost Loot) show
+    // prices there: only cells in the popup get a name.
+    function inSwitchGrid(cell) {
+        if (cell.bl4dInPopup === undefined) {
+            var node = cell.parentElement;
+            while (node && node.tagName && node.tagName.toLowerCase() !== "widget-popup-backpack") node = node.parentElement;
+            cell.bl4dInPopup = !!(node && node.tagName);
+        }
+        return cell.bl4dInPopup;
+    }
+
+    // The top row is ~9rem wide (11 characters at the normal size); a new item's row is the cell's width
+    function cellNameSize(text, isNew) {
+        return nameSize(text, isNew ? [16, 19, 22] : [11, 14, 16]);
+    }
+
+    function renderCellName(cell) {
+        var host = cell.querySelector(".iic_content");
+        if (!host) return;
+        var data = cell.DataModel;
+        var on = (ns.settings || {}).slot_names !== false && inSwitchGrid(cell);
+        var text = on && data && !data.isempty && SLOT_NAME_RARITIES[data.rarityident] ? legendaryName(data) : "";
+        var isNew = data && data.isnew;
+        setSlotName(host, text, "bl4d_slot_name bl4d_cell_name" + (isNew ? " bl4d_cell_name_new" : "") + cellNameSize(text, isNew));
+    }
+
+    ns.cell = function (cell) {
+        if (!current()) return;
+        loadDrops(function () {
+            if (!current()) return;
+            try {
+                renderCellName(cell);
+            } catch (err) {}  // never break the game's own cell
+        });
+    };
+
+    ns.slots = function (menu) {
+        if (!current()) return;
+        loadDrops(function () {
+            if (!current()) return;
+            try {
+                renderSlotNames(menu);
+            } catch (err) {}  // never break the game's own menu
+        });
+    };
+
+    function refreshSlots() {
+        var menus = document.querySelectorAll("widget-menu-equip");
+        for (var i = 0; i < menus.length; i++) ns.slots(menus[i]);
+        var cells = document.querySelectorAll("widget-popup-backpack inventory-item-cell");
+        for (var j = 0; j < cells.length; j++) ns.cell(cells[j]);
+    }
+
+    // Hook the equip menu's and the item cell's classes once, like the card's (only the inventory
+    // page has them)
+    var slotTries = 0;
+    function installSlots() {
+        if (!current()) return;
+        if (typeof Widget_EquipMenu === "undefined" || typeof InventoryItemCell === "undefined") {
+            setTimeout(installSlots, slotTries++ < INSTALL_FAST_TRIES ? INSTALL_FAST_MS : INSTALL_SLOW_MS);
+            return;
+        }
+        var proto = Widget_EquipMenu.prototype;
+        if (!proto.bl4dSlotsHooked) {
+            proto.bl4dSlotsHooked = true;
+            var original = proto.Event_DataUpdated;
+            proto.Event_DataUpdated = function () {
+                original.apply(this, arguments);
+                var page = window.bl4dItemCards;
+                if (page && !page.off && page.slots) page.slots(this);
+            };
+        }
+        var cellProto = InventoryItemCell.prototype;
+        if (!cellProto.bl4dNameHooked) {
+            cellProto.bl4dNameHooked = true;
+            var originalCell = cellProto.Event_DataUpdated;
+            cellProto.Event_DataUpdated = function () {
+                originalCell.apply(this, arguments);
+                var page = window.bl4dItemCards;
+                if (page && !page.off && page.cell) page.cell(this);
+            };
+        }
+        refreshSlots();
+    }
+
+    // endregion
+
     // region Styles and reloading
 
     function applyCss(css) {
@@ -1086,10 +1255,13 @@
         ns.off = true;
         ns.generation++;
         ns.refresh = function () {};
+        ns.slots = function () {};
+        ns.cell = function () {};
         if (ns.wheel) document.removeEventListener("wheel", ns.wheel, true);
         ns.wheel = null;
         clearTimeout(ns.popupTimer);
         var remove = [document.getElementById("bl4d_item_cards_css"), document.getElementById("bl4d_popup")];
+        remove = remove.concat(Array.prototype.slice.call(document.querySelectorAll(".bl4d_slot_name")));
         for (var i = 0; i < remove.length; i++) {
             if (remove[i] && remove[i].parentNode) remove[i].parentNode.removeChild(remove[i]);
         }
@@ -1109,4 +1281,5 @@
         link.ext.teardowns[LINK_KEY] = teardown;
     }
     install();
+    installSlots();
 })();

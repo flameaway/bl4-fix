@@ -35,27 +35,26 @@ from __future__ import annotations
 
 import importlib
 import threading
-import time
 from typing import Any
 
-from mods_base import ENGINE, DropdownOption, SliderOption, build_mod, get_pc, hook
+from mods_base import ENGINE, DropdownOption, SliderOption, build_mod, get_pc
 import unrealsdk
-from unrealsdk import hooks, logging
-from unrealsdk.hooks import Type
-from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
+from unrealsdk import logging
 
-from . import cvars
+from . import cvars, frametick
 
-__version__ = "0.3.0"
-__version_info__ = (0, 3, 0)
+__version__ = "0.3.1"
+__version_info__ = (0, 3, 1)
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
+TICK_KEY = "bl4_crisp_numbers"  # the shared Frame Tick (frametick/): once per engine frame
 CLEANUP_ID = "bl4_crisp_numbers.cleanup"
 CHECK_INTERVAL = 1.0  # s between re-checks of the values while nothing changes
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates): act on the first
-# call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
+# Full: s between reads of the mode (paused / ECHO / playing). It was read every frame (get_pc, ECHO
+# Anywhere's menu state, IsGamePaused: ~0.08 ms a frame, 2026-10-29). Late is safe: while playing,
+# r.ScreenPercentage is pinned, so the ECHO menu's 10% can't meet Basis 1 before we see it; leaving
+# a menu shows Basis 0 numbers for at most this long. Only the way out of ECHO is read every frame
+# (our 10% stays pinned until we see it close: a blurry world otherwise).
+MODE_POLL_S = 0.1
 
 BASIS = "r.Translucency.ScreenPercentage.Basis"  # 0 render resolution (game), 1 screen resolution
 PERCENT = "r.SeparateTranslucencyScreenPercentage"  # of the basis (game: 100)
@@ -77,9 +76,8 @@ class _S:
     broken = False  # the cvar lookup failed: the mod stays out of the way
     menu: Any = None  # ECHO Anywhere's StatusMenu, False when unavailable
     game_thread: int | None = None
-    last_call = 0.0
-    ticked_at = 0.0
     next_check = 0.0
+    next_mode = 0.0  # Full: when the mode is read next (MODE_POLL_S)
     mode: int | None = None
     sharp = False  # Basis 1 is on
     pinned_level: int | None = None  # the render cvar's set-by level before we pinned it
@@ -249,7 +247,9 @@ def _restore() -> None:
 
 def _option_changed(_opt: Any, _value: Any) -> None:
     _S.next_check = 0.0  # the tick applies it on the game thread
+    _S.next_mode = 0.0
     _S.mode = None
+    frametick.soon(TICK_KEY)  # at the next frame, not up to MODE_POLL_S later
 
 
 sharpness_option = DropdownOption(
@@ -282,13 +282,18 @@ percent_option = SliderOption(
 )
 
 
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    started = time.perf_counter()
-    gap, _S.last_call = started - _S.last_call, started
-    if gap < FRAME_GAP_S and started - _S.ticked_at < MAX_WAIT_S:
-        return
-    _S.ticked_at = started
+# Every MODE_POLL_S, not every frame (frames in between cost no Python call: ~3 us a frame in
+# Light, where the values are checked once a second anyway, 2026-10-29). While our ECHO 10% is set
+# (Full) it runs every frame again (soon), as before, to see the menu close at once.
+@frametick.tick(TICK_KEY, every=MODE_POLL_S)
+def tick() -> None:
+    _tick()
+    if _S.echo_low:
+        frametick.soon(TICK_KEY)
+
+
+def _tick() -> None:
+    started = frametick.now()
     if _S.broken:
         return
     try:
@@ -302,6 +307,9 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
             _full_off()
             _fxaa_off()
             return
+        if started < _S.next_mode and not _S.echo_low:
+            return
+        _S.next_mode = started + MODE_POLL_S
         world = _world()
         if world is None or _render_cvar() is None:
             return
@@ -327,6 +335,7 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
 
 def _enable() -> None:
     _S.next_check = 0.0
+    _S.next_mode = 0.0
     _S.mode = None
     _S.broken = False
 
@@ -339,14 +348,14 @@ def _disable() -> None:
         _restore()
         return
 
-    def once(*_a: Any) -> None:
+    def once() -> None:
         try:
-            hooks.remove_hook(TICK_FUNC, Type.POST, CLEANUP_ID)
+            frametick.remove(CLEANUP_ID)
             _restore()
         except Exception as ex:  # noqa: BLE001
             logging.error(f"[Crisp Damage Numbers] {ex!r}")
 
-    hooks.add_hook(TICK_FUNC, Type.POST, CLEANUP_ID, once)
+    frametick.add(CLEANUP_ID, once)
 
 
 mod = build_mod(

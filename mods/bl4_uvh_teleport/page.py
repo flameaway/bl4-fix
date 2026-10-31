@@ -45,6 +45,10 @@ class S:
     game_dir: Path | None = None
     published_at = 0.0
     published: dict[str, tuple[int, int]] = {}  # noqa: RUF012 - file -> (size, mtime) last copied
+    # The page files come from a source folder (dev junction), not a packed .sdkmod; set at register
+    from_source = False
+    # The bosses as the page gets them (bosses.json doesn't change while the game runs)
+    page_bosses: list[dict[str, Any]] | None = None
     # The challenge the script last said is hovered (a bosses.json entry)
     hover: dict[str, Any] | None = None
     hover_at = 0.0
@@ -53,6 +57,7 @@ class S:
     key_down = True
     # Closing the menu after a teleport: {"presses", "at"}
     closing: dict[str, Any] | None = None
+    slow_at = 0.0  # the next health / publish look (tick)
     # The last refusal, shown on the card: {"id", "title", "text"}
     note: dict[str, Any] = {"id": 0}  # noqa: RUF012
     # Set by __init__
@@ -65,10 +70,12 @@ def _changed() -> None:
 
 def state() -> dict[str, Any]:
     key = S.key()
+    if S.page_bosses is None:
+        S.page_bosses = [{k: b[k] for k in ("title", "boss", "place", "uvh")} for b in travel.bosses()]
     return {
         "key": key or "",
         "key_text": uilink.display_name(key) if key else "",
-        "bosses": [{k: b[k] for k in ("title", "boss", "place", "uvh")} for b in travel.bosses()],
+        "bosses": S.page_bosses,
         "busy": travel.busy(),
         "note": S.note,
     }
@@ -112,13 +119,21 @@ def _refuse(boss: dict[str, Any], text: str) -> None:
     _changed()
 
 
+# health and the page's files are looked at this often (they have their own slower clocks)
+SLOW_S = 0.25
+
+
 def tick() -> None:
-    """Every frame: the link, the page's files, the key, and closing the menu after a trip."""
+    """Every frame: the link, the key, and closing the menu after a trip; health and the page's files every SLOW_S."""
     uilink.tick()
-    health.tick()
-    publish()
-    _close_menu()
-    if (result := travel.take_hop_result()) is not None:
+    now = time.monotonic()
+    if now >= S.slow_at:
+        S.slow_at = now + SLOW_S
+        health.tick()
+        publish()
+    if S.closing is not None:
+        _close_menu()
+    if travel.S.hop is not None and (result := travel.take_hop_result()) is not None:
         hopped, reply = result
         if reply.get("ok"):
             logging.info(f"[UVH Teleport] At {hopped['boss']} ({hopped['place']}), moved by the host")
@@ -129,7 +144,7 @@ def tick() -> None:
         else:
             _refuse(hopped, f"The host couldn't move you ({reply.get('error')}); follow the waypoint.")
     boss = S.hover
-    if boss is None or time.monotonic() - S.hover_at > HOVER_FRESH_S:
+    if boss is None or now - S.hover_at > HOVER_FRESH_S:
         # Read the key only while a teleport challenge is hovered. Otherwise it counts as held, so
         # a press needs a release first (a key's first read after a pause also says held)
         S.key_down = True
@@ -164,14 +179,18 @@ def unregister() -> None:
 
 def publish(*, force: bool = False) -> None:
     """Copies the page's files to uiresources/bl4uvhtp/, touching only files that changed."""
-    now = time.monotonic()
-    if S.game_dir is None or (not force and now - S.published_at < PUBLISH_S):
+    if not force and not S.from_source:
+        # A packed .sdkmod can't change while the game runs: copied once, at register. Checked
+        # before anything else: resources.files() on a packed mod opens its zip (every second, 0.7 ms)
         return
+    now = time.monotonic()
+    if S.game_dir is None or (not force and (now - S.published_at < PUBLISH_S or not uilink.polling(KEY))):
+        return  # dev: only while the menu page runs the script (it re-reads the files itself)
     S.published_at = now
     root = resources.files(__package__)
-    from_source = isinstance(root, Path)
+    from_source = S.from_source = isinstance(root, Path)
     if not force and not from_source:
-        return  # a packed .sdkmod can't change while the game runs: copied once, at register
+        return
     for name in UI_FILES:
         try:
             source = root / "ui" / name

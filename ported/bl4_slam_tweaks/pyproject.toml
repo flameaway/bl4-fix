@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Slam Tweaks"
-version = "0.1.1"
+version = "0.1.2"
 description = "A fast Pre-Sequel style ground slam without the long animations."
 authors = [{ name = "flame" }, { name = "Yeti (original mod)" }]
 license = "GPL-3.0-only"

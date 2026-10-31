@@ -26,6 +26,7 @@ app imports it too (installer/core.py PAGE_MODULES), so keep it plain Python 3.1
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from importlib import resources
 from pathlib import Path
@@ -85,6 +86,31 @@ def publish_files(game_dir: Path, enabled: bool = True) -> None:
         tmp = target.with_name(target.name + ".tmp")
         tmp.write_bytes(data)
         tmp.replace(target)
+
+
+def dev_stamp(game_dir: Path) -> tuple:
+    """
+    Dev (FROM_SOURCE): size and mtime of every published file's source and target. The once-a-second
+    republish only runs publish_files when this changed: it read ~200 KB and compared it every second,
+    ~2.7 ms on the game thread (2026-10-29); this is two directory listings (~0.4 ms).
+    """
+    files = []
+    for path, asset in [*LOOSE_FILES, *((p, a) for p, a, _ in LOOSE_DATA)]:
+        files += [Path(str(ASSETS / asset)), game_dir / UI_PREFIX / path]
+    return _files_stamp(files)
+
+
+def _files_stamp(files: list[Path]) -> tuple:
+    """(mtime, size) of each file, None if missing: one directory listing per folder (a stat is
+    ~0.16 ms here, a listing ~0.2 ms; measured in game 2026-10-29)."""
+    folders: dict[Path, dict[str, tuple[int, int]]] = {}
+    for folder in {file.parent for file in files}:
+        try:
+            with os.scandir(folder) as entries:
+                folders[folder] = {e.name: (e.stat().st_mtime_ns, e.stat().st_size) for e in entries}
+        except OSError:
+            folders[folder] = {}
+    return tuple(folders[file.parent].get(file.name) for file in files)
 
 
 def write_settings(game_dir: Path, settings: dict | None) -> None:

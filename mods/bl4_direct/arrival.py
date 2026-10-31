@@ -8,12 +8,17 @@ for a directly-connected friend: the host's own controller was ready, the friend
 both players sat in the portal indefinitely (verified, two instances on one account).
 
 Setting the flag after the fact doesn't release anyone (verified), so like the BL4 split-screen
-mod (TitanNav/bl4-2player-splitscreen), whose analysis this follows, we call the game's own setter
-for that controller when the travel notice goes out.
+mod, we call the game's own setter for that controller when the travel notice goes out.
 
 The setter isn't a UFunction, so it's found by code pattern in the running exe. It's only used
 when the pattern matches exactly once AND the code that checks the flag matches exactly once with
 the same flag offset; otherwise this does nothing and the game behaves as normal.
+
+Adapted from `mod/bl4ss/native.py` of 2-Player Split-Screen Unlocked by TitanNav
+(https://github.com/TitanNav/bl4-2player-splitscreen), licensed GPL-3.0 (LICENSE): the analysis,
+both code patterns and the locate / is_ready / mark_ready code are theirs. Modified by flameaway
+(first in 2026-10, changes since in git history): the scan runs on a worker thread in small chunks
+(GIL), and there's no pinned-address fallback.
 """
 
 from __future__ import annotations

@@ -7,50 +7,40 @@ When you press the ECHO menu key (Tab, or View on a controller) and the game say
 menu ourselves through the game's own internal open call (see native.py). When the game would open
 it anyway, we leave it alone.
 
-Keys are read from the Windows keyboard state (and XInput for controllers) like our other mods,
-and only while the game window is in front.
+Keys and the pad's View button come from the game's own input (gamekeys, like our other mods),
+only while the game window is in front.
 """
 
 from __future__ import annotations
 
 import ctypes
-import sys
 import time
-from typing import Any
 
 import unrealsdk
-from mods_base import BoolOption, KeybindOption, build_mod, get_pc, hook
+from mods_base import BoolOption, KeybindOption, build_mod, get_pc
 from unrealsdk import logging
-from unrealsdk.hooks import Type
-from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
+from unrealsdk.unreal import UObject
 
-from . import health, native
+from . import frametick, gamekeys, health, native
 
-__version__ = "0.1.1"
-__version_info__ = (0, 1, 1)
+__version__ = "0.1.3"
+__version_info__ = (0, 1, 3)
 
-# Fires several times a frame, in menus too
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
-_last_call = _ticked_at = 0.0
 # A press this soon after the menu was open is the key closing it, not a request to open it
 CLOSE_GRACE = 0.5  # s
 # The game refuses the menu while you spawn in (end of a load, fast travel, respawn) and opening
 # it then breaks the spawn-in animation, so we leave those first seconds to the game
 SPAWN_GRACE = 8.0  # s
-XINPUT_GAMEPAD_BACK = 0x0020
-PAD_PROBE_S = 2.0  # how often empty controller slots are checked for a new pad
+PAD_VIEW = "Gamepad_Special_Left"  # the View button, Action_StatusMenu's pad binding
 VK_MENU = 0x12  # either Alt: Alt+Tab switches windows, it isn't a request for the menu
 
 _pc_class = unrealsdk.find_class("OakPlayerController")
 
-# ctypes.windll, not PyDLL: these calls must let go of the GIL (GetAsyncKeyState can take ~100 ms,
-# e.g. while the desktop is streamed). Keys go through BL4 Mod Menu's key thread when it's loaded.
+# ctypes.windll, not PyDLL: these calls must let go of the GIL. Only the focus check uses them; keys
+# come from the game's own input (gamekeys).
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
+_focus: tuple[int, bool] = (0, False)  # (foreground window last seen, whether it's ours)
 
 
 def log(msg: str) -> None:
@@ -95,74 +85,45 @@ def _virtual_key(name: str | None) -> int | None:
     return _VIRTUAL_KEYS.get(name)
 
 
-class _XInputGamepad(ctypes.Structure):
-    _fields_ = [  # noqa: RUF012
-        ("wButtons", ctypes.c_ushort), ("bLeftTrigger", ctypes.c_ubyte),
-        ("bRightTrigger", ctypes.c_ubyte), ("sThumbLX", ctypes.c_short),
-        ("sThumbLY", ctypes.c_short), ("sThumbRX", ctypes.c_short), ("sThumbRY", ctypes.c_short),
-    ]  # fmt: skip
-
-
-class _XInputState(ctypes.Structure):
-    _fields_ = [("dwPacketNumber", ctypes.c_ulong), ("Gamepad", _XInputGamepad)]  # noqa: RUF012
-
-
-try:
-    _xinput = ctypes.windll.xinput1_4
-except OSError:
-    _xinput = None
-
-
-class _Pads:
-    connected: set[int] = set()  # noqa: RUF012
-    probed_at = 0.0
-    state = _XInputState()
-
-
 def _pad_back_down() -> bool:
-    if _xinput is None:
-        return False
-    # Microsoft: don't read empty slots every frame (slow on some systems), look for new pads every
-    # few seconds instead. Measured here: 2.5 us for all four, so this is only a guard.
-    now = time.monotonic()
-    pads = range(4) if now - _Pads.probed_at >= PAD_PROBE_S else tuple(_Pads.connected)
-    if len(pads) == 4:  # noqa: PLR2004
-        _Pads.probed_at = now
-    down = False
-    for pad in pads:
-        if _xinput.XInputGetState(pad, ctypes.byref(_Pads.state)) != 0:
-            _Pads.connected.discard(pad)
-            continue
-        _Pads.connected.add(pad)
-        down = down or bool(_Pads.state.Gamepad.wButtons & XINPUT_GAMEPAD_BACK)
-    return down
+    # The game's own input (gamekeys): the View button. Until 2026-10-30 XInput, through BL4 Mod
+    # Menu's key thread when it was loaded (~28 us a frame on the game thread otherwise)
+    return gamekeys.down(PAD_VIEW)
 
 
 def _game_window_focused() -> bool:
+    """One Win32 call while the foreground window stays the same (it was 3 every call)."""
+    global _focus  # noqa: PLW0603
     hwnd = _user32.GetForegroundWindow()
-    pid = ctypes.c_ulong()
-    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    return pid.value == _kernel32.GetCurrentProcessId()
+    known, ours = _focus
+    if hwnd != known or not hwnd:
+        pid = ctypes.c_ulong()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        ours = bool(hwnd) and pid.value == _kernel32.GetCurrentProcessId()
+        _focus = (hwnd, ours)
+    return ours
 
 
 def _async_down(vk: int) -> bool:
     """
-    Whether a key is held while the game is in front. Read by BL4 Mod Menu's key thread when it's
-    loaded: GetAsyncKeyState can take ~100 ms on the game thread (a streamed desktop, 2026-10-24).
+    Whether a key is held, from the game's own input (gamekeys, shared by our mods; False while the
+    game isn't in front). Until 2026-10-30 this read Windows (GetAsyncKeyState, through BL4 Mod
+    Menu's key thread when it was loaded).
     """
-    keys = sys.modules.get("bl4_mod_menu.keys")
-    if keys is not None and hasattr(keys, "_Keys"):
-        return keys.vk_down(vk)
-    return _game_window_focused() and bool(_user32.GetAsyncKeyState(vk) & 0x8000)
-
+    return gamekeys.vk_down(vk)
 
 class Keys:
     was_down = True  # a key held when we start doesn't count
+    code: tuple[str | None, int | None] = (None, None)  # (key name, _virtual_key(name)): ~5 us of string work
 
     @classmethod
     def pressed(cls) -> bool:
         """True once per press of the ECHO menu key or button."""
-        vk = _virtual_key(key_option.value)
+        name, vk = cls.code
+        if name != key_option.value:
+            name = key_option.value
+            vk = _virtual_key(name)
+            cls.code = (name, vk)
         down = vk is not None and _async_down(vk)
         if down and _async_down(VK_MENU):
             down = False
@@ -182,6 +143,25 @@ class State:
     last_open = 0.0  # when we last saw the menu open
     pawn = 0  # address of the pawn we last saw, and when it appeared
     spawned = 0.0
+    polled_at = -1e9  # the last read of the menu state and the pawn (STATE_POLL_S)
+    open_seen = False  # the menu wasn't closed at that read: read every frame until it is
+
+
+# Between key presses the menu state and the pawn are read this often (every frame while the menu
+# is open, and at once on a press). They were read every frame, with 3 Win32 calls for the window
+# focus: the mod's whole cost in play (Mod Profiler, 2026-10-29). They only feed the grace times
+# (CLOSE_GRACE 0.5 s, SPAWN_GRACE 8 s), which a press checks again itself.
+STATE_POLL_S = 0.1
+
+
+def _poll(pc: UObject, menu: native.StatusMenu, now: float) -> None:
+    State.polled_at = now
+    State.open_seen = menu.state(pc) != 0
+    if State.open_seen:
+        State.last_open = now
+    pawn = pc.Pawn._get_address()
+    if pawn != State.pawn:
+        State.pawn, State.spawned = pawn, now
 
 
 def _menu(pc: UObject) -> native.StatusMenu | None:
@@ -200,37 +180,35 @@ def _menu(pc: UObject) -> native.StatusMenu | None:
     return State.menu
 
 
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    global _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
+@frametick.tick("bl4_echo_anywhere")  # once per engine frame, in menus too (the shared Frame Tick, frametick/)
+def tick() -> None:
     try:
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
     except Exception:  # noqa: BLE001 - never let it break the game's tick
         pass
-    pc = get_pc(possibly_loading=True)
-    if pc is None or pc.Pawn is None:
-        return
+    now = time.monotonic()
     try:
+        # The key first: the game's own input (gamekeys, False while the game isn't in front). The
+        # rest only on a press, while the menu is open, or every STATE_POLL_S
+        pressed = Keys.pressed()
+        if not pressed and not State.open_seen and now - State.polled_at < STATE_POLL_S:
+            return
+        State.polled_at = now
+        pc = get_pc(possibly_loading=True)
+        if pc is None or pc.Pawn is None:
+            State.open_seen = False
+            return
         if not pc.Class._inherits(_pc_class):
             return  # manager_offset is an OakPlayerController field
         menu = _menu(pc)
         if menu is None:
             return
-        now = time.monotonic()
-        if menu.state(pc) != 0:
-            State.last_open = now
-        pawn = pc.Pawn._get_address()
-        if pawn != State.pawn:
-            State.pawn, State.spawned = pawn, now
-        if not _game_window_focused():
-            Keys.was_down = True
+        _poll(pc, menu, now)
+        if not pressed:
             return
-        if not Keys.pressed() or now - State.last_open < CLOSE_GRACE:
+        if not _game_window_focused():
+            return  # a controller's button in another window (Keys.was_down stays set)
+        if now - State.last_open < CLOSE_GRACE:
             return
         if now - State.spawned < SPAWN_GRACE:
             return

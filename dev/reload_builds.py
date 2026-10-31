@@ -7,14 +7,14 @@ import sys
 
 import mods_base.mod_list
 
-SUBMODULES = ("bl4_builds.native", "bl4_builds.game", "bl4_builds.presets", "bl4_builds.builds", "bl4_builds.keyboard",
+SUBMODULES = ("bl4_builds.native", "bl4_builds.game", "bl4_builds.presets", "bl4_builds.builds",
               "bl4_builds.page", "bl4_builds.notice", "bl4_builds.hotkeys")
 
 old = sys.modules.get("bl4_builds")
 if old is None:
     new = importlib.import_module("bl4_builds")
 else:
-    # A name being typed has a keyboard hook running; never leave it behind
+    # A name being typed holds the UI Link's text box (the game's keys kept from its menus): end it
     if (old_page := sys.modules.get("bl4_builds.page")) is not None and hasattr(old_page, "stop_naming"):
         old_page.stop_naming(keep=False)
     if (old_hotkeys := sys.modules.get("bl4_builds.hotkeys")) is not None and hasattr(old_hotkeys, "stop"):

@@ -30,14 +30,16 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
-from . import breadcrumbs, fog, health, loot, mapdata, markers, objectives, scene, services, tiles
+from . import breadcrumbs, fog, frametick, gamekeys, health, loot, mapdata, markers, objectives, scene, services, tiles
 from .widget import DOT_TEXTURE, EDGE_LAYER, MARKER_LOOKS, OVERSCAN, Minimap
 
 __version__ = "0.1.1"
 __version_info__ = (0, 1, 1)
 
 # Fires several times a frame (the bridge and Third Person use it too); we act once per frame
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyPostProcess"
+# Map data, fog, objectives, the map's icons and the route: none of these move fast, so they update
+# at this pace (5/s); enemies and other moving markers at the "Marker updates per second" option
+SLOW_UPDATE_S = 0.2
 ICON_SIZE = 36.0  # the map's icons, UI units at 100% icon size
 ROUTE_DOT_SIZE = 14.0
 ROUTE_DOTS_PER_RANGE = 12  # dots between the player and the minimap's edge
@@ -86,9 +88,23 @@ TELEPORT_GRACE_S = 3.0  # a teleport notice counts this long even before movemen
 # runs only while one of the game's menus shows, polling every 1 s) has polled within MENU_POLL_S
 CURSOR_GRACE_S = 2.0
 MENU_POLL_S = 1.5
+# The hide checks that cost a call or a chain of reads (pause, cutscene, HUD off, portal) run at
+# most this far apart; the cheap per-frame cues (cursor, full-screen menu, a teleport notice) run
+# them at once when they change, so a menu still hides us in the frame it comes up
+HIDE_CHECK_S = 0.1
+# Hidden (a menu, the pause, the portal, the HUD off, loading): the whole check runs this often, not
+# every frame (it cost ~0.1 ms a frame behind a menu: property reads at 15-20 us each in the frame
+# tick, game 22832, 2026-10-30). Showing again after a menu closes waits up to this long.
+HIDDEN_POLL_S = 0.05
+UI_SCALE_S = 1.0  # the viewport's UI scale (a UFunction call) only changes when the window is resized
+# tiles.py's loader: asked when its next action is due, at most every TILES_MIN_GAP_S, and at least
+# every TILES_GAP_S (fog mask reads, blur checks, a composed picture to swap in)
+TILES_MIN_GAP_S = 0.02
+TILES_GAP_S = 0.1
+TILES_IDLE_GAP_S = 0.25  # every tile around you loaded and sharp: a new one is wanted only after a long walk
 
-# ctypes.windll, not PyDLL: these calls must let go of the GIL (GetAsyncKeyState can take ~100 ms,
-# e.g. while the desktop is streamed). Keys go through BL4 Mod Menu's key thread when it's loaded.
+# ctypes.windll, not PyDLL: these calls must let go of the GIL. Only the focus check uses them; keys
+# come from the game's own input (gamekeys).
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 
@@ -250,22 +266,24 @@ def _game_window_focused() -> bool:
 
 def _async_down(vk: int) -> bool:
     """
-    Whether a key is held while the game is in front. Read by BL4 Mod Menu's key thread when it's
-    loaded: GetAsyncKeyState can take ~100 ms on the game thread (a streamed desktop, 2026-10-24).
+    Whether a key is held, from the game's own input (gamekeys, shared by our mods; False while the
+    game isn't in front). Until 2026-10-30 this read Windows (GetAsyncKeyState, through BL4 Mod
+    Menu's key thread when it was loaded).
     """
-    keys = sys.modules.get("bl4_mod_menu.keys")
-    if keys is not None and hasattr(keys, "_Keys"):
-        return keys.vk_down(vk)
-    return _game_window_focused() and bool(_user32.GetAsyncKeyState(vk) & 0x8000)
-
+    return gamekeys.vk_down(vk)
 
 class Keys:
     was_down: dict[int, bool] = {}  # noqa: RUF012
 
+    vk_for: tuple[Any, int | None] = (None, None)  # (key name, its key code): parsed once per name
+
     @classmethod
     def pressed(cls, option: KeybindOption) -> bool:
         """True once per press of the option's key."""
-        vk = virtual_key(option.value)
+        name = option.value
+        if cls.vk_for[0] != name:
+            cls.vk_for = (name, virtual_key(name))
+        vk = cls.vk_for[1]
         if vk is None:
             return False
         down = _async_down(vk)
@@ -279,10 +297,12 @@ class Keys:
 
 
 class State:
-    last_frame = -1  # engine frame we last updated in
     view_key: tuple[Any, ...] = ()  # the view the icons were last placed for
-    system: Any = None  # KismetSystemLibrary's default object
-    last_update = 0.0  # the last full update (markers, fog, ...)
+    last_update = 0.0  # the last full update (moving markers)
+    last_slow = 0.0  # the last slow update (map data, fog, objectives, icons, route)
+    collected: list[markers.Marker] = []  # noqa: RUF012  # markers.collect's, from the last full update
+    extra: list[markers.Marker] = []  # noqa: RUF012  # objectives and events, from the last slow update
+    ui = 1.0  # the viewport's UI scale (slow update)
     markers: list[markers.Marker] = []  # noqa: RUF012  # from the last full update
     icons: list[dict[str, Any]] = []  # noqa: RUF012  # the map's icons near the player (last full update)
     route: list[tuple[float, float]] = []  # noqa: RUF012  # route dots near the player (last full update)
@@ -290,13 +310,29 @@ class State:
     north_yaw: float | None = None
     statics: Any = None  # GameplayStatics' default object, looked up once
     layout: Any = None  # WidgetLayoutLibrary's
+    turn_ref: tuple[float, float, float] | None = None  # (x, y, radius): the route dots' fixed frame
+    viewport = WeakPointer()  # ENGINE.GameViewport (through mods_base's ENGINE that's ~6 us a frame)
+    pc = WeakPointer()  # get_pc's answer (on_frame)
+    name_world = WeakPointer()  # the level `world_name` is the name of
+    world_name = ""
+    ui_next = 0.0  # when the UI scale is read again (UI_SCALE_S)
+    shown_content: tuple[Any, ...] = ()  # (markers, icons, route, route colour) last placed
+    tiles_next = 0.0  # when tick_tiles is due again (TILES_GAP_S / the tile loader's next action)
     teleport_since = 0.0  # when the game said a teleport (fast travel portal) starts; 0: none
     cursor_since = 0.0  # when the mouse cursor came up; 0: it's hidden
+    hide_next = 0.0  # when the hide checks are due again (HIDE_CHECK_S)
+    hide_cue: tuple[Any, ...] = ()  # (cursor, full-screen menu, teleport notice) at the last check
+    paused = False  # the last check's verdicts
+    hidden = False
     world = WeakPointer()  # the level of the last full update
     giver_key: tuple[Any, ...] = ()  # (live givers, map data version) `givers` was made for
     givers: list[dict[str, Any]] = []  # noqa: RUF012  # live mission givers as map icons
     covered: set[str] = set()  # noqa: RUF012  # ECHO-map giver textures the live list stands for
     route_color = mapdata.DEFAULT_ROUTE_COLOR  # the colour `route` is drawn in (`_route` picks it)
+    # (route list, (turn_ref, north), each dot's place in the turned layer's fixed frame): those
+    # places change only with the route (5/s at most) or the frame, not each frame you move or turn
+    route_cache: tuple[Any, Any, list[tuple[float, float]]] = (None, None, [])  # noqa: RUF012
+    hidden_until = 0.0  # hidden: on_frame skips the frames until then (HIDDEN_POLL_S)
     events_version = -1  # the map data version `events` was made from
     events: list[dict[str, Any]] = []  # noqa: RUF012  # the ECHO map's rift / world event icons
 
@@ -572,40 +608,97 @@ def _givers(icons: list[dict[str, Any]], x: float, y: float, reach: float) -> li
     return kept + [i for i in State.givers if (i["x"] - x) ** 2 + (i["y"] - y) ** 2 <= r2]
 
 
+def _world_name(world: UObject) -> str:
+    """The level's name, read once per level (str(world.Name) is a property read and a conversion)."""
+    if State.name_world() is not world:
+        State.name_world, State.world_name = WeakPointer(world), str(world.Name)
+    return State.world_name
+
+
+class _Point:
+    """A location as _route reads it (X, Y, Z), without a struct."""
+
+    __slots__ = ("X", "Y", "Z")
+
+    def __init__(self, x: float, y: float, z: float) -> None:
+        self.X, self.Y, self.Z = x, y, z
+
+
 def _paused(pc: UObject) -> bool:
     if State.statics is None:
         State.statics = unrealsdk.find_class("GameplayStatics").ClassDefaultObject
     return bool(State.statics.IsGamePaused(pc))
 
 
-def _frame(pc: UObject, full: bool) -> None:
-    """Every frame: move and turn the picture and the markers. `full`: also the heavier work."""
-    if _game_window_focused() and Keys.pressed(toggle_key):
+def _frame(pc: UObject, full: bool, slow: bool) -> None:
+    """
+    Every frame: move and turn the picture and the markers. `full`: also look up the moving markers
+    (enemies, teammates, loot); `slow`: the map data, fog, objectives, the map's icons and the route.
+    """
+    # (No focus check of our own: BL4 Mod Menu's key snapshot, and our fallback, read False while the
+    # game isn't in front; it was 3 Win32 calls a frame, each handing the GIL away)
+    if Keys.pressed(toggle_key):
         saved_on_option.value = not saved_on_option.value
         mod.save_settings()
 
+    if not saved_on_option.value:  # switched off (N): before any read of the game
+        State.hide_next = 0.0
+        Minimap.show(pc, False)
+        return
+    now = time.monotonic()
     pawn = pc.Pawn
-    world = ENGINE.GameViewport.World
-    paused = _paused(pc) if pawn is not None else False
-    if not saved_on_option.value or pawn is None or world is None or not scene.Scene.ready(pc, world, paused=paused):
+    viewport = State.viewport()
+    if viewport is None:
+        viewport = ENGINE.GameViewport
+        State.viewport = WeakPointer(viewport)
+    world = viewport.World if viewport is not None else None
+    if pawn is None or world is None:
+        State.hide_next = 0.0
+        State.hidden_until = now + HIDDEN_POLL_S
+        Minimap.show(pc, False)
+        return
+    # Cheap cues every frame; the pause check (a UFunction call) and the other hide checks only when
+    # a cue changed or HIDE_CHECK_S passed (they cost ~25-60 us a frame when run every frame)
+    suspended = bool(pc.bPlayerViewRenderingSuspended)  # full-screen menus (co-op ECHO menu too)
+    cue = (bool(pc.bShowMouseCursor), suspended, State.teleport_since)
+    # (a check that's only due by time waits for a frame without a marker or slow update)
+    check = cue != State.hide_cue or (now >= State.hide_next and not (full or slow))
+    if check:
+        State.paused = _paused(pc)
+    paused = State.paused
+    # The map model and its camera: looked at fully at the slow rate or when the level changed (a
+    # level with no map leaves Scene.world empty, so it's asked every frame there, as before)
+    if (slow or world is not scene.Scene.world()) and not scene.Scene.ready(pc, world, paused=paused):
+        State.hide_next = 0.0
+        State.hidden_until = now + HIDDEN_POLL_S
         Minimap.show(pc, False)
         return
     # Before the pause check: the game pauses while the map is open, and that's when we copy its fog
-    if full:
-        mapdata.MapData.sync(pc, str(world.Name))
+    if slow:
+        mapdata.MapData.sync(pc, _world_name(world))
         if fog_option.value:
-            fog.Fog.sync(pc, str(world.Name), fog_strength_option.value / 100, paused)
+            fog.Fog.sync(pc, _world_name(world), fog_strength_option.value / 100, paused)
             scene.Scene.show_also(fog.Fog.actor())
         else:
             scene.Scene.show_also(None)
-    if paused or _hud_hidden(pc) or _menu_up(pc) or _teleporting(pc, pawn):
+    if mapdata.MapData.job is not None:
+        mapdata.MapData.run()  # a read of the open ECHO map, a piece a frame (behind the paused menu)
+    if breadcrumbs.Breadcrumbs.job is not None:
+        breadcrumbs.Breadcrumbs.run()  # a route plan, a slice a frame
+    if check:
+        State.hide_next, State.hide_cue = now + HIDE_CHECK_S, cue
+        State.hidden = paused or _hud_hidden(pc) or _menu_up(pc) or _teleporting(pc, pawn)
+    if State.hidden or suspended:
         if paused:
             tiles.Tiles.paused_tick(pc)  # saves finished map tiles behind the menu (a GPU readback each)
+        State.hidden_until = now + HIDDEN_POLL_S
         Minimap.show(pc, False)
         return
 
-    loc = pawn.K2_GetActorLocation()
-    yaw = float(pc.GetControlRotation().Yaw)
+    lx, ly, lz = markers.location(pawn)  # (properties: no UFunction call a frame)
+    # The property GetControlRotation returns (equal over 400 frames, game 25456): a property read
+    # is ~4 us inside the frame tick, the UFunction call 14-25 us
+    yaw = float(pc.ControlRotation.Yaw)
     if State.north_yaw is None:
         State.north_yaw = _north_yaw(pc)
     north = State.north_yaw
@@ -620,38 +713,47 @@ def _frame(pc: UObject, full: bool) -> None:
     up = right = 0.0
     c, s = math.cos(math.radians(north)), math.sin(math.radians(north))
     if shot is not None:
-        dx, dy = loc.X - shot[0], loc.Y - shot[1]
+        dx, dy = lx - shot[0], ly - shot[1]
         up, right = dx * c + dy * s, -dx * s + dy * c
     room = picture - view * (1 + REFILM_MARGIN)  # how far the view can slide before it runs off
     if scene.Scene.fresh or fog.Fog.changed:
         scene.Scene.invalidate()  # the cached pictures were filmed with the old fog
         fog.Fog.changed = False
     if (
-        shot is None or shot[3] != picture or shot[2] != north or scene.Scene.needs_film()
+        shot is None or shot[3] != picture or shot[2] != north or scene.Scene.needs_film(alive=slow)
         or abs(up) > room or abs(right) > room
     ):  # fmt: skip
         # The cached picture for the nearest grid point (one `room` apart, so the player is at most
         # half a room from its centre), filmed only if it isn't cached yet
-        filmed = scene.Scene.use(pc, loc.X, loc.Y, north, picture, room)
+        filmed = scene.Scene.use(pc, lx, ly, north, picture, room)
         shot = scene.Scene.shot
-        dx, dy = loc.X - shot[0], loc.Y - shot[1]
+        dx, dy = lx - shot[0], ly - shot[1]
         up, right = dx * c + dy * s, -dx * s + dy * c
         filmed = filmed or scene.Scene.settle()
     else:
         filmed = scene.Scene.settle()
-    # Map tiles (tiles.py): load or film one around the player; swap in a picture drawn from them
-    if scene.Scene.tick_tiles(pc, loc.X, loc.Y, north, picture, room, fog_on=bool(fog_option.value),
-                              strength=fog_strength_option.value / 100, paused=False):  # fmt: skip
-        shot = scene.Scene.shot
-        dx, dy = loc.X - shot[0], loc.Y - shot[1]
-        up, right = dx * c + dy * s, -dx * s + dy * c
-        filmed = True
+    # Map tiles (tiles.py): load or film one around the player; swap in a picture drawn from them.
+    # The loader does at most one action per ACTION_GAP_S, so it's asked when that's due, else every
+    # TILES_GAP_S for its other checks (it cost ~50-60 us every frame, game 25456)
+    if now >= State.tiles_next or filmed:
+        if scene.Scene.tick_tiles(pc, lx, ly, north, picture, room, fog_on=bool(fog_option.value),
+                                  strength=fog_strength_option.value / 100, paused=False):  # fmt: skip
+            shot = scene.Scene.shot
+            dx, dy = lx - shot[0], ly - shot[1]
+            up, right = dx * c + dy * s, -dx * s + dy * c
+            filmed = True
+        if tiles.Tiles.idle:
+            State.tiles_next = now + TILES_IDLE_GAP_S
+        else:
+            State.tiles_next = max(now + TILES_MIN_GAP_S, min(tiles.Tiles.next_action, now + TILES_GAP_S))
     turn = north - yaw if rotate_option.value else 0.0
     # Sizes are in screen pixels; UMG lays out in UI units (pixels / the viewport's UI scale)
-    ui = _ui_scale(pc)
+    if (slow and now >= State.ui_next) or State.ui <= 0:
+        State.ui, State.ui_next = _ui_scale(pc), now + UI_SCALE_S
+    ui = State.ui
     margin = (float(margin_x_option.value) / ui, float(margin_y_option.value) / ui)
     Minimap.show(pc, True, float(size_option.value) / ui, margin, yaw - map_yaw, icon_size_option.value / 100,
-                 square=square)  # fmt: skip
+                 square=square, pixel=1 / ui)  # fmt: skip
     Minimap.set_view(0.5 + right / (2 * picture), 0.5 - up / (2 * picture), radius / (2 * picture), turn,
                      force=filmed or scene.Scene.settling())  # fmt: skip
     north_at = None
@@ -659,11 +761,14 @@ def _frame(pc: UObject, full: bool) -> None:
         # A point far to the north, pulled onto the rim
         far = radius * 4
         n = math.radians(north)
-        north_at = markers.project(loc.X + far * math.cos(n), loc.Y + far * math.sin(n), loc.X, loc.Y, map_yaw, radius,
+        north_at = markers.project(lx + far * math.cos(n), ly + far * math.sin(n), lx, ly, map_yaw, radius,
                                    clamp=True, square=square)  # fmt: skip
     Minimap.set_north(north_at)
     if full:
-        State.markers = markers.collect(pc, pawn, world, loot_on=bool(loot_option.value))
+        State.collected = markers.collect(pc, pawn, world, loot_on=bool(loot_option.value), me=(lx, ly, lz))
+        State.markers = State.collected + State.extra
+    if slow:
+        extra: list[markers.Marker] = []
         data = mapdata.MapData
         new_world = world is not State.world()
         State.world = WeakPointer(world)
@@ -672,7 +777,7 @@ def _frame(pc: UObject, full: bool) -> None:
         # Objectives are markers, so they stay on the rim when out of range. Live ones replace the
         # ECHO map's copies (those only change when the map is opened); the copies are the fallback.
         shown, tracked = _live_objectives(live) if not live.broken else ([], [])
-        icons = data.icons_near(loc.X, loc.Y, radius * 1.5) if icons_option.value else []
+        icons = data.icons_near(lx, ly, radius * 1.5) if icons_option.value else []
         rifts = bool(rifts_option.value)
         icons = [
             i for i in icons
@@ -688,56 +793,81 @@ def _frame(pc: UObject, full: bool) -> None:
                 State.events_version = data.version
                 State.events = [i for i in data.icons if mapdata.is_rift(i["texture"])]
             slack = ROUTE_END_SLACK**2
-            State.markers += [
+            extra += [
                 markers.Marker("event", i["x"], i["y"], True, i.get("z"), i["texture"])
                 for i in State.events
                 if not any((i["x"] - x) ** 2 + (i["y"] - y) ** 2 <= slack for x, y, _, _ in shown)
             ]  # fmt: skip
         if icons_option.value and not live.broken and live.read_ok:
-            icons = _givers(icons, loc.X, loc.Y, radius * 1.5)
+            icons = _givers(icons, lx, ly, radius * 1.5)
         if not live.broken:
-            State.markers += [
+            extra += [
                 markers.Marker("objective", x, y, True, z, _objective_texture(live.mission_kind, t))
                 for x, y, z, t in shown
             ]  # fmt: skip
         else:
-            State.markers += [
+            extra += [
                 markers.Marker("objective", i["x"], i["y"], True, i.get("z"), i["texture"])
                 for i in data.icons if mapdata.is_objective(i["texture"])
             ]  # fmt: skip
+        State.extra = extra
+        State.markers = State.collected + extra
         State.icons = icons
         if icons_option.value:
-            services.Services.scan(pc, str(world.Name), paused)
-            State.icons = State.icons + services.Services.near(loc.X, loc.Y, radius * 1.5, State.icons)
+            services.Services.scan(pc, _world_name(world), paused)
+            State.icons = State.icons + services.Services.near(lx, ly, radius * 1.5, State.icons)
         graph = breadcrumbs.Breadcrumbs
         before = (graph.world, graph.loaded)
-        State.route = _route(pc, str(world.Name), loc, radius, None if live.broken else tracked)
+        State.route = _route(pc, _world_name(world), _Point(lx, ly, lz), radius, None if live.broken else tracked)
         if route_option.value and (graph.world, graph.loaded) == before:
-            graph.preload(pc, str(world.Name))  # one part per update, not on top of what _route read
+            graph.preload(pc, _world_name(world))  # one part per update, not on top of what _route read
+    elif full and route_option.value:
+        # The graph loads a part per call at the marker rate (World_P's: ~40 parts), not the slow one
+        breadcrumbs.Breadcrumbs.preload(pc, _world_name(world))
 
-    # Icons only need moving when the view moved (or the full update changed what's shown)
-    view_key = (round(loc.X), round(loc.Y), round(map_yaw, 1), radius, square, Minimap.size, Minimap.icon_scale)
-    if not full and view_key == State.view_key:
+    # Icons only need moving when the view moved or what's shown changed (an update that found the
+    # same markers, icons and route places nothing: the four layers cost ~50 us even with no call)
+    view_key = (round(lx), round(ly), round(map_yaw, 1), radius, square, Minimap.size, Minimap.icon_scale,
+                Minimap.builds)  # fmt: skip
+    if view_key == State.view_key and not (full or slow):
         return
-    State.view_key = view_key
+    content = (State.markers, State.icons, State.route, State.route_color, bool(vertical_option.value))
+    if view_key == State.view_key and content == State.shown_content:
+        return
+    State.view_key, State.shown_content = view_key, content
 
     def place(x: float, y: float, clamp: bool = False) -> tuple[float, float] | None:
-        return markers.project(x, y, loc.X, loc.Y, map_yaw, radius, clamp=clamp, square=square)
+        return markers.project(x, y, lx, ly, map_yaw, radius, clamp=clamp, square=square)
 
     def vertical(z: float | None) -> int:
         """1 well above you, -1 well below, else 0 (the compass's chevrons)."""
         if z is None or not vertical_option.value:
             return 0
-        dz = z - loc.Z
+        dz = z - lz
         return 1 if dz > VERTICAL_GAP else -1 if dz < -VERTICAL_GAP else 0
 
     color = State.route_color
-    route_items = []
-    for x, y in State.route:
-        where = place(x, y)
-        if where is not None:
-            route_items.append((DOT_TEXTURE, ROUTE_DOT_SIZE, color, where[0], where[1], 0))
-    Minimap.set_layer("route", route_items)
+    # The route's dots also get a fixed place (north up around a point near you, kept while you stay
+    # within range of it): the widget turns and moves them all at once (Minimap.set_turned), so a dot
+    # costs a call only when it's new, not each frame the view moves
+    ref = State.turn_ref
+    if ref is None or ref[2] != radius or (lx - ref[0]) ** 2 + (ly - ref[1]) ** 2 > radius * radius:
+        ref = State.turn_ref = (lx, ly, radius)
+    route = State.route
+    cache = State.route_cache
+    if cache[0] is not route or cache[1] != (ref, north):
+        cache = State.route_cache = (route, (ref, north), [markers.offset(x, y, ref[0], ref[1], north, radius) for x, y in route])
+    # markers.project (unclamped) for each dot, with the turn's cosine and sine worked out once
+    rc, rs = math.cos(math.radians(map_yaw)), math.sin(math.radians(map_yaw))
+    route_items, route_fixed = [], []
+    for (x, y), fixed in zip(route, cache[2]):
+        dx, dy = x - lx, y - ly
+        u, v = (-dx * rs + dy * rc) / radius, -(dx * rc + dy * rs) / radius
+        if (max(abs(u), abs(v)) if square else math.hypot(u, v)) <= 1.0:
+            route_items.append((DOT_TEXTURE, ROUTE_DOT_SIZE, color, u, v, 0))
+            route_fixed.append(fixed)
+    Minimap.set_turned("route", route_items, route_fixed, north - map_yaw,
+                       markers.offset(ref[0], ref[1], lx, ly, map_yaw, radius))  # fmt: skip
     icon_items = []
     for icon in State.icons:
         where = place(icon["x"], icon["y"])
@@ -748,7 +878,7 @@ def _frame(pc: UObject, full: bool) -> None:
     for marker in State.markers:
         path, base, tint = MARKER_LOOKS[marker.kind]
         texture = marker.texture
-        if texture and Minimap._texture(texture) is None:  # noqa: SLF001  # (a DLC's art not installed)
+        if texture and not Minimap.has_texture(texture):  # (a DLC's art not installed)
             texture = None
             if marker.kind == markers.FRIEND_CLASS:
                 path, base, tint = MARKER_LOOKS[markers.FRIEND]
@@ -763,24 +893,32 @@ def _frame(pc: UObject, full: bool) -> None:
     Minimap.set_layer(EDGE_LAYER, edge_items)
 
 
-@hook(TICK_FUNC, Type.PRE)
-def on_frame(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    # The hook fires several times a frame; act once per engine frame
-    if State.system is None:
-        State.system = unrealsdk.find_class("KismetSystemLibrary").ClassDefaultObject
-    frame = int(State.system.GetFrameCount())
-    if frame == State.last_frame:
-        return
-    State.last_frame = frame
+@frametick.tick("bl4_minimap")
+def on_frame() -> None:
+    # Once per engine frame (shared/frametick: one hook for all our mods, the frame confirmed there)
     now = time.monotonic()
-    full = now - State.last_update >= 1 / max(1, rate_option.value)
+    if (
+        now < State.hidden_until and now - State.last_slow < SLOW_UPDATE_S
+        and mapdata.MapData.job is None and breadcrumbs.Breadcrumbs.job is None
+    ):  # fmt: skip
+        return  # hidden: looked at again every HIDDEN_POLL_S (the slow pass and the ECHO map's reads still run)
+    slow = now - State.last_slow >= SLOW_UPDATE_S
+    if slow:
+        State.last_slow = now
+    # Not in the same frame as the slow update (both cost ~0.3-0.4 ms): a frame later instead
+    full = not slow and now - State.last_update >= 1 / max(1, rate_option.value)
     if full:
         State.last_update = now
     try:
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
-        pc = get_pc(possibly_loading=True)
+        # The player controller, looked up again at the slow rate or once it's gone (get_pc walks
+        # the engine's objects: ~10 us a frame)
+        pc = State.pc()
+        if pc is None or slow:
+            pc = get_pc(possibly_loading=True)
+            State.pc = WeakPointer(pc) if pc is not None else WeakPointer()
         if pc is not None:
-            _frame(pc, full)
+            _frame(pc, full, slow)
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         if not State.error_logged:
             logging.error(f"[Minimap] {ex!r}")
@@ -799,13 +937,22 @@ def on_teleport(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunc
 
 def _enable() -> None:
     State.last_update = 0.0
-    State.last_frame = -1
+    State.last_slow = 0.0
     State.markers = []
+    State.collected = []
+    State.extra = []
+    State.ui = 0.0
     State.icons = []
     State.route = []
     State.error_logged = False
     State.north_yaw = None
+    State.turn_ref = None
+    State.viewport = WeakPointer()
+    State.pc = WeakPointer()
+    State.tiles_next = 0.0
+    State.name_world, State.world_name, State.ui_next, State.shown_content = WeakPointer(), "", 0.0, ()
     State.teleport_since = 0.0
+    State.hide_next, State.hide_cue, State.paused, State.hidden = 0.0, (), False, False
     State.giver_key = ()
     State.givers = []
     State.covered = set()

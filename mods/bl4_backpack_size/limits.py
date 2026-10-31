@@ -26,6 +26,7 @@ This file holds no hooks, so it can be reloaded in a running game.
 from __future__ import annotations
 
 import ctypes
+import sys
 from dataclasses import dataclass
 
 import unrealsdk
@@ -73,12 +74,23 @@ def log(msg: str) -> None:
     logging.info(f"[Backpack Size] {msg}")
 
 
+def _is_server(world: UObject) -> bool:
+    """
+    Host or solo. BL4 Direct's cached role when it's loaded (the tick already asks it): IsServer is
+    a UFunction call, ~0.15 ms of each twice-a-second tick inside the frame tick (2026-10-29).
+    """
+    coop = sys.modules.get("bl4_direct.coop")
+    if coop is not None and hasattr(coop, "is_client"):
+        return not coop.is_client()
+    return bool(_kismet.IsServer(world))
+
+
 def _player_states() -> list[UObject]:
     """Everyone's on the host (it decides pickups for all players), only our own on a client."""
     world = ENGINE.GameViewport.World if ENGINE.GameViewport else None
     if world is None:
         return []
-    if _kismet.IsServer(world) and world.GameState is not None:
+    if _is_server(world) and world.GameState is not None:
         return [ps for ps in world.GameState.PlayerArray if ps is not None]
     pc = get_pc()
     return [pc.PlayerState] if pc is not None and pc.PlayerState is not None else []
@@ -88,8 +100,14 @@ def _player_states() -> list[UObject]:
 
 
 def _in(pointers: list[WeakPointer], obj: UObject) -> bool:
-    pointers[:] = [p for p in pointers if p() is not None]
-    return any(p() == obj for p in pointers)
+    """Whether obj is in the list, dropping dead entries (one WeakPointer read each)."""
+    alive, found = [], False
+    for p in pointers:
+        if (other := p()) is not None:
+            alive.append(p)
+            found = found or other == obj
+    pointers[:] = alive
+    return found
 
 
 def _lost_loot_bad_add(sub: UObject, why: str) -> None:

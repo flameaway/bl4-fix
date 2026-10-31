@@ -18,6 +18,7 @@ owner).
 
 from __future__ import annotations
 
+import ctypes
 import threading
 import time
 from collections.abc import Callable
@@ -235,7 +236,7 @@ def tick() -> None:
 def _publish_dev() -> None:
     """From a source folder: copy our page files again when they change (hot reload)."""
     files = [celebrate_page.ASSETS / asset for _, asset in celebrate_page.LOOSE_FILES]
-    stamp = tuple((f.stat().st_size, f.stat().st_mtime_ns) for f in files)
+    stamp = tuple((st.st_size, st.st_mtime_ns) for st in (f.stat() for f in files))  # one stat per file
     if stamp != S.published and S.game_dir is not None:
         S.published = stamp
         celebrate_page.write_loose_files(S.game_dir)
@@ -262,7 +263,14 @@ def _learn(slots: Any, count: int, first: int) -> None:
 
 def _handles(slots: Any, count: int, first: int) -> list[int] | None:
     if S.width:
-        raw = stats._read(first + S.offset, S.stride * (count - 1) + S.width)  # noqa: SLF001
+        size = S.stride * (count - 1) + S.width
+        if 0 <= S.offset and (count == 1 or S.offset + S.width <= S.stride):
+            # Inside the slot array the game reflected to us this tick (`first`, `count`): a plain
+            # copy. ReadProcessMemory (stats._read) let go of the GIL, and getting it back could
+            # wait on a worker thread for milliseconds
+            raw = ctypes.string_at(first + S.offset, size)
+        else:
+            raw = stats._read(first + S.offset, size)  # noqa: SLF001
         if raw is None:
             return None
         return [int.from_bytes(raw[i * S.stride : i * S.stride + S.width], "little", signed=True) for i in range(count)]

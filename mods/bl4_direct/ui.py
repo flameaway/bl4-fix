@@ -2,7 +2,8 @@
 The in-game BL4 Direct panel, drawn with the game's own UMG widgets.
 
 The technique (runtime-constructed UserWidget/WidgetTree/CanvasPanel, polling button press state
-from a per-frame camera hook) follows MattsBL4ModsMenu by Matthew Buehrer (MIT).
+from a per-frame camera hook) follows MattsBL4ModsMenu by mattmab
+(https://github.com/mattmab/MattsBL4ModsMenu, MIT; its notice below).
 
 Since the BL4 Mod Menu came along, the open key (F6 unless rebound) normally opens BL4 Direct's page in its HTML screen instead
 (page.py, ui/direct.js), which looks like the game's own menus. This panel is the fallback for
@@ -19,9 +20,34 @@ Rules that keep this crash-free:
 - Host/Join close the panel first and run a few frames later, so travel never races the UI.
 """
 
+# Parts of this file follow MattsBL4ModsMenu, used under its license:
+#
+# MIT License
+#
+# Copyright (c) 2026 mattmab
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 import threading
 import time
@@ -33,8 +59,10 @@ from typing import Any
 import unrealsdk
 from mods_base import get_pc
 from unrealsdk import logging
-from unrealsdk.hooks import Type
 from unrealsdk.unreal import WeakPointer
+
+from . import frametick, gamekeys
+from .shared import UAC_HINT, UAC_NAME
 
 DEFAULT_KEY = "F6"
 VK_ESCAPE, VK_RETURN, VK_TAB = 0x1B, 0x0D, 0x09
@@ -74,20 +102,16 @@ def key_text() -> str:
         return keys.display_name(name) if keys is not None else name
     except Exception:  # noqa: BLE001
         return name
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-HOOK_ID = "bl4_direct.ui"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
+# Ticked once per engine frame through the shared frametick (one camera hook for all our mods)
+TICK_KEY = "bl4_direct.ui"
 
 # Design space; everything is laid out at 1920x1080 and scaled to the real viewport
 DESIGN_W, DESIGN_H = 1920.0, 1080.0
 PANEL_W, PANEL_H = 1000.0, 860.0
 MAX_FRIEND_ROWS = 5
 
-# ctypes.windll, not PyDLL: these calls must let go of the GIL (GetAsyncKeyState can take ~100 ms,
-# e.g. while the desktop is streamed). Keys go through BL4 Mod Menu's key thread when it's loaded.
+# ctypes.windll, not PyDLL: these calls must let go of the GIL. Only the focus check uses them; keys
+# come from the game's own input (gamekeys).
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 # Own copies for the functions we give argtypes: ctypes.windll's function objects are shared with
@@ -143,11 +167,25 @@ def _wbl() -> Any:
     return _cls("/Script/UMG.WidgetBlueprintLibrary").ClassDefaultObject
 
 
-def _ue_key_down(pc: Any, name: str) -> bool:
-    try:
-        return bool(pc.IsInputKeyDown(unrealsdk.make_struct("Key", KeyName=name)))
-    except Exception:  # noqa: BLE001
-        return False
+class _UeKey:
+    """
+    Kept for reload scripts and tests. Since 2026-10-30 every key read is the game's own input
+    (gamekeys): a key with no Windows code (a gamepad bind) and a posted (synthetic) press read the
+    same way as any other, so the throttled IsInputKeyDown read that was here is gone.
+    """
+
+    name: str | None = None
+    struct: Any = None
+    at = -1e9
+    down = False
+
+
+UE_EVERY_S = 0.04
+UE_FOR_POSTED = False  # kept for test scripts that set it; gamekeys sees posted keys anyway
+
+
+def _ue_key_down(pc: Any, name: str, *, throttled: bool) -> bool:  # noqa: ARG001
+    return gamekeys.down(name)
 
 
 def _game_window_focused() -> bool:
@@ -159,17 +197,19 @@ def _game_window_focused() -> bool:
 
 def _async_down(vk: int) -> bool:
     """
-    Whether a key is held while the game is in front. Read by BL4 Mod Menu's key thread when it's
-    loaded: GetAsyncKeyState can take ~100 ms on the game thread (a streamed desktop, 2026-10-24).
+    Whether a key is held, from the game's own input (gamekeys, shared by our mods; False while the
+    game isn't in front). Until 2026-10-30 this read Windows (GetAsyncKeyState, through BL4 Mod
+    Menu's key thread when it was loaded).
     """
-    keys = sys.modules.get("bl4_mod_menu.keys")
-    if keys is not None and hasattr(keys, "_Keys"):
-        return keys.vk_down(vk)
-    return _game_window_focused() and bool(_user32.GetAsyncKeyState(vk) & 0x8000)
-
+    return gamekeys.vk_down(vk)
 
 def _win_key_down(vk: int) -> bool:
     return _async_down(vk)
+
+
+def _key_reader() -> Callable[[int], bool]:
+    """What _async_down calls (for the closed panel's fast path)."""
+    return gamekeys.vk_down
 
 
 def _alive(obj: Any) -> bool:
@@ -293,8 +333,6 @@ class UIState:
     session_drawn: tuple[str, int] = ("none", 0)
     firewall_drawn: bool = False
     firewall_checked: float = 0.0
-    ticked_at: float = 0.0
-    last_call: float = 0.0
 
     # Engine objects kept between frames: weak, so they read as None once destroyed
     pc = _Weak()
@@ -531,7 +569,10 @@ def _draw() -> None:
         elif api.firewall_up_to_date():
             host_hint = f"Friends join you on UDP port {api.host_port()}"
         else:
-            host_hint = "Windows will ask once to let your friends through the firewall"
+            # Hosting never asks Windows itself: the friend list changed, the button does
+            p.button("UPDATE FIREWALL", x0 + PANEL_W - 284, y + 8, 260, 40, _update_firewall_now,
+                     fill=(0.55, 0.35, 0.02, 0.98), size=0.48)
+            host_hint = "Firewall not updated - new friends can't join yet"
     p.text(host_hint, x0 + 344, y, PANEL_W - 368, 56, 0.5, color=(0.75, 0.8, 0.82, 1.0))
 
     # Friends
@@ -636,17 +677,14 @@ def _remove(name: str) -> None:
 
 def _after_friends_changed(done: str) -> None:
     """
-    Only a host needs friends in its firewall (joining is an outgoing connection), so the
-    firewall is normally updated when you press Host. If you're already hosting, do it now.
+    The firewall rule follows the friend list, but only when the player asks (2026-10-30): this
+    panel's UPDATE FIREWALL button is the confirmation (the page asks with Continue / Not now).
+    Hosting never asks Windows itself.
     """
     if api.firewall_up_to_date():  # also when the rule is turned off
         _say(done)
-    elif session()[0] != "hosting":
-        _say(f"{done} If you host, Windows will ask once to let your friends through your firewall.")
-    elif error := api.update_firewall():
-        _say(f"{done} But: {error}", error=True)
     else:
-        _say(f"{done} Windows will ask permission to update your firewall.")
+        _say(f'{done} Press UPDATE FIREWALL to let them in (Windows asks: "{UAC_NAME}").')
 
 
 def _firewall_on() -> bool:
@@ -661,7 +699,7 @@ def _update_firewall_now() -> None:
     if error := api.update_firewall():
         _say(error, error=True)
     else:
-        _say("Windows will ask permission to update your firewall.")
+        _say(UAC_HINT)
     _draw()
 
 
@@ -788,16 +826,70 @@ def _win_edge(vk: int) -> bool:
     return down and not was
 
 
-def _on_tick(*_: Any) -> None:
-    now = time.perf_counter()
-    gap, S.last_call = now - S.last_call, now
-    if gap < FRAME_GAP_S and now - S.ticked_at < MAX_WAIT_S:
-        return
-    S.ticked_at = now
+class _Pc:
+    """The local controller for the closed panel's tick, kept in a WeakPointer (see _tick_pc)."""
+
+    weak = WeakPointer()
+    at = -1e9
+
+
+PC_RECHECK_S = 0.25
+
+
+def _tick_pc() -> Any:
+    """
+    The local controller (None while loading). With the panel open or an action pending: get_pc
+    every frame, as before. Closed (nearly always) the controller only gates the tick and feeds the
+    PlayerInput key read, so it's a WeakPointer looked up again every PC_RECHECK_S: get_pc is 3
+    property reads, ~7 us inside the frame tick (2026-10-29), a WeakPointer ~1.5 us. A map change
+    may keep the old controller for up to PC_RECHECK_S (alive, so safe to read; the actions a key
+    press starts look the controller up themselves).
+    """
+    now = time.monotonic()
+    if not S.is_open and S.pending is None and now - _Pc.at < PC_RECHECK_S:
+        return _Pc.weak()
+    _Pc.at = now
     try:
         pc = get_pc(possibly_loading=True)
     except Exception:  # noqa: BLE001
         pc = None
+    _Pc.weak = WeakPointer(pc) if pc is not None else WeakPointer()
+    return pc
+
+
+class _Idle:
+    """
+    The closed panel's fast path (2026-10-29): with the panel closed, no action pending and the page
+    neither typing nor waiting to travel, a frame only reads the open key (the game's own input,
+    gamekeys). The rest (controller, admin-step results, the page's tick, the key
+    binding) runs every IDLE_FULL_S, or at once on a press. Each Python call costs ~1.5-5 us inside
+    the frame tick, so the old every-frame pass was ~30 us a frame for a mod doing nothing.
+    """
+
+    at = -1e9  # the last full pass
+    vk: int | None = None  # the open key's Windows code, from the last full pass
+    read: Callable[[int], bool] | None = None  # the key reader (the Mod Menu's vk_down when loaded)
+
+
+IDLE_FULL_S = 0.1
+
+
+def _page_busy(page: Any) -> bool:
+    """The page is typing into a field or has a travel waiting: it ticks every frame then."""
+    ps = getattr(page, "S", None)
+    return ps is not None and (getattr(ps, "typing", None) is not None or getattr(ps, "travel", None) is not None)
+
+
+def _on_tick() -> None:
+    if not S.is_open and S.pending is None and (vk := _Idle.vk) is not None:
+        now = time.monotonic()
+        if now - _Idle.at < IDLE_FULL_S:
+            down = vk > 0 and _Idle.read(vk)
+            if not down or S.toggle_was_down:
+                S.toggle_was_down = down
+                return
+    _Idle.at = time.monotonic()
+    pc = _tick_pc()
     if pc is None:
         return
     _report_elevated()
@@ -821,10 +913,20 @@ def _on_tick(*_: Any) -> None:
             S.key_seen = name
             S.toggle_was_down = True
         vk = _key_vk(name)
-        down = bool(name) and (_ue_key_down(pc, name) or (vk is not None and _win_key_down(vk)))
+        # Windows first (a snapshot read); PlayerInput every frame only for a key Windows can't
+        # name (gamepad), else a few times a second (see _UeKey)
+        down = bool(name) and (
+            (vk is not None and _win_key_down(vk))
+            or ((vk is None or UE_FOR_POSTED) and _ue_key_down(pc, name, throttled=vk is not None))
+        )
         if down and not S.toggle_was_down:
             _toggle_key_pressed()
         S.toggle_was_down = down
+        # The fast path for the next IDLE_FULL_S: only for a key Windows knows (0 = unbound), with
+        # nothing that needs every frame
+        fast = not name or (vk is not None and not UE_FOR_POSTED)
+        _Idle.vk = (vk or 0) if fast and not S.is_open and S.pending is None and not _page_busy(page) else None
+        _Idle.read = _key_reader()
         return
 
     if pc != S.pc:
@@ -861,12 +963,12 @@ def _on_tick(*_: Any) -> None:
 
 def install() -> None:
     S.toggle_was_down = True  # if the open key is held right now, wait for a fresh press
-    unrealsdk.hooks.add_hook(TICK_FUNC, Type.POST, HOOK_ID, _on_tick)
+    frametick.add(TICK_KEY, _on_tick)
 
 
 def uninstall() -> None:
     close()
-    unrealsdk.hooks.remove_hook(TICK_FUNC, Type.POST, HOOK_ID)
+    frametick.remove(TICK_KEY)
     if (page := sys.modules.get("bl4_direct.page")) is not None:
         page.unregister()
 
@@ -890,6 +992,8 @@ class Elevated:
     ShellExecute("runas") doesn't return until the prompt is answered, and on the game thread that
     stops a hosted server from ticking, so connected friends time out. The tick reports the outcome
     (see _report_elevated): a refusal or failure as an error, success by calling `on_success`.
+    `args` may be a function the worker calls first (slow lookups stay off the game thread); when it
+    returns None there's nothing to do: success, no prompt.
     """
 
     busy = False
@@ -898,7 +1002,7 @@ class Elevated:
 
     @classmethod
     def start(
-        cls, exe: str, args: str, refused_msg: str, on_success: Callable[[], None] | None = None,
+        cls, exe: str, args: str | Callable[[], str | None], refused_msg: str, on_success: Callable[[], None] | None = None,
         failed_msg: str | None = None,
     ) -> bool:  # fmt: skip
         """False if a prompt is already up."""
@@ -913,7 +1017,7 @@ class Elevated:
 
     @classmethod
     def _worker(
-        cls, exe: str, args: str, refused_msg: str, on_success: Callable[[], None] | None, failed_msg: str,
+        cls, exe: str, args: str | Callable[[], str | None], refused_msg: str, on_success: Callable[[], None] | None, failed_msg: str,
     ) -> None:  # fmt: skip
         # Win32 only, no unreal calls. ShellExecute wants COM on its thread. Own WinDLL instances, so
         # these prototypes don't change the shared ctypes.windll ones
@@ -926,6 +1030,16 @@ class Elevated:
         kernel32.GetExitCodeProcess.restype = ctypes.c_int
         kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
         com = False
+        if callable(args):
+            try:
+                args = args()
+            except Exception as ex:  # noqa: BLE001
+                cls.refused = f"{failed_msg} ({ex})"
+                cls.busy = False
+                return
+            if args is None:
+                cls.succeeded, cls.busy = on_success, False
+                return
         try:
             # Apartment threaded, no OLE1 DDE; S_OK or S_FALSE both need a matching uninit
             com = ctypes.windll.ole32.CoInitializeEx(None, 0x2 | 0x4) in (0, 1)
@@ -933,6 +1047,15 @@ class Elevated:
             info.cbSize = ctypes.sizeof(info)
             info.fMask = 0x40 | 0x100  # SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
             info.lpVerb, info.lpFile, info.lpParameters, info.nShow = "runas", exe, args, 0  # SW_HIDE
+            # The game's window as the prompt's owner when it's in front, so the prompt opens over
+            # it. With none, a prompt from a process Windows doesn't count as in front only flashes
+            # in the taskbar and counts as No after ~2 min (seen 2026-10-30, the game in the back)
+            user32 = ctypes.WinDLL("user32")
+            user32.GetForegroundWindow.restype = ctypes.c_void_p
+            user32.GetWindowThreadProcessId.argtypes = (ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong))
+            front, owner = user32.GetForegroundWindow(), ctypes.c_ulong()
+            if front and user32.GetWindowThreadProcessId(front, ctypes.byref(owner)) and owner.value == os.getpid():
+                info.hwnd = front
             if not shell32.ShellExecuteExW(ctypes.byref(info)) or not info.hProcess:
                 cls.refused = refused_msg
                 return
@@ -957,7 +1080,7 @@ class Elevated:
 
 
 def run_elevated(
-    exe: str, args: str, refused_msg: str, on_success: Callable[[], None] | None = None, failed_msg: str | None = None,
+    exe: str, args: str | Callable[[], str | None], refused_msg: str, on_success: Callable[[], None] | None = None, failed_msg: str | None = None,
 ) -> bool:  # fmt: skip
     """Runs a program with a UAC prompt without waiting. False if a prompt is already up."""
     return Elevated.start(exe, args, refused_msg, on_success, failed_msg)

@@ -129,7 +129,8 @@ class Equipped:
     def refresh(self, pawn: Any, player_state: Any) -> bool:
         """Re-reads the slots if they changed. True if anything did."""
         slots = pawn.EquippedInventorySlots
-        entries = slots.items
+        items = slots.items
+        entries = [items[i] for i in range(len(items))]  # by index: the array's iterator is slow (tracker.elements)
         actors = []
         for entry in entries:
             actor = entry.InstancedInventory

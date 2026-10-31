@@ -41,6 +41,7 @@ import random
 import sys
 import threading
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -54,12 +55,10 @@ from mods_base import (
     SliderOption,
     build_mod,
     command,
-    hook,
 )
 from unrealsdk import logging
-from unrealsdk.hooks import Type
 
-from . import card, game, legendary, pak, reroll
+from . import card, frametick, game, legendary, pak, reroll
 
 try:
     from bl4_direct import coop
@@ -73,13 +72,10 @@ FEATURE = "reroll"
 SERVICE = "reroll.apply"
 
 GAME_DIR = SETTINGS_DIR.parent.parent
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
-_last_call = _ticked_at = 0.0
 REFRESH_S = 0.5
+# Whether the Mod Menu's screen shows is checked this often (it was every frame); its item pages
+# are rebuilt at most this much later after it opens
+MENU_CHECK_S = 0.1
 
 
 def log(msg: str) -> None:
@@ -232,7 +228,7 @@ def plan_one(handle: int, line: int, serial: str | None = None, seed: int | None
     slot = _slot(handle, serial)
     if isinstance(slot.item, legendary.Legend):
         raise Refused("A legendary's parts are rerolled all together, not one by one.")
-    if line >= len(slot.item.lines):
+    if not 0 <= line < len(slot.item.lines):  # a negative line from a co-op request indexes from the end
         S.signature = None
         raise Refused("That item changed; have another look.")
     old = slot.item.lines[line]
@@ -372,6 +368,8 @@ class S:
     errors: set[str] = set()  # noqa: RUF012
     # Whether the mod menu's screen was showing last tick (the options are only rebuilt then)
     showing = False
+    # When _menu_showing() is asked next (MENU_CHECK_S)
+    menu_check_at = 0.0
     # The "You have N Eridium" row, updated in place (a pickup mustn't rebuild every page)
     balance_option: ButtonOption | None = None
     balance: int | None = None
@@ -541,26 +539,24 @@ def _menu_showing() -> bool:
         return False
 
 
-@hook(TICK_FUNC, Type.POST)
-def _tick(*_: Any) -> None:
-    global _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
+@frametick.tick("bl4_reroll")  # once per engine frame (shared/frametick: one hook for all our mods)
+def _tick() -> None:
     try:
         card.tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         _report(ex)
     # The item pages are only rebuilt while the mod menu's screen shows (right away when it opens,
     # then every REFRESH_S); in gameplay nothing here reads the backpack
+    # Asked MENU_CHECK_S apart, not every frame (it looks through the Mod Menu's modules)
+    now = time.monotonic()
+    if now < S.menu_check_at:
+        return
+    S.menu_check_at = now + MENU_CHECK_S
     showing = _menu_showing()
     opened = showing and not S.showing
     S.showing = showing
     if not showing:
         return
-    now = time.monotonic()
     if not opened and now - S.refreshed_at < REFRESH_S:
         return
     S.refreshed_at = now
@@ -574,7 +570,7 @@ def _report(ex: Exception) -> None:
     """The tick runs every frame; report each distinct problem once."""
     if repr(ex) not in S.errors:
         S.errors.add(repr(ex))
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
 
 
 # endregion

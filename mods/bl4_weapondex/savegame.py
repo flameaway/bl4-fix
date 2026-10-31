@@ -81,14 +81,25 @@ def tick(on_change: Any) -> None:
     if now - S.checked_at < CHECK_EVERY_S or (S.worker is not None and S.worker.is_alive()):
         return
     S.checked_at = now
-    folder = _save_folder()
+    # Finding the folder and stat-ing every save is ~20 file system calls, each letting go of the GIL
+    # (and waiting to get it back): on the worker too, not the game thread
+    S.worker = threading.Thread(target=_check, name="weapondex save", daemon=True)
+    S.worker.start()
+
+
+def _check() -> None:
+    """Worker: reads the saves again if any changed since the last read."""
+    try:
+        folder = _save_folder()
+    except Exception as ex:  # noqa: BLE001 - try again at the next check
+        logging.error(f"[Kairosdex] Couldn't find the game's saves: {ex!r}")
+        return
     if folder is None:
         return
     stamp = _stamp(folder)
     if stamp == S.stamp:
         return  # unchanged since the last read (or the last failure)
-    S.worker = threading.Thread(target=_read, args=(folder, stamp), name="weapondex save", daemon=True)
-    S.worker.start()
+    _read(folder, stamp)
 
 
 def _read(folder: Path, stamp: Any) -> None:

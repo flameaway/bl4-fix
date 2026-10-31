@@ -30,6 +30,8 @@ class S:
     game_dir: Path | None = None
     published_at = 0.0
     published: dict[str, tuple[int, int]] = {}  # noqa: RUF012 - file -> (size, mtime) last copied
+    # The page files come from a source folder (dev junction), not a packed .sdkmod; set by the forced publish
+    from_source = False
     # Set by __init__: the News panel's place ("right", "hidden" or "default")
     news: Callable[[], str] = lambda: "right"
 
@@ -63,10 +65,15 @@ def publish(*, force: bool = False) -> None:
     if S.game_dir is None or (not force and now - S.published_at < PUBLISH_S):
         return
     S.published_at = now
+    if not force and not S.from_source:
+        # A packed .sdkmod can't change while the game runs: copied once, at register. Checked
+        # before anything else: resources.files() on a packed mod opens its zip (Build Presets'
+        # copy of this cost 0.9 ms every second)
+        return
     root = resources.files(__package__)
-    from_source = isinstance(root, Path)
+    from_source = S.from_source = isinstance(root, Path)
     if not force and not from_source:
-        return  # a packed .sdkmod can't change while the game runs: copied once, at register
+        return
     for name in UI_FILES:
         source = root / "ui" / name
         try:

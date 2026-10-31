@@ -64,6 +64,8 @@ class S:
     game_dir: Path | None = None
     published_at = 0.0
     published: dict[str, tuple[int, int]] = {}  # noqa: RUF012 - file -> (size, mtime) last copied
+    # The page files come from a source folder (dev junction), not a packed .sdkmod; set at register
+    from_source = False
     # What the script last said is showing, and the item it is
     hover: dict[str, Any] | None = None
     hover_at = 0.0
@@ -88,6 +90,8 @@ class S:
     keys: Callable[[], tuple[str | None, str | None]] = lambda: (None, None)
     costs: Callable[[], tuple[int, int, int]] = lambda: (0, 0, 0)  # (all, one, legendary), from the options
     blocked: Callable[[], str | None] = lambda: None
+    slow_at = 0.0  # the next SLOW_S look (tick)
+    menu_up = False  # _polling() as of then
 
 
 def _changed() -> None:
@@ -388,14 +392,18 @@ def unregister() -> None:
 
 def publish(*, force: bool = False) -> None:
     """Copies the page's files to uiresources/bl4reroll/, touching only files that changed."""
+    if not force and not S.from_source:
+        # A packed .sdkmod can't change while the game runs: copied once, at register. Checked
+        # before anything else: resources.files() on a packed mod opens its zip (every second, 0.9 ms)
+        return
     now = time.monotonic()
     if S.game_dir is None or (not force and now - S.published_at < PUBLISH_S):
         return
     S.published_at = now
     root = resources.files(__package__)
-    from_source = isinstance(root, Path)
+    from_source = S.from_source = isinstance(root, Path)
     if not force and not from_source:
-        return  # a packed .sdkmod can't change while the game runs: copied once, at register
+        return
     for name in UI_FILES:
         try:
             source = root / "ui" / name
@@ -520,22 +528,31 @@ def _pressed(name: str, key: str | None) -> bool:
     return down and not was
 
 
+# health, the page's files and "is the menu page running our script" are looked at this often
+SLOW_S = 0.1
+
+
 def tick() -> None:
-    """Every frame: the link; while a menu is up, the page's files and the keys."""
+    """Every frame: the link; while a menu is up, the keys; every SLOW_S health and the page's files."""
     uilink.tick()
-    health.tick()
-    if S.pending is None and not _polling():
+    now = time.monotonic()
+    if now >= S.slow_at:
+        S.slow_at = now + SLOW_S
+        health.tick()
+        S.menu_up = _polling()  # (a dict read and a few calls: not every frame; 2026-10-29)
+        if S.menu_up or S.pending is not None:
+            publish()
+    if S.pending is None and not S.menu_up:
         # No menu is up, so no card and nothing to publish for: read no keys either. A key held
         # from now on must be let go and pressed again to count once a card is up.
         if S.keys_down:
             S.keys_down.clear()
         return
-    publish()
-    reroll_key, pick_key = S.keys()
-    reroll_pressed = _pressed("reroll", reroll_key)
-    pick_pressed = _pressed("pick", pick_key)
     if S.pending is not None:
-        # One roll at a time: keys wait until it's made
+        # One roll at a time: keys wait until it's made (unread meanwhile: a key held through
+        # it counts as held afterwards, as before)
+        if S.keys_down:
+            S.keys_down.clear()
         if time.monotonic() > S.pending["due"]:
             _apply()
         return
@@ -543,7 +560,14 @@ def tick() -> None:
     if S.confirm_handle is not None and not _confirming(hover):
         _cancel_confirm()  # timed out, or the card shows another item
     if hover is None or time.monotonic() - S.hover_at > HOVER_FRESH_S:
+        # No card up: no key reads (a menu can be open for minutes with nothing hovered). A key
+        # held from now on must be let go and pressed again once a card shows
+        if S.keys_down:
+            S.keys_down.clear()
         return
+    reroll_key, pick_key = S.keys()
+    reroll_pressed = _pressed("reroll", reroll_key)
+    pick_pressed = _pressed("pick", pick_key)
     if not hover["ok"]:
         if reroll_pressed and hover["reason"] not in (None, "not rerollable", "not in your backpack"):
             S.roll = {"id": S.roll["id"] + 1, "fp": hover["fp"], "error": _why(hover["reason"])}

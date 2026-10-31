@@ -3,8 +3,8 @@ Borderlands 4 item serials ("@Ug..."): decode to tokens and encode back, bit for
 
 Plain Python (no SDK imports), so dev tools can use it too.
 
-Format (as documented by the community decoders, e.g. Nicnl's borderlands4-serials; this is our
-own implementation):
+A Python rewrite of the Go decoder in Nicnl's borderlands4-serials, written from its format docs
+and source, so this file is AGPL-3.0 (the notice below). Format:
 
 - "@U" + a base85 text with the alphabet below, read in big-endian groups of 5 characters per 4
   bytes (a short last group gives fewer bytes). Each byte is then bit-reversed, and the result is
@@ -22,6 +22,13 @@ own implementation):
 Items read as `type, 0, 1, level| 2, seed|| {part} {part} ...|`: the first number is the item's
 type (which part list the indices point into), and each part token is an index into that list.
 """
+
+# SPDX-License-Identifier: AGPL-3.0
+# This file is a Python rewrite (decode and encode) of the Go serial decoder in
+# Nicnl's borderlands4-serials (https://github.com/Nicnl/borderlands4-serials, by Nicnl and its
+# contributors), which is licensed AGPL-3.0. So this file is licensed under the GNU Affero General
+# Public License v3.0 (LICENSE-AGPL in this mod), not the GPL-3.0 that covers the rest of the mod.
+# Modified by flameaway, first in 2026-10 (changes since in git history).
 
 from __future__ import annotations
 

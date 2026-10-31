@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Shoot to Open"
-version = "0.1.1"
+version = "0.1.2"
 description = "Shoot a container or chest to open it."
 authors = [{ name = "flame" }]
 

@@ -29,7 +29,6 @@ How it fits together:
 from __future__ import annotations
 
 import ctypes
-import sys
 import time
 from typing import Any
 
@@ -39,22 +38,16 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
-from . import health, skills_page, uilink
+from . import frametick, gamekeys, health, skills_page, uilink
 
 __version__ = "0.2.1"
 __version_info__ = (0, 2, 1)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 CHANNEL_FUNC = "/Game/UI/Scripts/ui_script_skills.ui_script_skills_C:RemovePoint"
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 # The page script, run by the BL4 UI Link in the menu page
 LINK_KEY = "respec"
 LINK_SCRIPT = "coui://uiresources/bl4respec/respec.js"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
-_last_call = _ticked_at = 0.0
 # Messages from respec_main.js have position.X = -(MARK + op * 0x10000 + arg); real sounds sit on screen
 MARK = 1 << 23
 OP_ACTIVE, OP_REMOVE, OP_UNSPEC_ALL = 1, 3, 4
@@ -70,10 +63,8 @@ UNDO_ACTION = "action_ui_skills_undo"
 UNDO_KEY = "RightMouseButton"
 NO_KEY = "None"
 
-VK_LBUTTON, VK_RBUTTON = 0x01, 0x02
-SM_SWAPBUTTON = 23
-# ctypes.windll, not PyDLL: these calls must let go of the GIL (GetAsyncKeyState can take ~100 ms,
-# e.g. while the desktop is streamed). Keys go through BL4 Mod Menu's key thread when it's loaded.
+# ctypes.windll, not PyDLL: these calls must let go of the GIL. Only the focus check uses them; keys
+# come from the game's own input (gamekeys).
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 
@@ -149,36 +140,29 @@ def _game_window_focused() -> bool:
 
 def _async_down(vk: int) -> bool:
     """
-    Whether a key is held while the game is in front. Read by BL4 Mod Menu's key thread when it's
-    loaded: GetAsyncKeyState can take ~100 ms on the game thread (a streamed desktop, 2026-10-24).
+    Whether a key is held, from the game's own input (gamekeys, shared by our mods; False while the
+    game isn't in front). Until 2026-10-30 this read Windows (GetAsyncKeyState, through BL4 Mod
+    Menu's key thread when it was loaded).
     """
-    keys = sys.modules.get("bl4_mod_menu.keys")
-    if keys is not None and hasattr(keys, "_Keys"):
-        return keys.vk_down(vk)
-    return _game_window_focused() and bool(_user32.GetAsyncKeyState(vk) & 0x8000)
-
+    return gamekeys.vk_down(vk)
 
 def _right_button_down() -> bool:
-    # GetAsyncKeyState reads the physical buttons, so follow the "swap mouse buttons" setting
-    vk = VK_LBUTTON if _user32.GetSystemMetrics(SM_SWAPBUTTON) else VK_RBUTTON
-    return _async_down(vk)
+    # The game's own input (gamekeys, 2026-10-30): the logical right button, so Windows' "swap
+    # mouse buttons" setting is already applied (GetAsyncKeyState read the physical one)
+    return gamekeys.down("RightMouseButton")
 
 
 _was_down = False
 _last_publish = 0.0
+_dev_stamp: tuple | None = None  # dev: skills_page.dev_stamp() after the last republish
 # Set when enabled: take right click off the native undo on the next tick. At startup mods are
 # enabled on another thread while the game already runs, so the mapping isn't touched from there.
 _unmap_undo = False
 
 
-@hook(TICK_FUNC, Type.POST)
-def watch_right_clicks(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    global _was_down, _last_publish, _unmap_undo, _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
+@frametick.tick("bl4_respec")  # once per engine frame (shared/frametick: one hook for all our mods)
+def watch_right_clicks() -> None:
+    global _was_down, _last_publish, _unmap_undo, _dev_stamp
     try:
         uilink.tick()  # runs our Skills page script (shared/uilink; does work at most once a frame overall)
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
@@ -193,7 +177,10 @@ def watch_right_clicks(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: Bo
         # Dev: edits to the page's scripts and styles go live within a second (the page reloads them)
         _last_publish = now
         try:
-            skills_page.write_loose_files(GAME_DIR)
+            # Only when a source or a published copy changed: a few stats instead of ~1.9 ms of reads
+            if (stamp := skills_page.dev_stamp(GAME_DIR)) != _dev_stamp:
+                skills_page.write_loose_files(GAME_DIR)
+                _dev_stamp = skills_page.dev_stamp(GAME_DIR)
         except OSError:
             pass
 

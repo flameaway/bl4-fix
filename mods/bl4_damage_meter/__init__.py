@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import threading
 import time
+import traceback
 from typing import Any
 
 from mods_base import SETTINGS_DIR, BoolOption, ButtonOption, KeybindOption, SliderOption, build_mod, command, get_pc, hook
@@ -28,16 +29,12 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import naming, native, page, popup_page, share, tracker, uilink
+from . import frametick, naming, native, page, popup_page, share, tracker, uilink
 
 __version__ = "0.1.0"
 __version_info__ = (0, 1, 0)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-# The tick hook fires ~6 times a frame: act on the first call after a gap, at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
 
 
 def log(msg: str) -> None:
@@ -198,10 +195,11 @@ carnage_command.add_argument("rest", nargs="*")
 class S:
     pending_open = 0.0
     key_was_down = True
-    ticked_at = last_call = 0.0
     setup_failed = False
     session: tuple[int, int, int, int] | None = None  # the game session the board belongs to
     session_checked = 0.0
+    slow_at = 0.0  # the next _slow()
+    role = "solo"  # share.role() as of the last _slow()
 
 
 @hook(native.FUNC_PATH, Type.PRE)
@@ -215,35 +213,49 @@ def caused_damage(obj: UObject, args: WrappedStruct, _ret: Any, _func: BoundFunc
     return Block
 
 
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    now = time.perf_counter()
-    gap, S.last_call = now - S.last_call, now
-    if gap < FRAME_GAP_S and now - S.ticked_at < MAX_WAIT_S:
-        return
-    S.ticked_at = now
+@frametick.tick("bl4_damage_meter")  # once per engine frame (the shared Frame Tick, frametick/)
+def tick() -> None:
     try:
         _tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         logging.error(f"[Carnage Meter] {ex!r}")
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
+
+
+# Everything but the link, queued hits and the open key is looked at this often (2026-10-29: it all
+# ran every frame, ~0.1 ms a frame in play for a few clock compares and calls)
+SLOW_S = 0.25
 
 
 def _tick() -> None:
-    if not tracker.S.ok and not S.setup_failed and share.role() != "client":
+    uilink.tick()  # every frame: the page's polls wait for it (works once a frame across our mods)
+    now = time.monotonic()
+    if now >= S.slow_at:
+        S.slow_at = now + SLOW_S
+        _slow(now)
+    t = tracker.S
+    # Hits queued by the hook, or the next player / boss look due (tracker.tick sets next_at)
+    if t.ok and (t.pending or now >= t.next_at) and S.role != "client":
+        tracker.tick(now)
+    # The key snapshot first (a dict read); the controller only on a press (get_pc is a chain of
+    # property reads: not worth doing every frame to learn that nothing was pressed)
+    key = open_key.value
+    down = bool(key) and uilink.key_down(key)
+    if down and not S.key_was_down and get_pc(possibly_loading=True) is not None:
+        page.toggle()
+    S.key_was_down = down
+
+
+def _slow(now: float) -> None:
+    """Every SLOW_S: the co-op role, setup, the session, the page's housekeeping."""
+    role = S.role = share.role()  # BL4 Direct caches it 0.25 s anyway
+    if not tracker.S.ok and not S.setup_failed and role != "client":
         S.setup_failed = not tracker.setup()
     _check_session()
-    if share.role() != "client":
-        tracker.tick(time.monotonic())
-    page.tick()
-    if S.pending_open and time.monotonic() > S.pending_open:
+    page.tick(role)
+    if S.pending_open and now > S.pending_open:
         S.pending_open = 0.0
         page.request_open()
-    if get_pc(possibly_loading=True) is not None and open_key.value:
-        down = uilink.key_down(open_key.value)
-        if down and not S.key_was_down:
-            page.toggle()
-        S.key_was_down = down
 
 
 SESSION_CHECK_S = 1.0
@@ -269,6 +281,7 @@ def _check_session() -> None:
 
 def _enable() -> None:
     S.key_was_down = True
+    S.slow_at = 0.0
     S.setup_failed = False
     tracker.FIGHT_GAP_S = float(fight_gap.value)
     naming.start_check(GAME_DIR)

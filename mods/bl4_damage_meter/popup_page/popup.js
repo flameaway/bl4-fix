@@ -11,7 +11,8 @@
     var link = (typeof bl4linkNs !== "undefined" && bl4linkNs) || null;
     var KEY = "carnagepopup";
 
-    function dispose() {
+    // The main script only: a reload of it keeps the styles applyCss just put in
+    function disposeMain() {
         try {
             if (window.Bl4Cm_Dispose) window.Bl4Cm_Dispose();
         } catch (err) {
@@ -19,6 +20,10 @@
         }
         window.Bl4Cm_Dispose = null;
         window.Bl4Cm_OnState = null;
+    }
+
+    function dispose() {
+        disposeMain();
         var style = document.getElementById("bl4cm_popup_css");
         if (style) style.parentNode.removeChild(style);
     }
@@ -75,7 +80,7 @@
     }
 
     function applyJs(text) {
-        dispose();
+        disposeMain();
         try {
             if (text) new Function(text)();
         } catch (err) {

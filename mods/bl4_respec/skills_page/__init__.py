@@ -24,6 +24,7 @@ setup app imports it (installer/core.py PAGE_MODULES): keep it plain Python 3.11
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import zlib
 from importlib import resources
@@ -75,6 +76,31 @@ def _write_if_changed(path: Path, data: bytes) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(data)
     tmp.replace(path)
+
+
+def dev_stamp(game_dir: Path) -> tuple:
+    """
+    Dev (FROM_SOURCE): size and mtime of each loose file's source and published copy, plus the
+    stamp. The once-a-second republish only runs write_loose_files when this changed (it read and
+    compared every file each second, ~1.9 ms on the game thread, 2026-10-29): two directory
+    listings (~0.4 ms).
+    """
+    files = [Path(str(ASSETS / asset)) for _, asset in LOOSE_FILES]
+    files += [game_dir / UI_PREFIX / path for path, _ in LOOSE_FILES] + [game_dir / UI_PREFIX / STAMP_PATH]
+    return _files_stamp(files)
+
+
+def _files_stamp(files: list[Path]) -> tuple:
+    """(mtime, size) of each file, None if missing: one directory listing per folder (a stat is
+    ~0.16 ms here, a listing ~0.2 ms; measured in game 2026-10-29)."""
+    folders: dict[Path, dict[str, tuple[int, int]]] = {}
+    for folder in {file.parent for file in files}:
+        try:
+            with os.scandir(folder) as entries:
+                folders[folder] = {e.name: (e.stat().st_mtime_ns, e.stat().st_size) for e in entries}
+        except OSError:
+            folders[folder] = {}
+    return tuple(folders[file.parent].get(file.name) for file in files)
 
 
 def write_loose_files(game_dir: Path) -> None:

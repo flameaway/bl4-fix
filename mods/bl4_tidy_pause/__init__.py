@@ -16,19 +16,17 @@ styles reload themselves in the page.
 from __future__ import annotations
 
 import time
-from typing import Any
+import traceback
 
-from mods_base import SETTINGS_DIR, DropdownOption, build_mod, hook
+from mods_base import SETTINGS_DIR, DropdownOption, build_mod
 from unrealsdk import logging
-from unrealsdk.hooks import Type
 
-from . import health, page
+from . import frametick, health, page
 
 __version__ = "0.2.1"
 __version_info__ = (0, 2, 1)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 # The link's own work runs once a frame (uilink.tick); ours (copying the page's files from a source
 # folder when they change) once a second
 CHECK_S = 1.0
@@ -59,15 +57,16 @@ class S:
     errors: set[str] = set()  # noqa: RUF012
 
 
-@hook(TICK_FUNC, Type.POST)
-def _tick(*_: Any) -> None:
+@frametick.tick("bl4_tidy_pause")
+def _tick() -> None:
+    """Once per engine frame (the shared frame tick)."""
     try:
         page.uilink.tick()  # cheap; its own once-a-frame gate
-        health.tick()  # a clock compare most calls
         now = time.monotonic()
         if now - S.checked_at < CHECK_S:
             return
         S.checked_at = now
+        health.tick()  # once a second is plenty (its probes run every 2 s; 2026-10-29: was every frame)
         if not S.registered:
             page.register(GAME_DIR)
             S.registered = True
@@ -76,7 +75,7 @@ def _tick(*_: Any) -> None:
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         if repr(ex) not in S.errors:
             S.errors.add(repr(ex))
-            logging.exception(ex)
+            logging.error("".join(traceback.format_exception(ex)))
 
 
 def _enable() -> None:

@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Unstuck"
-version = "0.1.0"
+version = "0.1.1"
 description = "Frees a character stuck floating after a teleport and puts them on the nearest fast travel or respawn station. Also by hand: Unstuck now / the unstuck command."
 authors = [{ name = "flame" }]
 

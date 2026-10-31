@@ -88,6 +88,18 @@ def _png_gray(width: int, height: int, pixels: bytes) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
 
 
+def _actors_of(context: UObject, actor_class: UObject | str) -> list[UObject] | None:
+    """The actors of a class in `context`'s world (None if that can't be asked)."""
+    try:
+        if isinstance(actor_class, str):
+            actor_class = unrealsdk.find_class(actor_class)
+        gs = unrealsdk.find_class("GameplayStatics").ClassDefaultObject
+        result = gs.GetAllActorsOfClass(context, actor_class, [])
+    except (ValueError, AttributeError, TypeError):
+        return None
+    return [a for a in (result[1] if isinstance(result, tuple) else result) if a is not None]
+
+
 class _Viewer:
     """The open big map's current fog actor (searching for it is slow: once per opening)."""
 
@@ -336,7 +348,13 @@ class Fog:
             if now < _Viewer.next_fog_search:
                 return None
             _Viewer.next_fog_search = now + FOG_SEARCH_S
-            for candidate in unrealsdk.find_all("OakMapViewerFog", exact=True):
+            # In the big map's own world (GetAllActorsOfClass there: well under 1 ms; `find_all` over
+            # every object was ~12 ms, in one tick)
+            viewer = scene.Viewer.get()
+            candidates = _actors_of(viewer, "OakMapViewerFog") if viewer is not None else None
+            if candidates is None:
+                candidates = unrealsdk.find_all("OakMapViewerFog", exact=True)
+            for candidate in candidates:
                 if "Default__" not in candidate._path_name() and Fog._usable(candidate):  # noqa: SLF001
                     if Fog._map_in(candidate.Outer, map_class_path):
                         fog = candidate
@@ -358,7 +376,8 @@ class Fog:
             cls = unrealsdk.find_object("BlueprintGeneratedClass", map_class_path)
         except ValueError:
             return False
-        for actor in unrealsdk.find_all(cls, exact=True):
+        actors = _actors_of(level, cls)  # (the level's world)
+        for actor in actors if actors is not None else unrealsdk.find_all(cls, exact=True):
             if actor.Outer is level and "Default__" not in actor._path_name():  # noqa: SLF001
                 root = actor.RootComponent
                 if root is not None and root.K2_GetComponentScale().X > 0:

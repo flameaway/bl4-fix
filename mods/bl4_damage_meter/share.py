@@ -74,6 +74,11 @@ def push_report(report: dict[str, Any]) -> None:
 
 
 def _got_report(report: dict[str, Any]) -> None:
+    # Only something shaped like a report (the page reads its id and players)
+    if not isinstance(report, dict) or isinstance(report.get("id"), bool) or not isinstance(report.get("id"), (int, str)):
+        return
+    if not isinstance(report.get("players", []), list) or not all(isinstance(p, dict) for p in report.get("players", [])):
+        return
     # The host marks its own player as "you": mark ours instead, by name (ids are host addresses)
     try:
         from mods_base import get_pc  # noqa: PLC0415

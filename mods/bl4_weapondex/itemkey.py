@@ -7,6 +7,13 @@ bl4_reroll/serial.py decodes in full (base85, mirrored bytes, a token bit stream
 Plain Python (no SDK imports), so it runs on the save-reading worker thread.
 """
 
+# SPDX-License-Identifier: AGPL-3.0
+# This file follows bl4_reroll/serial.py, a Python rewrite of the Go serial decoder in
+# Nicnl's borderlands4-serials (https://github.com/Nicnl/borderlands4-serials, by Nicnl and its
+# contributors), which is licensed AGPL-3.0. So this file is licensed under the GNU Affero General
+# Public License v3.0 (LICENSE-AGPL in this mod), not the GPL-3.0 that covers the rest of the mod.
+# Modified by flameaway, first in 2026-10 (changes since in git history).
+
 from __future__ import annotations
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{/}~"

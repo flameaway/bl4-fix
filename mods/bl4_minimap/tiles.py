@@ -3,11 +3,12 @@ The map filmed once: tiles kept on disk per character and map.
 
 The map art never changes, so instead of filming the minimap's picture every time you walk out of
 it (5 captures of ~3.9 ms GPU each, every ~room of travel), the map is filmed once in TILE_WORLD
-tiles at about the art's own detail (T_Cowbell_P is 4096^2 over ~4.1 km: ~1 m per texel), saved
-as PNGs, and the minimap's picture is put together from tiles with a few Canvas draws.
+tiles at about the art's own detail (T_Cowbell_P is 4096^2 over ~4.1 km: ~1 m per texel; maps with
+finer art, like the vaults, in DENSE_TILE_WORLD tiles), saved as PNGs, and the minimap's picture is
+put together from tiles with a few Canvas draws.
 
 - Tiles sit on a grid in the north-up frame (the same frame as the pictures). Tile (i, j) covers
-  `up` in [i, i+1) * TILE_WORLD and `right` in [j, j+1) * TILE_WORLD.
+  `up` in [i, i+1) * world and `right` in [j, j+1) * world (`Tiles.world`, per level).
 - A tile is filmed with the fog plane in it (the ECHO map's look; Canvas can't draw the fog
   material with its transparency), and re-filmed while its texture detail streams in
   (SETTLE_AT_S, measured: 6-8 captures over 2-3 s).
@@ -39,6 +40,7 @@ import sys
 import threading
 import time
 import zlib
+from itertools import accumulate
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +54,12 @@ FOLDER: Path = SETTINGS_DIR / "minimap_tiles"
 FOG_FOLDER: Path = SETTINGS_DIR / "minimap_fog"
 FORMAT = 2  # bump to drop every saved tile (2: tiles carry a MARGIN_PX border)
 TILE_PX = 512
-TILE_WORLD = 51200.0  # world units a tile stands for: 512 m
+TILE_WORLD = 51200.0  # world units a tile stands for: 512 m (1 m a pixel), for art ~1 m a texel
+# Maps whose art is finer (Vault_Mountains_P: 4096^2 over 1.4 km, 0.34 m a texel) get tiles half as
+# wide (0.5 m a pixel): at 1 m a pixel the minimap showed them blurry (2026-10-30). Same pixels per
+# tile, so loads cost the same; pictures over DENSE_TILE_WORLD (range > ~100 m) are filmed directly.
+DENSE_TILE_WORLD = 25600.0
+DENSE_TEXEL = 60.0  # world units a texel: art at least this fine gets DENSE_TILE_WORLD tiles
 # Each tile is filmed MARGIN_PX wider on every side and only its inside is drawn: drawn edge to edge,
 # a tile's outer pixels were filtered against nothing and left a faint seam (measured: 5 vs 1.4 mean
 # difference on the boundary rows)
@@ -63,15 +70,20 @@ SETTLE_AT_S = (0.15, 0.35, 0.6, 0.9, 1.3, 1.8, 2.5)  # captures after the first,
 ACTION_GAP_S = 0.05  # at most one tile load or capture per this
 SAVE_GAP_S = 0.25  # while paused: one tile export per this
 FOG_CHECK_S = 2.0  # how often to look whether fog.py saved a new mask
-# Blurry tiles: the map art sometimes doesn't stream in at all while a tile settles (World_P and
-# Cowbell_P tiles were saved at the lowest mip, all 8 captures; filmed again later, sharp within
-# 0.4 s). Each saved or loaded tile is scored on a worker (`_detail`); under DETAIL_LOW it's filmed
-# again, and kept once a refilm isn't DETAIL_GAIN sharper (the art there is that plain) or after
-# DETAIL_TRIES refilms. The verdict is saved in the index ("detail"), so a tile is judged once.
-DETAIL_LOW = 0.9
-DETAIL_FLAT = 0.02  # under this a tile is one flat colour: nothing to stream
-DETAIL_GAIN = 1.25
-DETAIL_TRIES = 2
+CHAR_CHECK_S = 1.0  # how often the character's id is read again while a session is open
+# Blurry tiles: the map art sometimes doesn't stream in at all while a tile settles (World_P,
+# Cowbell_P and Vault_Mountains_P tiles were saved at the lowest mip after all 8 captures, and
+# Vault_Mountains_P's after 4 films over 3 minutes of one visit; filmed again later, sharp within
+# ~1.2 s). Each saved or loaded tile is scored on a worker (`_sharpness`: how much of its contrast
+# is fine detail, independent of how much of the tile is map); under SHARP_LOW it's filmed again
+# RETRY_GAPS_S after the score (later each time, so a stretch where the art won't stream passes),
+# and on every later visit while it still scores low. The score is saved in the index ("sharp").
+SHARP_LOW = 0.16  # measured: lowest-mip tiles 0.13-0.14, the softest real art 0.18, most 0.2-0.45
+SHARP_LIT = 10  # green value over which a pixel is map art (the rest is the black around the map)
+SHARP_STEP = 8  # px: the coarse gradient's distance (a lowest-mip picture is smooth at this scale)
+SHARP_ROW_EVERY = 4  # rows sampled for the gradients (every row is unfiltered)
+SHARP_MIN_PAIRS = 400  # fewer lit pixel pairs than this: no map art to judge (always fine)
+RETRY_GAPS_S = (15.0, 60.0, 180.0)  # refilms of a blurry tile per visit, this long after each score
 GAMMA_CAPTURE = scene.TARGET_GAMMA
 GAMMA_LOADED = 2.2
 BLEND_OPAQUE = 0
@@ -129,16 +141,18 @@ def _png_channel(path: Path) -> tuple[int, int, bytes]:
     return width, height, bytes(out)
 
 
-_RESIDUAL = bytes(min(v, 256 - v) for v in range(256))  # a PNG filter residual byte -> its size
-
-
-def _detail(path: Path) -> float | None:
+def _sharpness(path: Path) -> float | None:
     """
-    How much fine detail a saved tile has: the mean size of its PNG filter residuals (how far each
-    byte is from what its neighbours predict), RGB of every 8th row. Sharp map art scores 1-6, a tile
-    filmed before the art streamed in ~0.1, one flat colour (off the map) 0, but so do mostly-black
-    edge tiles and plain ground (0.1-0.9): see `Tiles._apply_checks`. No unfiltering needed, so it's
-    ~5 ms of a worker per tile; zlib and the file read let go of the GIL, and it rests between rows.
+    How sharp a saved tile is: over its map art (green > SHARP_LIT), the sum of 1-px gradients over
+    the sum of SHARP_STEP-px ones, along rows. A picture filmed before the art streamed in (its
+    lowest mip, ~10-20 m a texel) is smooth at that scale: 1-px steps are ~1/8 of the 8-px ones
+    (0.13-0.14 measured); streamed art has detail at every scale (0.18-0.45). It doesn't depend on
+    how much of the tile is map (the old residual score did: a vault's sharp tiles, mostly black,
+    scored as low as its blurry ones, so all were kept). -1.0: too little map art to judge.
+
+    Unfilters the green channel only (PNG filters work per byte, a pixel apart: each channel on
+    its own). ~40 ms of pure Python per 512^2 tile (80 worst, offline), resting 1 ms every 4 rows
+    so the game thread gets the GIL back. None if the file can't be read as an 8-bit RGB(A) PNG.
     """
     data = path.read_bytes()
     pos, idat = 8, bytearray()
@@ -155,20 +169,50 @@ def _detail(path: Path) -> float | None:
         elif kind == b"IEND":
             break
         pos += 12 + length
-    if not channels:
+    if not channels or width <= SHARP_STEP:
         return None
     raw = zlib.decompress(bytes(idat))
     stride = width * channels
-    total = count = 0
-    for n, row in enumerate(range(0, height, 8)):
-        start = row * (stride + 1) + 1
-        line = raw[start:start + stride]
-        rgb = (line[0::channels] + line[1::channels] + line[2::channels]).translate(_RESIDUAL)
-        total += sum(rgb)
-        count += len(rgb)
-        if n % 8 == 7:
-            time.sleep(0.001)
-    return total / count if count else None
+    prev = [0] * width
+    fine = coarse = pairs = 0
+    lit, step = SHARP_LIT, SHARP_STEP
+    span = range(width - step)
+    for row in range(height):
+        start = row * (stride + 1)
+        kind = raw[start]
+        res = raw[start + 2:start + 1 + stride:channels]  # green's filtered bytes
+        if kind == 0:
+            cur = list(res)
+        elif kind == 1:  # Sub
+            cur = list(accumulate(res, lambda a, b: (a + b) & 0xFF))
+        elif kind == 2:  # Up
+            cur = [(r + u) & 0xFF for r, u in zip(res, prev)]
+        elif kind == 3:  # Average
+            cur, left = [], 0
+            for r, u in zip(res, prev):
+                left = (r + ((left + u) >> 1)) & 0xFF
+                cur.append(left)
+        else:  # Paeth
+            cur, left, ul = [], 0, 0
+            for r, u in zip(res, prev):
+                p = left + u - ul
+                pa, pb, pc = abs(p - left), abs(p - u), abs(p - ul)
+                left = (r + (left if pa <= pb and pa <= pc else u if pb <= pc else ul)) & 0xFF
+                cur.append(left)
+                ul = u
+        prev = cur
+        if row % SHARP_ROW_EVERY == 0:
+            for x in span:
+                a, b = cur[x], cur[x + step]
+                if a > lit or b > lit:
+                    fine += abs(cur[x + 1] - a)
+                    coarse += abs(b - a)
+                    pairs += 1
+        if row % 4 == 3:
+            time.sleep(0.001)  # let the game thread have the GIL (sleep(0) starves it)
+    if pairs < SHARP_MIN_PAIRS or coarse == 0:
+        return -1.0
+    return fine / coarse
 
 
 class _Slot:
@@ -195,7 +239,9 @@ class _Tile:
 
 
 class Tiles:
-    session: tuple | None = None  # (character, world, fog key, north)
+    session: tuple | None = None  # (character, world, fog key, north, tile world)
+    world = TILE_WORLD  # world units a tile of this session stands for
+    world_for: tuple[str, float] = ("", TILE_WORLD)  # (level, its tile world): `_tile_world`, once per level
     folder: Path | None = None
     index: dict[str, Any] = {}
     slots: list[_Slot] = []
@@ -203,6 +249,9 @@ class Tiles:
     version = 0  # bumps whenever a tile's pixels change (composed pictures are redrawn)
     north = 0.0
     next_action = 0.0
+    # The last tick found every wanted tile there and none still sharpening (the caller may then ask
+    # less often: nothing changes until you move a long way or the fog changes)
+    idle = False
     next_save = 0.0
     next_fog_check = 0.0
     # Fog mask (from fog.py's PNG): bytes of its first channel, its size and placement
@@ -211,13 +260,18 @@ class Tiles:
     placement: dict[str, Any] | None = None
     worker: threading.Thread | None = None
     worker_result: tuple[float, tuple[int, int, bytes] | None, dict[str, Any] | None] | None = None
-    # Detail checks (see DETAIL_LOW): (folder, tile name) waiting / scored, on their own worker
+    # Sharpness checks (see SHARP_LOW): (folder, tile name) waiting / scored, on their own worker
     checker: threading.Thread | None = None
     check_queue: list[tuple[Path, str]] = []
     check_results: list[tuple[Path, str, float | None]] = []
     checking: set[str] = set()
-    retries: dict[str, tuple[int, float]] = {}  # tile name -> (refilms so far, score before the last)
+    # Blurry tiles: name -> when to film it again (monotonic); refilms of each this visit
+    low: dict[str, float] = {}
+    tries: dict[str, int] = {}
     logged = ""
+    char: str | None = None  # scene_character's last answer (CHAR_CHECK_S)
+    char_at = 0.0
+    char_world = ""  # the level `char` was read in
 
     # region Session
 
@@ -233,9 +287,10 @@ class Tiles:
         """Switches to this character/world/fog/north: drops loaded tiles, reads its index."""
         cls.drop()
         cls.session = session
-        char, world, fog_key, north = session
-        cls.north = north
-        cls.folder = FOLDER / f"{char}_{world}_{fog_key}_n{round(north)}"
+        char, world, fog_key, north, tile_world = session
+        cls.north, cls.world = north, tile_world
+        size = "" if tile_world == TILE_WORLD else f"_t{round(tile_world / 100)}"
+        cls.folder = FOLDER / f"{char}_{world}_{fog_key}_n{round(north)}{size}"
         cls.index = {"format": FORMAT, "exe": cls._exe_stamp(), "tiles": {}}
         path = cls.folder / "index.json"
         try:
@@ -251,8 +306,15 @@ class Tiles:
         cls.mask = cls.placement = None
         cls.mask_stamp = None
         cls.next_fog_check = 0.0
-        cls.check_queue, cls.checking, cls.retries = [], set(), {}
-        scene.log(f"tiles: {cls.folder.name}, {len(cls.index['tiles'])} on disk")
+        cls.check_queue, cls.checking, cls.low, cls.tries = [], set(), {}, {}
+        cls.index.pop("detail", None)  # the old score (unfit for mostly-black tiles): judged again on load
+        # Tiles still blurry from an earlier visit: filmed again once wanted (the art may stream now)
+        now = time.monotonic()
+        for name, score in cls.index.get("sharp", {}).items():
+            if 0 <= score < SHARP_LOW and name in cls.index["tiles"]:
+                cls.low[name] = now + RETRY_GAPS_S[0]
+        blurry = f", {len(cls.low)} blurry" if cls.low else ""
+        scene.log(f"tiles: {cls.folder.name}, {len(cls.index['tiles'])} on disk{blurry}")
 
     @classmethod
     def _write_index(cls) -> None:
@@ -328,7 +390,7 @@ class Tiles:
         xs, ys = [], []
         for du in (0, 1):
             for dr in (0, 1):
-                up, right = (key[0] + du) * TILE_WORLD, (key[1] + dr) * TILE_WORLD
+                up, right = (key[0] + du) * cls.world, (key[1] + dr) * cls.world
                 xs.append(up * c - right * s)
                 ys.append(up * s + right * c)
         span = 100 * cls.placement["scale"][0]
@@ -356,7 +418,8 @@ class Tiles:
             i, j = (int(n) for n in name.split("_"))
             if cls.digest((i, j)) != old:
                 del cls.index["tiles"][name]
-                cls.index.get("detail", {}).pop(name, None)
+                cls.index.get("sharp", {}).pop(name, None)
+                cls.low.pop(name, None)
                 if cls.folder is not None:
                     (cls.folder / f"{name}.png").unlink(missing_ok=True)
                 stale += 1
@@ -371,7 +434,7 @@ class Tiles:
             scene.log(f"tiles: fog changed under {stale} tile(s)")
 
     # endregion
-    # region Detail checks
+    # region Sharpness checks
 
     @classmethod
     def _queue_check(cls, name: str) -> None:
@@ -387,7 +450,7 @@ class Tiles:
                 while cls.check_queue:
                     folder, tile = cls.check_queue.pop(0)
                     try:
-                        score = _detail(folder / f"{tile}.png")
+                        score = _sharpness(folder / f"{tile}.png")
                     except Exception as ex:  # noqa: BLE001
                         scene.log(f"tiles: couldn't score {tile}: {ex!r}")
                         score = None
@@ -396,36 +459,32 @@ class Tiles:
             finally:
                 cls.checker = None
 
-        cls.checker = threading.Thread(target=run, name="bl4_minimap tiles detail", daemon=True)
+        cls.checker = threading.Thread(target=run, name="bl4_minimap tiles sharpness", daemon=True)
         cls.checker.start()
 
     @classmethod
     def _apply_checks(cls) -> None:
-        """Keeps scored tiles, or drops a blurry one so it's filmed again (see DETAIL_LOW)."""
+        """Records scores; a blurry tile stays shown and is filmed again later (`tick`, RETRY_GAPS_S)."""
         changed = False
         while cls.check_results:
             folder, name, score = cls.check_results.pop(0)
             cls.checking.discard(name)
             if folder != cls.folder or name not in cls.index["tiles"] or score is None:
                 continue
-            tries, before = cls.retries.get(name, (0, 0.0))
-            if (score >= DETAIL_LOW or score < DETAIL_FLAT or tries >= DETAIL_TRIES
-                    or (tries and score < before * DETAIL_GAIN)):  # fmt: skip
-                cls.index.setdefault("detail", {})[name] = round(score, 3)
-                cls.retries.pop(name, None)
-                if tries:
-                    scene.log(f"tiles: {name} filmed again, detail {before:.2f} -> {score:.2f}, kept")
+            cls.index.setdefault("sharp", {})[name] = round(score, 3)
+            tries = cls.tries.get(name, 0)
+            if 0 <= score < SHARP_LOW:
+                if tries < len(RETRY_GAPS_S):
+                    cls.low[name] = time.monotonic() + RETRY_GAPS_S[tries]
+                    scene.log(f"tiles: {name} looks blurry (sharpness {score:.3f}), filming it again in "
+                              f"{RETRY_GAPS_S[tries]:.0f} s")  # fmt: skip
+                else:
+                    cls.low.pop(name, None)
+                    scene.log(f"tiles: {name} still blurry ({score:.3f}) after {tries} films, next visit")
             else:
-                scene.log(f"tiles: {name} looks blurry (detail {score:.2f}), filming it again")
-                cls.retries[name] = (tries + 1, score)
-                del cls.index["tiles"][name]
-                cls.index.get("detail", {}).pop(name, None)
-                (folder / f"{name}.png").unlink(missing_ok=True)
-                key = tuple(int(n) for n in name.split("_"))
-                tile = cls.tiles.pop(key, None)  # type: ignore[call-overload]
-                if tile is not None:
-                    tile.slot.key = None
-                    cls.version += 1
+                cls.low.pop(name, None)
+                if tries:
+                    scene.log(f"tiles: {name} filmed again, sharpness {score:.3f}")
             changed = True
         if changed:
             cls._write_index()
@@ -468,7 +527,7 @@ class Tiles:
         if capture is None:
             return
         c, s = math.cos(math.radians(cls.north)), math.sin(math.radians(cls.north))
-        up, right = (tile.key[0] + 0.5) * TILE_WORLD, (tile.key[1] + 0.5) * TILE_WORLD
+        up, right = (tile.key[0] + 0.5) * cls.world, (tile.key[1] + 0.5) * cls.world
         x, y = up * c - right * s, up * s + right * c
         where = unrealsdk.make_struct(
             "Vector",
@@ -480,7 +539,7 @@ class Tiles:
         capture.K2_SetActorLocationAndRotation(where, rot, False, unrealsdk.make_struct("HitResult"), True)
         comp = capture.CaptureComponent2D
         comp.ShowOnlyActors = scene.Scene.shown_actors()  # the fog plane may have come or gone
-        comp.OrthoWidth = TILE_WORLD * TILE_PX / (TILE_PX - 2 * MARGIN_PX) * scene.MAP_SCALE
+        comp.OrthoWidth = cls.world * TILE_PX / (TILE_PX - 2 * MARGIN_PX) * scene.MAP_SCALE
         comp.CaptureScene()
         tile.slot.used = time.monotonic()
         cls.version += 1
@@ -507,8 +566,8 @@ class Tiles:
         slot.key, slot.used = key, time.monotonic()
         cls.tiles[key] = tile
         cls.version += 1
-        if f"{key[0]}_{key[1]}" not in cls.index.get("detail", {}):
-            cls._queue_check(f"{key[0]}_{key[1]}")  # saved before detail checks existed
+        if f"{key[0]}_{key[1]}" not in cls.index.get("sharp", {}):
+            cls._queue_check(f"{key[0]}_{key[1]}")  # not judged yet (saved before this score existed)
         return True
 
     @classmethod
@@ -517,10 +576,10 @@ class Tiles:
         now = time.monotonic()
         if now < cls.next_save or cls.folder is None:
             return
+        cls.next_save = now + SAVE_GAP_S  # (also when there's nothing to save: the scan at that pace)
         tile = next((t for t in cls.tiles.values() if not t.saved and not t.settle), None)
         if tile is None:
             return
-        cls.next_save = now + SAVE_GAP_S
         target = tile.slot.target()
         if target is None:
             return
@@ -530,28 +589,52 @@ class Tiles:
         krl.ExportRenderTarget(pc, target, str(cls.folder), f"{name}.png")
         tile.saved = True
         cls.index["tiles"][name] = tile.digest
-        cls.index.get("detail", {}).pop(name, None)
+        cls.index.get("sharp", {}).pop(name, None)
         cls._write_index()
         cls._queue_check(name)
 
     # endregion
     # region Per frame
 
-    @staticmethod
-    def _cover(cx: float, cy: float, half: float, north: float) -> list[tuple[int, int]]:
+    @classmethod
+    def _cover(cls, cx: float, cy: float, half: float, north: float) -> list[tuple[int, int]]:
         """The tiles a square of `half` around world (cx, cy) touches, nearest first."""
+        side = cls.world
         c, s = math.cos(math.radians(north)), math.sin(math.radians(north))
         up, right = cx * c + cy * s, -cx * s + cy * c
-        i0, i1 = math.floor((up - half) / TILE_WORLD), math.floor((up + half) / TILE_WORLD)
-        j0, j1 = math.floor((right - half) / TILE_WORLD), math.floor((right + half) / TILE_WORLD)
+        i0, i1 = math.floor((up - half) / side), math.floor((up + half) / side)
+        j0, j1 = math.floor((right - half) / side), math.floor((right + half) / side)
         keys = [(i, j) for i in range(i0, i1 + 1) for j in range(j0, j1 + 1)]
-        keys.sort(key=lambda k: ((k[0] + 0.5) * TILE_WORLD - up) ** 2 + ((k[1] + 0.5) * TILE_WORLD - right) ** 2)
+        keys.sort(key=lambda k: ((k[0] + 0.5) * side - up) ** 2 + ((k[1] + 0.5) * side - right) ** 2)
         return keys
+
+    @classmethod
+    def _tile_world(cls, level: str) -> float:
+        """How wide this level's tiles are: DENSE_TILE_WORLD if its map art is one textured plane at
+        least DENSE_TEXEL fine, else TILE_WORLD (World_P's split meshes, Cowbell_P's ~1 m texels).
+        Worked out once per level (a few property reads)."""
+        if cls.world_for[0] == level:
+            return cls.world_for[1]
+        actor = scene.Scene.actor()
+        if actor is None:
+            return TILE_WORLD  # (not remembered: asked again once the map model is there)
+        result = TILE_WORLD
+        texel = None
+        try:
+            texel = _art_texel(actor)
+        except Exception as ex:  # noqa: BLE001
+            scene.log(f"tiles: couldn't read the map art's size: {ex!r}")
+        if texel is not None and texel <= DENSE_TEXEL:
+            result = DENSE_TILE_WORLD
+        if texel is not None:
+            scene.log(f"tiles: {level} art {texel / 100:.2f} m a texel, tiles {result / 100:.0f} m")
+        cls.world_for = (level, result)
+        return result
 
     @classmethod
     def usable(cls, picture: float) -> bool:
         """Whether pictures this size can be put together from tiles (at most 3x3 of them)."""
-        return cls.session is not None and 2 * picture <= 2 * TILE_WORLD
+        return cls.session is not None and picture <= cls.world
 
     @classmethod
     def paused_tick(cls, pc: UObject) -> None:
@@ -567,13 +650,20 @@ class Tiles:
     ) -> None:  # fmt: skip
         """Every frame: keeps the tiles around the player loaded or filmed, one step at a time."""
         world = scene.Scene.world_name
-        char = scene_character(pc)
-        if not world or char is None or not scene.Scene.in_viewer or 2 * picture > 2 * TILE_WORLD:
+        # The character's id (PlayerState + a GUID struct + formatting): read again at once in another
+        # level (another character always means a trip through the title screen), else once a second
+        now = time.monotonic()
+        cls.idle = False
+        if world != cls.char_world or now >= cls.char_at:
+            cls.char, cls.char_at, cls.char_world = scene_character(pc), now + CHAR_CHECK_S, world
+        char = cls.char
+        tile_world = cls._tile_world(world)
+        if not world or char is None or not scene.Scene.in_viewer or picture > tile_world:
             if cls.session is not None:
                 cls.drop()
             return
         fog_key = f"fog{round(strength * 100)}" if fog_on else "nofog"
-        session = (char, world.lower(), fog_key, round(north, 1))
+        session = (char, world.lower(), fog_key, round(north, 1), tile_world)
         if session != cls.session:
             cls._open(session)
         cls._check_fog(char, world.lower(), fog_on)
@@ -582,7 +672,6 @@ class Tiles:
         if paused:
             cls._save_one(pc)
             return
-        now = time.monotonic()
         if now < cls.next_action:
             return
         # Film again what's still sharpening
@@ -598,6 +687,9 @@ class Tiles:
             return  # there's a saved fog mask but fog.py hasn't put its plane up yet: tiles would lack it
         wanted = cls._cover(x, y, picture + 1.5 * room, north)
         wanted_set = set(wanted)
+        # Every wanted tile there (the usual case): look again after ACTION_GAP_S, not every frame
+        # (the cover's sort and the walk cost ~10-20 us; tiles reach 1.5 rooms past the picture)
+        cls.next_action = now + ACTION_GAP_S
         for key in wanted:
             tile = cls.tiles.get(key)
             if tile is not None:
@@ -618,6 +710,39 @@ class Tiles:
             cls._film(tile)
             tile.settle = [now + d for d in SETTLE_AT_S]
             return
+        # Every wanted tile is there: film a blurry one again once it's due (shown as it is meanwhile)
+        if cls.low and cls._refilm_due(pc, wanted, wanted_set, now):
+            return
+        cls.idle = not any(tile.settle for tile in cls.tiles.values())
+
+    @classmethod
+    def _refilm_due(cls, pc: UObject, wanted: list[tuple[int, int]], wanted_set: set[tuple[int, int]],
+                    now: float) -> bool:  # fmt: skip
+        """Films the nearest wanted tile that scored blurry and is due again (see RETRY_GAPS_S).
+        Saved (behind the next pause) and scored like a new tile."""
+        for key in wanted:
+            name = f"{key[0]}_{key[1]}"
+            due = cls.low.get(name)
+            tile = cls.tiles.get(key)
+            if due is None or now < due or tile is None or tile.settle or not tile.saved:
+                continue
+            if tile.slot.kind == "film":
+                slot = tile.slot  # filmed this visit: film it again in place
+            else:
+                slot = cls._slot(pc, "film", wanted_set)
+                if slot is None:
+                    return False
+                tile.slot.key = None  # the loaded copy's slot is free again
+            del cls.low[name]
+            cls.tries[name] = cls.tries.get(name, 0) + 1
+            fresh = _Tile(key, slot, cls.digest(key))
+            slot.key = key
+            cls.tiles[key] = fresh
+            cls._film(fresh)
+            fresh.settle = [now + d for d in SETTLE_AT_S]
+            cls.next_action = now + ACTION_GAP_S
+            return True
+        return False
 
     @classmethod
     def compose(cls, pc: UObject, target: UObject, x: float, y: float, half: float, north: float) -> bool:
@@ -633,18 +758,46 @@ class Tiles:
         krl = unrealsdk.find_class("KismetRenderingLibrary").ClassDefaultObject
         white = unrealsdk.make_struct("LinearColor", R=1, G=1, B=1, A=1)
         _, canvas, _, ctx = krl.BeginDrawCanvasToRenderTarget(pc, target, None, IGNORE_STRUCT, IGNORE_STRUCT)
-        side = TILE_WORLD * scale
+        side = cls.world * scale
         inset = MARGIN_PX / TILE_PX
         for i, j in keys:
             # The picture's top is +up and its left -right (north up, like the capture)
-            left = (j * TILE_WORLD - (right - half)) * scale
-            top = ((up + half) - (i + 1) * TILE_WORLD) * scale
+            left = (j * cls.world - (right - half)) * scale
+            top = ((up + half) - (i + 1) * cls.world) * scale
             canvas.K2_DrawTexture(cls.tiles[(i, j)].slot.target(), _v2(left, top), _v2(side, side), _v2(inset, inset),
                                   _v2(1 - 2 * inset, 1 - 2 * inset), white, BLEND_OPAQUE, 0.0, _v2(0.5, 0.5))  # fmt: skip
         krl.EndDrawCanvasToRenderTarget(pc, ctx)
         return True
 
     # endregion
+
+
+def _art_texel(actor: UObject | None) -> float | None:
+    """World units per texel of a map actor whose art is one textured plane (the small maps); None
+    for anything else (World_P's split meshes) or before the actor is there."""
+    if actor is None:
+        return None
+    planes = [
+        c for c in actor.BlueprintCreatedComponents
+        if c is not None and c.Class.Name == "StaticMeshComponent" and c.StaticMesh is not None
+        and c.StaticMesh._path_name() == scene.PLANE_MESH
+    ]  # fmt: skip
+    if len(planes) != 1:
+        return None
+    plane = planes[0]
+    material = plane.GetMaterial(0)
+    textures = [
+        t.ParameterValue for t in getattr(material, "TextureParameterValues", ())
+        if t.ParameterValue is not None and t.ParameterValue.Class.Name == "Texture2D"
+    ]  # fmt: skip
+    if len(textures) != 1:
+        return None
+    size = textures[0].Blueprint_GetSizeX()
+    scale = plane.K2_GetComponentScale().X
+    if size <= 0 or scale <= 0:
+        return None
+    # The Plane is 100 map units at scale 1; map units are world / 100 (scene.MAP_SCALE)
+    return 100 * scale / scene.MAP_SCALE / size
 
 
 def scene_character(pc: UObject) -> str | None:

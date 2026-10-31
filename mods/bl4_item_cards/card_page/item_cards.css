@@ -456,3 +456,127 @@
     color: #a0aeb1;
     margin: 0.4rem 0rem 0rem 0rem;
 }
+
+/* Legendary name above the gun in the inventory's weapon slots (item_cards.js renderSlotNames).
+   It sits in the slot's upright picture frame (15.5 x 12 rem), in the empty band the 2:1 thumbnail
+   leaves at its top, so it scales with the menu and stays clear of the slot's own icons */
+.bl4d_slot_name {
+    position: absolute;
+    top: 0.15rem;
+    left: 0.4rem;
+    right: 0.4rem;
+    z-index: 2;
+    font-family: Industry-DemiBold;
+    font-size: 1.45rem;
+    line-height: 1.8rem;
+    color: #e4d9ce;
+    /* Gameface lays everything out as flex: text-align alone left the text at the left edge */
+    display: flex;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-stroke-width: 0.25rem;
+    text-stroke-color: rgba(10, 37, 55, 0.8);
+    pointer-events: none;
+}
+
+.bl4d_slot_name.bl4d_slot_name_small {
+    font-size: 1.25rem;
+}
+
+.bl4d_slot_name.bl4d_slot_name_tiny {
+    font-size: 1.1rem;
+}
+
+/* Gear slots: along the bottom of the slot's box, clear of the mark icon (33px) in a bottom
+   corner: right in the small slots and the repair kit, left in the (mirrored) grenade slot.
+   Measured 2026-10-29 at 1408px high: small slots 192x156, big ones 301x156 */
+.bl4d_slot_name.bl4d_gear_name {
+    top: auto;
+    bottom: 0.5rem;
+    left: 0.6rem;
+    right: 3.2rem;
+    font-size: 1.25rem;
+    line-height: 1.6rem;
+}
+
+oak-equip-slot[slot-ident="repair_kit0"] .bl4d_slot_name.bl4d_gear_name {
+    right: 4.6rem;
+}
+
+/* The grenade slot's box is mirrored (scaleX(-1)): flip the text back; its mark icon is on the
+   visual left, which is "right" inside the mirrored box */
+oak-equip-slot[slot-ident="gadget0"] .bl4d_slot_name.bl4d_gear_name {
+    right: 4.6rem;
+    transform: scaleX(-1);
+}
+
+.bl4d_slot_name.bl4d_gear_name.bl4d_slot_name_small {
+    font-size: 1.1rem;
+}
+
+.bl4d_slot_name.bl4d_gear_name.bl4d_slot_name_tiny {
+    font-size: 0.95rem;
+}
+
+/* The switch grid's item cells (239x168 at 1408px high): the top row, after the pips (to 5.8rem)
+   and before the element icons (from 3.1rem off the right edge); the bottom left is the filter's
+   stat. A new item: under the type icon, below the NEW badge */
+.bl4d_slot_name.bl4d_cell_name {
+    top: 1rem;
+    left: 6.5rem;
+    right: 3.4rem;
+    justify-content: flex-start;
+    text-align: left;
+    font-size: 1.3rem;
+    line-height: 1.7rem;
+}
+
+.bl4d_slot_name.bl4d_cell_name.bl4d_cell_name_new {
+    top: 4.6rem;
+    left: 1rem;
+}
+
+.bl4d_slot_name.bl4d_cell_name.bl4d_slot_name_small {
+    font-size: 1.12rem;
+}
+
+.bl4d_slot_name.bl4d_cell_name.bl4d_slot_name_tiny {
+    font-size: 0.98rem;
+}
+
+/* A name too long for one line even at the tiny size (full names with prefixes, a translation):
+   two lines, centred. A fixed height clips it (max-height alone didn't: a third line spilled over
+   the cell's edge, seen 2026-10-29) */
+.bl4d_slot_name.bl4d_slot_name_wrap {
+    white-space: normal;
+    text-overflow: clip;
+    align-items: center;
+    font-size: 1rem;
+    line-height: 1.15rem;
+    height: 2.3rem;
+}
+
+.bl4d_slot_name.bl4d_gear_name.bl4d_slot_name_wrap {
+    bottom: 0.3rem;
+}
+
+/* The grid's top row is ~8.6rem wide: two lines of ~18 characters ("Churned Putrefying" /
+   "Golden God"), level with the pips; a third line would be cut, not the first */
+.bl4d_slot_name.bl4d_cell_name.bl4d_slot_name_wrap {
+    top: 0.75rem;
+    text-align: left;
+    align-items: flex-start;
+    font-size: 0.85rem;
+    line-height: 1.05rem;
+    height: 2.1rem;
+}
+
+.bl4d_slot_name.bl4d_cell_name.bl4d_cell_name_new.bl4d_slot_name_wrap {
+    top: 4.6rem;
+    font-size: 1rem;
+    line-height: 1.15rem;
+    height: 2.3rem;
+}

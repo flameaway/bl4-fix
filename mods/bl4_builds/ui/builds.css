@@ -55,8 +55,10 @@
     font-size: 1.45rem;
     line-height: 1.7rem;
     color: #8fb4c4;
-    margin: 0.1rem 0.5rem 0 0.5rem;
-    max-width: 8rem;
+    margin: 0.1rem 0 0 0;
+    /* the square's width, not a fixed size: a long name (up to 24 characters) spilled into the
+       next squares under 8rem */
+    max-width: 86%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

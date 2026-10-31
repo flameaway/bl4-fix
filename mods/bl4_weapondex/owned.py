@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -83,7 +84,12 @@ def _move_aside(path: Path, ex: Exception) -> None:
     try:
         path.replace(bad)
     except OSError:
-        pass
+        # Can't move it (locked?): keep a copy instead, the next save writes over the file
+        try:
+            shutil.copyfile(path, bad)
+        except OSError as copy_ex:
+            logging.error(f"[Kairosdex] {path.name} was unreadable ({ex}) and couldn't be kept aside ({copy_ex})")
+            return
     logging.error(f"[Kairosdex] {path.name} was unreadable ({ex}); moved aside to {bad.name}")
 
 

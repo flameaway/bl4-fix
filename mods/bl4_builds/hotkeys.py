@@ -2,8 +2,7 @@
 Loading builds from hotkeys: one per build, plus next / previous saved build. None are bound by
 default; set them in the mod's options (the BL4 Mod Menu, F7).
 
-Keys come from a worker thread's snapshot (uilink.key_down: the BL4 Mod Menu's key thread when it's
-loaded, else the link's own), never read on the game thread, so they work
+Keys come from the game's own input (uilink.key_down: gamekeys, no Windows key reads), so they work
 in gameplay and in the game's menus, only while the game window is in front, and not while a
 build's name is being typed. In gameplay a notice at the top of the screen says what loaded
 (notice.py); with the inventory open its own notice does.

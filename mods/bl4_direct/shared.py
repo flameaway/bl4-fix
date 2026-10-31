@@ -11,12 +11,14 @@ import base64
 import hashlib
 import ipaddress
 import json
+import os
 import re
+import subprocess
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-MOD_VERSION = "0.5.2"
+MOD_VERSION = "0.5.3"
 SDK_VERSION = "0.3"
 DEFAULT_PORT = 7777
 FRIENDS_FILE_NAME = "bl4_direct_friends.json"
@@ -56,7 +58,7 @@ class Config:
         return self.firewall_applied == self.firewall_signature()
 
     def firewall_spec(self) -> dict:
-        """What FIREWALL_SCRIPT needs to make our rule match this config (port 0: no rule)."""
+        """What netsh_command needs to make our rule match this config (port 0: no rule)."""
         if not self.firewall:
             return {"group": FIREWALL_GROUP, "port": 0}
         ips = list(dict.fromkeys(f.address for f in self.friends if is_ipv4(f.address)))
@@ -151,8 +153,24 @@ def compat_code(game_dir: Path) -> str:
 # allow rule would change nothing. Instead we add a *block* rule for the co-op port that covers every
 # address except the allowlist; Windows evaluates block rules ahead of allow rules. The setup app
 # (installer/firewall.py) and the mod (the page's Update button, Host) both apply it from here.
+#
+# The change runs as one netsh command (2026-10-30), so the UAC prompt reads "Network Command Shell"
+# (Microsoft Windows) and "Show more details" shows the whole rule in plain words. It used to be a
+# hidden PowerShell with -EncodedCommand: the prompt read "Windows PowerShell" running a blob, which
+# looks exactly like malware, and players were wary of it. netsh can't choose between adding,
+# updating and removing by itself, so find_rules (no admin needed) looks first.
 
+# PowerShell-made rules (BL4 Direct 0.5.2 and older, old setup apps) are in this group; netsh can't
+# give a rule a group, so newer rules are found by FIREWALL_RULE_NAME
 FIREWALL_GROUP = "BL4 Direct"
+FIREWALL_RULE_NAME = "BL4 Direct - only friends may join"
+_SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+# Full paths: never a program found on PATH (netsh runs elevated)
+NETSH = _SYSTEM32 / "netsh.exe"
+POWERSHELL = _SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+# Said right before the prompt (game page, panel, setup app): the name the UAC prompt shows for netsh
+UAC_NAME = "Network Command Shell"
+UAC_HINT = f'Windows will ask if "{UAC_NAME}" may make changes: that\'s the firewall update. Choose Yes.'
 
 LOOPBACK = ["127.0.0.0/8", "::1/128"]
 # Home networks plus VPN overlays (Tailscale/ZeroTier use 100.64.0.0/10; only devices you've
@@ -207,47 +225,97 @@ def blocked_ranges(allowed_ips: Iterable[str], allow_lan: bool) -> list[str]:
 
 
 def firewall_rule(port: int, allowed_ips: Iterable[str], allow_lan: bool) -> dict:
-    """The spec FIREWALL_SCRIPT turns into our block rule."""
+    """The spec netsh_command turns into our block rule."""
     allowed_ips = list(allowed_ips)
     who = ", ".join(allowed_ips) or "no friends"
     return {
         "group": FIREWALL_GROUP,
-        "name": f"BL4 Direct - only friends may join (UDP {port})",
+        "name": FIREWALL_RULE_NAME,
         "description": (
-            f"Blocks inbound UDP {port} except from: loopback"
+            f"Blocks inbound UDP {port} except from: this PC"
             + (", local network/VPN" if allow_lan else "")
-            + f", {who}. Managed by the BL4 Direct app."
+            + f", {who}. Made by BL4 Fix (BL4 Direct Connect)."
         ),
         "port": port,
         "blocked": blocked_ranges(allowed_ips, allow_lan),
     }
 
 
-# Runs elevated with `$spec` set to a firewall_spec(): replaces our rule (port 0: removes it)
-FIREWALL_SCRIPT = r"""
+# Lists our rules, one "display name<TAB>description" a line; exits non-zero if it can't read them.
+# Reading the firewall needs no admin (checked with a Basic User token, 2026-10-30). The COM policy
+# object: ~0.8 s with PowerShell's start, Get-NetFirewallRule took 2.3 s per query
+_FIND_SCRIPT = r"""
 $ErrorActionPreference = 'Stop'
-Remove-NetFirewallRule -Group $spec.group -ErrorAction SilentlyContinue
-if ($spec.port -gt 0) {
-    New-NetFirewallRule -DisplayName $spec.name -Group $spec.group -Description $spec.description `
-        -Direction Inbound -Action Block -Protocol UDP -LocalPort $spec.port `
-        -RemoteAddress $spec.blocked -Profile Any | Out-Null
-}
-"Rules in group: " + @(Get-NetFirewallRule -Group $spec.group -ErrorAction SilentlyContinue).Count
+$policy = New-Object -ComObject HNetCfg.FwPolicy2
+@($policy.Rules | Where-Object { $_.Grouping -eq $group -or $_.Name -eq $name } |
+    ForEach-Object { $_.Name + "`t" + $_.Description })
 """
+
+
+def _ps_quote(text: str) -> str:
+    return "'" + text.replace("'", "''") + "'"
+
+
+def find_rules(name: str = FIREWALL_RULE_NAME, group: str = FIREWALL_GROUP) -> list[tuple[str, str]]:
+    """
+    Our rules in Windows Firewall as (display name, description): the netsh-made one and any old
+    PowerShell-made one. No admin needed, ~0.5 s (a hidden PowerShell): never on the game thread.
+    Raises RuntimeError if the firewall can't be read.
+    """
+    script = f"$name = {_ps_quote(name)}\n$group = {_ps_quote(group)}\n{_FIND_SCRIPT}"
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    try:
+        res = subprocess.run(
+            [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+            capture_output=True, text=True, timeout=60, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )  # fmt: skip
+    except (OSError, subprocess.SubprocessError) as ex:
+        raise RuntimeError(f"couldn't read the firewall rules: {ex}") from ex
+    if res.returncode != 0:
+        raise RuntimeError(f"couldn't read the firewall rules: {(res.stderr or res.stdout).strip()[:300]}")
+    rules = []
+    for line in res.stdout.splitlines():
+        if line.strip():
+            rule_name, _, description = line.partition("\t")
+            rules.append((rule_name.strip(), description.strip()))
+    return rules
+
 
 # Windows' limit for a whole command line is 32767 characters
 MAX_COMMAND_LINE = 32000
 
 
-def firewall_command(spec: dict) -> str:
+def _netsh_value(text: str) -> str:
+    # Names and descriptions are ours (no quotes in them); netsh has no escape for one anyway
+    return '"' + str(text).replace('"', "'") + '"'
+
+
+def netsh_command(spec: dict, existing: Iterable[str], name: str = FIREWALL_RULE_NAME) -> str | None:
     """
-    PowerShell arguments that apply `spec` (the script and the spec in one -EncodedCommand, so the
-    elevated process runs nothing from a file another program could change first).
+    netsh arguments that make our rule match `spec` (a firewall_spec(); port 0: no rule), given the
+    display names of our rules there now (find_rules). None when nothing needs changing. Always one
+    command, so one UAC prompt: add the rule, update the one there (an old PowerShell rule gets
+    `name` on the way), or delete it.
     """
-    data = json.dumps(spec, separators=(",", ":")).replace("'", "''")
-    script = f"$spec = '{data}' | ConvertFrom-Json\n{FIREWALL_SCRIPT}"
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-    args = f"-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand {encoded}"
+    existing = list(dict.fromkeys(existing))
+    if len(existing) > 1:
+        raise ValueError(
+            "found several BL4 Direct firewall rules (" + ", ".join(existing) + "): delete them in Windows "
+            "Defender Firewall (Inbound Rules), then update again"
+        )  # fmt: skip
+    blocked = spec.get("blocked") or []
+    if int(spec.get("port") or 0) <= 0 or not blocked:
+        # No rule wanted (or nothing left to block)
+        return f"advfirewall firewall delete rule name={_netsh_value(existing[0])}" if existing else None
+    settings = (
+        f"name={_netsh_value(name)} dir=in action=block protocol=UDP localport={int(spec['port'])} profile=any "
+        f"description={_netsh_value(spec.get('description', ''))} remoteip={','.join(blocked)}"
+    )
+    if existing:
+        args = f"advfirewall firewall set rule name={_netsh_value(existing[0])} new {settings} enable=yes"
+    else:
+        args = f"advfirewall firewall add rule {settings}"
     if len(args) > MAX_COMMAND_LINE:
         raise ValueError("too many friends for one firewall rule")
     return args

@@ -8,6 +8,7 @@ Detailed item cards for Borderlands 4.
   unlock or cost you if you equipped it.
 - Legendaries: who drops them and how often at your UVH level, with keys to set a waypoint to (or
   travel to) that boss's Moxxi's Big Encore machine.
+- Inventory: each legendary's own name on the equip slots and in the switch grid (option).
 
 How it fits together:
 
@@ -27,7 +28,6 @@ from __future__ import annotations
 
 import sys
 import threading
-import time
 import types
 from typing import Any
 
@@ -36,10 +36,10 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import card_page, encore_waypoint, health, skill_stats, uilink
+from . import card_page, encore_waypoint, frametick, health, skill_stats, uilink
 
-__version__ = "0.2.1"
-__version_info__ = (0, 2, 1)
+__version__ = "0.2.2"
+__version_info__ = (0, 2, 2)
 
 # The page script's key in the BL4 UI Link
 LINK_KEY = "itemcards"
@@ -105,21 +105,8 @@ def _sync_now(enabled: bool) -> None:
         uilink.unregister(LINK_KEY)
 
 
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
-_last_call = _ticked_at = 0.0
-
-
-@hook("/Script/Engine.CameraModifier:BlueprintModifyCamera", Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    global _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
+@frametick.tick("bl4_item_cards")  # once per engine frame (shared/frametick: one hook for all our mods)
+def tick() -> None:
     # Every frame: the Big Encore keys and trips in progress (cheap, see encore_waypoint.py)
     try:
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
@@ -162,11 +149,19 @@ travel_key = KeybindOption(
     ),
 )
 
-def card_settings(scale: float | None = None, fit: bool | None = None, firmware: bool | None = None) -> dict:
+def card_settings(
+    scale: float | None = None,
+    fit: bool | None = None,
+    firmware: bool | None = None,
+    slot_names: bool | None = None,
+    full_names: bool | None = None,
+) -> dict:
     return {
         "scale": (scale_option.value if scale is None else scale) / 100,
         "fit": fit_option.value if fit is None else fit,
         "firmware": firmware_option.value if firmware is None else firmware,
+        "slot_names": slot_names_option.value if slot_names is None else slot_names,
+        "full_names": full_names_option.value if full_names is None else full_names,
     }
 
 
@@ -208,6 +203,26 @@ firmware_option = BoolOption(
     on_change_while_enabled=lambda _, value: publish_settings(card_settings(firmware=value)),
 )
 
+slot_names_option = BoolOption(
+    "Legendary names in the inventory",
+    True,
+    description=(
+        "Shows each legendary's own name (\"Golden God\" for a \"Churned Aching Golden God\") on the"
+        " inventory's weapon and gear slots and in the list of items you can switch to."
+    ),
+    on_change_while_enabled=lambda _, value: publish_settings(card_settings(slot_names=value)),
+)
+
+full_names_option = BoolOption(
+    "Full legendary names",
+    False,
+    description=(
+        "Shows the whole name with its rolled prefixes (\"Churned Aching Golden God\") instead of"
+        " the legendary's own name. Long names get smaller text, on two lines if needed."
+    ),
+    on_change_while_enabled=lambda _, value: publish_settings(card_settings(full_names=value)),
+)
+
 status_button = ButtonOption(
     "Show status",
     description="Prints to the console whether the detailed cards are installed, or why not.",
@@ -216,7 +231,7 @@ status_button = ButtonOption(
 
 
 mod = build_mod(
-    options=[scale_option, fit_option, firmware_option, waypoint_key, travel_key, status_button],
+    options=[scale_option, fit_option, firmware_option, slot_names_option, full_names_option, waypoint_key, travel_key, status_button],
     hooks=[tick, encore_waypoint_from_inventory, encore_waypoint_from_hud],
     on_enable=lambda: (sync_page(True), publish_settings(card_settings())),
     on_disable=lambda: (sync_page(False), publish_settings(None), encore_waypoint.cancel_trip()),

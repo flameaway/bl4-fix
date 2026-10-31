@@ -21,25 +21,17 @@ tools/gen_uvh_teleport.py.
 from __future__ import annotations
 
 import argparse
-import time
-from typing import Any
+import traceback
 
-from mods_base import SETTINGS_DIR, KeybindOption, build_mod, command, hook
+from mods_base import SETTINGS_DIR, KeybindOption, build_mod, command
 from unrealsdk import logging
-from unrealsdk.hooks import Type
 
-from . import page, travel
+from . import frametick, page, travel
 
 __version__ = "0.1.0"
 __version_info__ = (0, 1, 0)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
-_last_call = _ticked_at = 0.0
 
 
 def log(msg: str) -> None:
@@ -61,21 +53,15 @@ class S:
     errors: set[str] = set()  # noqa: RUF012
 
 
-@hook(TICK_FUNC, Type.POST)
-def _tick(*_: Any) -> None:
-    global _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
+@frametick.tick("bl4_uvh_teleport")  # once per engine frame (shared hook, frametick/)
+def _tick() -> None:
     try:
         page.tick()
         travel.tick()
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         if repr(ex) not in S.errors:
             S.errors.add(repr(ex))
-            logging.exception(ex)
+            logging.error("".join(traceback.format_exception(ex)))
         travel.cancel()
 
 

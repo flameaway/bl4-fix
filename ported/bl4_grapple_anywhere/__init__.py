@@ -4,7 +4,7 @@ points. One key pulls you up onto the ledge you aim at, the other is a free grap
 look for a landing spot. Optionally turns the game's own grapple points off.
 
 A port of Yeti's Grapple Anywhere (GPL-3.0, see ported/README.md), without its pak: the grapple
-keeps the game's range.
+keeps the game's range. Modified by flameaway from 2026-10-24 (changes since in git history).
 
 A key press traces from the camera, spawns one of the game's GrapplePoint actors where it hits
 (shrunk out of sight), waits for its script to start, then asks the character to grapple
@@ -33,6 +33,8 @@ from unrealsdk import logging, make_struct
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import IGNORE_STRUCT, BoundFunction, UObject, WeakPointer, WrappedStruct
 
+from . import frametick
+
 try:
     from bl4_direct import coop
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo/host only
@@ -49,7 +51,6 @@ ARRIVE_NEAR = 150.0  # cm between where we asked for the point and where it show
 HOST_POINT_LIFE = 12.0  # s the host keeps a friend's point at most
 FRIEND_SHRINK_S = 0.5  # s after spawning, the host hides a friend's point from its own view
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 SCRIPT_STARTED_FUNC = "/Script/GbxGame.GbxActorScript:OnBeginPlay"
 DETACHED_FUNC = (
     "/Game/Grapple/Script_Sequence_Grapple_Point.Script_Sequence_Grapple_Point_C:"
@@ -58,6 +59,7 @@ DETACHED_FUNC = (
 TRACE_CHANNEL = 4
 MIN_DISTANCE = 500.0  # cm: closer than this the grapple has nowhere to go
 LIFT = 35.0  # cm above the hit, so the point isn't inside the surface
+FRIEND_LAG = 1000.0  # cm a friend's target may be past the longest reach (they moved meanwhile)
 GRAPPLE_DELAY = 0.1  # s after the point's script starts, so the game sees it as a target
 SCRIPT_TIMEOUT = 2.0  # s to wait for the point's script
 POINT_TIMEOUT = 8.0  # s a point may live after the grapple started
@@ -285,9 +287,18 @@ def _serve_spawn(req: Any) -> dict[str, Any]:
     pawn = req.pc.Pawn
     if pawn is None:
         return {"ok": False, "error": "no character"}
-    _drop_friend_point(req.pc._get_address())
     d = req.data
-    target = make_struct("Vector", X=float(d["x"]), Y=float(d["y"]), Z=float(d["z"]))
+    try:
+        where = (float(d["x"]), float(d["y"]), float(d["z"]))
+    except (KeyError, TypeError, ValueError):
+        return {"ok": False, "error": "bad target"}
+    here = pawn.K2_GetActorLocation()
+    # Only as far as the longest reach the slider allows (anyone's setting), plus some lag
+    reach = float(distance_option.max_value) * 100.0 + LIFT + FRIEND_LAG
+    if not all(math.isfinite(v) for v in where) or math.dist((here.X, here.Y, here.Z), where) > reach:
+        return {"ok": False, "error": "target out of reach"}
+    _drop_friend_point(req.pc._get_address())
+    target = make_struct("Vector", X=where[0], Y=where[1], Z=where[2])
     point = _spawn_point(pawn, target, bool(d.get("mantle")))
     if point is None:
         return {"ok": False, "error": "the point didn't spawn"}
@@ -387,8 +398,8 @@ def _restore_vanilla() -> None:
 # region Hooks
 
 
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
+@frametick.tick("bl4_grapple_anywhere")  # once per engine frame (shared hook, frametick/)
+def tick() -> None:
     now = time.monotonic()
     if State.point is None and State.asked is None and not State.friend_points and now < State.next_vanilla_check:
         return

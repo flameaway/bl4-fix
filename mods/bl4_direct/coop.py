@@ -38,7 +38,9 @@ module again (hot reload) replaces them.
 from __future__ import annotations
 
 import json
+import math
 import time
+import traceback
 from collections.abc import Callable
 from typing import Any
 
@@ -48,7 +50,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type, add_hook, remove_hook
 from unrealsdk.unreal import UObject, WeakPointer
 
-from . import stand
+from . import frametick, stand
 
 PREFIX = "~bl4m~"
 VERSION = 1
@@ -57,7 +59,10 @@ MESSAGE_TYPE = "BL4Mods"
 
 CHAT_FUNC = "/Script/GbxGame.GbxPlayerController:ServerSendTextChat"
 MESSAGE_FUNC = "/Script/Engine.PlayerController:ClientMessage"
+# The tick runs once per engine frame through the shared frametick. Copies before it hooked
+# TICK_FUNC themselves as f"{HOOK_ID}_tick": install() removes that hook (hot reload over one)
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
+TICK_KEY = "bl4_direct.coop"
 HOOK_ID = "bl4_coop"
 
 HELLO_EVERY_S = 5.0  # host: re-send hello to a player who hasn't answered
@@ -66,6 +71,12 @@ HOUSEKEEPING_S = 0.5
 PART_TIMEOUT_S = 10.0
 MAX_MESSAGE = 16384  # characters, reassembled
 MAX_PENDING = 32
+# No rate limits on requests (the user's call, 2026-10-30): every request a friend sends is run.
+# This only bounds memory: split messages half received from one player at once (stale ones are
+# dropped after PART_TIMEOUT_S anyway); real traffic has one or two
+MAX_PARTS_OPEN = 64
+MAX_FEATURES = 256  # names in a hello
+MAX_FEATURE_NAME = 64
 
 _kismet = unrealsdk.find_class("KismetSystemLibrary").ClassDefaultObject
 
@@ -121,8 +132,19 @@ def _role() -> type[_Role]:
     now = time.monotonic()
     if now - _Role.at >= ROLE_TTL_S:
         _Role.at = now
-        _Role.client = _server_connection() is not None
-        _Role.name = "client" if _Role.client else ("host" if _remote_controllers() else "solo")
+        # One walk to the net driver (it was two: _server_connection, then _remote_controllers
+        # building a list), and no list: any connection with a controller makes us the host
+        world = _world()
+        driver = world.NetDriver if world is not None else None
+        client = driver is not None and driver.ServerConnection is not None
+        host = False
+        if driver is not None and not client:
+            for conn in driver.ClientConnections:
+                if conn is not None and conn.PlayerController is not None:
+                    host = True
+                    break
+        _Role.client = client
+        _Role.name = "client" if client else ("host" if host else "solo")
     return _Role
 
 
@@ -289,12 +311,40 @@ def _dump(data: Any) -> str:
     return json.dumps(data, separators=(",", ":"), ensure_ascii=True)
 
 
+def _no_constant(name: str) -> Any:
+    raise ValueError(f"{name} not allowed")
+
+
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):  # 1e400 parses as inf
+        raise ValueError("number out of range")
+    return value
+
+
+def _loads(text: str) -> Any:
+    """json.loads that refuses NaN / Infinity (a handler's math would carry them on)."""
+    return json.loads(text, parse_constant=_no_constant, parse_float=_finite_float)
+
+
+def _feature_set(info: Any) -> set[str]:
+    """The feature names in a hello, checked: a list of short strings."""
+    if not isinstance(info, dict):
+        raise ValueError("hello isn't an object")
+    names = info.get("f", [])
+    if not isinstance(names, list) or len(names) > MAX_FEATURES:
+        raise ValueError("bad feature list")
+    if not all(isinstance(n, str) and len(n) <= MAX_FEATURE_NAME for n in names):
+        raise ValueError("bad feature name")
+    return set(names)
+
+
 def _call(fn: Callable[..., Any], *args: Any) -> None:
     try:
         fn(*args)
     except Exception as ex:  # noqa: BLE001
         logging.error(f"[Co-op] {ex!r}")
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
 
 
 def run(kind: str, data: dict[str, Any], on_reply: Callable[[dict[str, Any]], None], *,
@@ -352,7 +402,7 @@ def _run_handler(req: Request, fn: Callable[[Request], dict[str, Any] | None]) -
         result = fn(req)
     except Exception as ex:  # noqa: BLE001 - tell the asker instead of leaving them waiting
         logging.error(f"[Co-op] {req.kind}: {ex!r}")
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
         result = {"ok": False, "error": f"the host's mod failed ({type(ex).__name__})"}
     if result is not None:
         req.reply(result)
@@ -395,7 +445,9 @@ def _on_host_message(pc: UObject, text: str) -> None:
     if op == "p":
         rid_s, i_s, n_s, piece = rest.split("|", 3)
         rid, i, n = int(rid_s), int(i_s), int(n_s)
-        if not 0 <= i < n <= MAX_MESSAGE // CHUNK + 1:
+        if not 0 <= i < n <= MAX_MESSAGE // CHUNK + 1 or len(piece) > CHUNK:
+            return
+        if rid not in peer.parts and len(peer.parts) >= MAX_PARTS_OPEN:
             return
         _, prefix, parts = peer.parts.get(rid, (0.0, "", [None] * n))
         if len(parts) != n:
@@ -404,11 +456,12 @@ def _on_host_message(pc: UObject, text: str) -> None:
         peer.parts[rid] = (time.monotonic(), prefix, parts)
         if all(p is not None for p in parts):
             del peer.parts[rid]
-            _on_host_message(pc, "".join(p for p in parts if p is not None))
+            whole = "".join(p for p in parts if p is not None)
+            if not whole.startswith("p|"):  # we never split a part again
+                _on_host_message(pc, whole)
         return
     if op == "h":
-        info = json.loads(rest)
-        features = set(info.get("f", []))
+        features = _feature_set(_loads(rest))
         if peer.features != features:
             log(f"{_name(pc)} runs {', '.join(sorted(features)) or 'no co-op features'}")
         peer.features = features
@@ -416,7 +469,10 @@ def _on_host_message(pc: UObject, text: str) -> None:
     if op == "q":
         kind, rid_s, body = rest.split("|", 2)
         fn = _handlers.get(kind)
-        req = Request(pc, kind, json.loads(body), int(rid_s))
+        data = _loads(body)
+        if not isinstance(data, dict):
+            return
+        req = Request(pc, kind, data, int(rid_s))
         if fn is None:
             req.reply({"ok": False, "error": "the host doesn't run that"})
             return
@@ -428,8 +484,7 @@ def _on_client_message(text: str) -> None:
     op, _, rest = text.partition("|")
     conn = _server_connection()
     if op == "h":
-        info = json.loads(rest)
-        features = set(info.get("f", []))
+        features = _feature_set(_loads(rest))
         if _State.host_features != features:
             log(f"the host runs {', '.join(sorted(features)) or 'no co-op features'}")
         _State.host_features = features
@@ -440,12 +495,12 @@ def _on_client_message(text: str) -> None:
         rid_s, body = rest.split("|", 1)
         entry = _State.pending.pop(int(rid_s), None)
         if entry is not None:
-            _call(entry[0], json.loads(body))
+            _call(entry[0], _loads(body))
     elif op == "s":
         kind, body = rest.split("|", 1)
         fn = _push_handlers.get(kind)
         if fn is not None:
-            _call(fn, json.loads(body))
+            _call(fn, _loads(body))
 
 
 def _name(pc: UObject) -> str:
@@ -547,7 +602,8 @@ def _client_housekeeping(now: float) -> None:
             _call(cb, {"ok": False, "error": "the host didn't answer"})
 
 
-def _tick_hook(*_: Any) -> None:
+def _tick_hook() -> None:
+    """Once per engine frame (frametick)."""
     try:
         stand.tick()
         if _State.queue:
@@ -564,7 +620,8 @@ def _tick_hook(*_: Any) -> None:
         else:
             if _State.host_features is not None or _State.pending:
                 _client_housekeeping(now)  # just left a game: fail what's still waiting
-            if _State.peers or _remote_controllers():
+            # The cached role (up to ROLE_TTL_S old) instead of another walk of the connections
+            if _State.peers or _role().name == "host":
                 _host_housekeeping(now)
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         logging.error(f"[Co-op] {ex!r}")
@@ -584,9 +641,23 @@ def _teleport_near(req: Request) -> dict[str, Any]:
     by the host.
     """
     d = req.data
-    target = {"x": float(d["x"]), "y": float(d["y"]), "z": float(d["z"]),
-              "yaw": None if d.get("yaw") is None else float(d["yaw"]), "location": str(d.get("location") or "")}  # fmt: skip
+    try:
+        target = {"x": _coord(d["x"]), "y": _coord(d["y"]), "z": _coord(d["z"]),
+                  "yaw": None if d.get("yaw") is None else _coord(d["yaw"], 1e6),
+                  "location": str(d.get("location") or "")[:200]}  # fmt: skip
+    except (KeyError, TypeError, ValueError):
+        return {"ok": False, "error": "bad spot"}
     return stand.place(req.pc, target)
+
+
+def _coord(value: Any, limit: float = 1e8) -> float:
+    """A coordinate from a client: a finite number within `limit`, else ValueError."""
+    if isinstance(value, bool):
+        raise ValueError("not a number")
+    out = float(value)
+    if not math.isfinite(out) or abs(out) > limit:
+        raise ValueError("out of range")
+    return out
 
 
 def teleport_near(x: float, y: float, z: float, on_done: Callable[[dict[str, Any]], None], *,
@@ -619,10 +690,11 @@ def install() -> None:
     for func, kind, fn, suffix in (
         (CHAT_FUNC, Type.PRE, _chat_hook, "chat"),
         (MESSAGE_FUNC, Type.PRE, _message_hook, "message"),
-        (TICK_FUNC, Type.POST, _tick_hook, "tick"),
     ):
         remove_hook(func, kind, f"{HOOK_ID}_{suffix}")
         add_hook(func, kind, f"{HOOK_ID}_{suffix}", fn)
+    remove_hook(TICK_FUNC, Type.POST, f"{HOOK_ID}_tick")  # an older copy's own tick hook
+    frametick.add(TICK_KEY, _tick_hook)
 
 
 def uninstall() -> None:
@@ -631,6 +703,7 @@ def uninstall() -> None:
     remove_hook(CHAT_FUNC, Type.PRE, f"{HOOK_ID}_chat")
     remove_hook(MESSAGE_FUNC, Type.PRE, f"{HOOK_ID}_message")
     remove_hook(TICK_FUNC, Type.POST, f"{HOOK_ID}_tick")
+    frametick.remove(TICK_KEY)
 
 
 install()

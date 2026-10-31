@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Encore Tweaks"
-version = "0.1.0"
+version = "0.1.1"
 description = "Big Encore machines refill health, shields, ammo and action skill."
 authors = [{ name = "flame" }, { name = "Yeti (original mod)" }]
 license = "GPL-3.0-only"

@@ -16,6 +16,13 @@ of the two encodings, as the game's own serials do (the type is a varbit from 25
 Plain Python (no SDK imports).
 """
 
+# SPDX-License-Identifier: AGPL-3.0
+# This file's serial encoder follows bl4_reroll/serial.py, a Python rewrite of the Go serial code in
+# Nicnl's borderlands4-serials (https://github.com/Nicnl/borderlands4-serials, by Nicnl and its
+# contributors), which is licensed AGPL-3.0. So this file is licensed under the GNU Affero General
+# Public License v3.0 (LICENSE-AGPL in this mod), not the GPL-3.0 that covers the rest of the mod.
+# Modified by flameaway, first in 2026-10 (changes since in git history).
+
 from __future__ import annotations
 
 import json

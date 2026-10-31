@@ -20,7 +20,7 @@ Everything but this file can be hot-reloaded (dev/reload_instant_travel.py).
 
 from __future__ import annotations
 
-import time
+import traceback
 from typing import Any
 
 from mods_base import ENGINE, SETTINGS_DIR, build_mod, get_pc, hook
@@ -28,25 +28,19 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type
 from unrealsdk.unreal import BoundFunction, FGameDataHandle, UObject, WeakPointer, WrappedStruct
 
-from . import health, land, stations
+from . import frametick, health, land, stations
 
 try:
     from bl4_direct import coop
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo / host only
     coop = None
 
-__version__ = "0.1.1"
-__version_info__ = (0, 1, 1)
+__version__ = "0.1.2"
+__version_info__ = (0, 1, 2)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 STATION_TYPE = 24576  # def handle type of travel stations
 FEATURE = KIND = "instant_travel"
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
-_last_call = _ticked_at = 0.0
 
 
 def log(msg: str) -> None:
@@ -146,16 +140,25 @@ def _make_trip(pc: UObject, target: land.Target) -> None:
 
 def _host_trip(req: Any) -> dict[str, Any]:
     """Host side: puts the asking player (any player running this) on a station of this map."""
+    if not mod.is_enabled:
+        return {"ok": False, "error": "the host's Instant Fast Travel is off"}
     pc = req.controller()
     if pc is None:
         return {"ok": False, "error": "gone"}
-    try:
-        target = land.Target.from_dict(req.data)
-    except Exception:  # noqa: BLE001
+    name = req.data.get("name")
+    if not isinstance(name, str) or len(name) > 200:
         return {"ok": False, "error": "bad request"}
-    if target.name.partition(".")[0].lower() != _current_map().lower():
+    if name.partition(".")[0].lower() != _current_map().lower():
         return {"ok": False, "error": "another map"}
-    return land.place(pc, target)
+    # Where it stands comes from our own stations.json, never from the client (it could ask to be
+    # put anywhere); an unknown name is refused (the client then travels as normal)
+    found = stations.find(name)
+    if found is None:
+        return {"ok": False, "error": "unknown station"}
+    x, y, z, yaw, nested = found
+    if nested and land.station_actor(name) is None:  # the same rule as _target's
+        return {"ok": False, "error": "station not loaded"}
+    return land.place(pc, land.Target(name, x, y, z, yaw))
 
 
 if coop is not None:
@@ -163,14 +166,8 @@ if coop is not None:
     coop.feature(FEATURE, lambda: mod.is_enabled)
 
 
-@hook(TICK_FUNC, Type.POST)
-def _tick(*_: Any) -> None:
-    global _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
+@frametick.tick("bl4_instant_travel")  # once per engine frame (shared/frametick: one hook for all our mods)
+def _tick() -> None:
     if not S.checked:
         S.checked = True
         stations.start_check(GAME_DIR)  # on a worker thread
@@ -190,7 +187,7 @@ def _tick(*_: Any) -> None:
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         if repr(ex) not in S.errors:
             S.errors.add(repr(ex))
-            logging.exception(ex)
+            logging.error("".join(traceback.format_exception(ex)))
         land.cancel()
 
 

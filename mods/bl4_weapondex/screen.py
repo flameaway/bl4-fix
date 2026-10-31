@@ -13,9 +13,10 @@ changes: which bosses are beaten on this profile, the dev unlock, the search tex
 requests, and the screen's own view (tab, picks, filters, scroll), which the page sends here so
 it outlives the page and the game (settings/weapondex_view.json).
 
-Search typing: no key events reach page scripts, so while the search box is active a low-level
-keyboard hook (keyboard.py) reads the keys and keeps them from the game's menus and from every
-mod's hotkeys; the text goes to the page in the state.
+Search typing: no key events reach the menus page, so while the search box is active the UI Link's
+TextBox types with the game's own text input (on the ECHO overlay page, which has the keyboard) and
+keeps the keys from the game's menus and from every mod's hotkeys; the text goes to the page in the
+state.
 
 Waypoint / Travel buttons on a boss (travel.py): the page asks, the next frame does it, and the
 outcome goes back in the state's "trip" (the page closes the menus once the player is there).
@@ -35,7 +36,7 @@ import unrealsdk
 from mods_base import SETTINGS_DIR, get_pc
 from unrealsdk import logging
 
-from . import data, health, keyboard, owned, pause_page, picture, progress, roll, savegame, thumbs, travel, uilink
+from . import data, fetch, health, owned, pause_page, picture, progress, roll, savegame, thumbs, travel, uilink
 
 KEY = "weapondex"
 VIEW_FILE = SETTINGS_DIR / "weapondex_view.json"
@@ -66,6 +67,7 @@ class S:
     retired = False  # 0.6.0's standalone leftovers (pak 4250, host.json) looked at this session
     published_at = 0.0
     published: dict[str, tuple[int, int]] = {}  # noqa: RUF012 - file -> (size, mtime) last copied
+    packed = False  # running from a packed .sdkmod (learned at register): publish() has nothing to do
     open_request: dict[str, Any] = {"id": 0, "own": False, "boss": None}  # noqa: RUF012
     open_requested_at = -1e9
     open_pending = False  # until the page acknowledges it (do: "opened")
@@ -73,7 +75,7 @@ class S:
     waiting_until = 0.0
     close_request = 0
     search = ""
-    typing: keyboard.Typing | None = None  # while the search box is being typed in
+    typing: uilink.TextBox | None = None  # while the search box is being typed in
     toast: dict[str, Any] = {"id": 0, "text": ""}  # noqa: RUF012
     view: dict[str, Any] | None = None  # the page's view, as it last sent it
     hover: str | None = None  # the item the mouse is over
@@ -93,6 +95,9 @@ class S:
     spoiler_free: Callable[[], bool] = lambda: False  # noqa: E731
     # Set by __init__: whether hovering an Items list entry shows its card (boss drop rows always do)
     list_hover: Callable[[], bool] = lambda: False  # noqa: E731
+    # Something may have started that needs every frame (a page poll or action, F8): the mod's
+    # tick runs the full pass next frame and looks at busy() again
+    wake = False
 
 
 def available() -> bool:
@@ -112,7 +117,7 @@ def _unavailable() -> str:
 
 
 def key_down(name: str | None) -> bool:
-    """The open key, read off the game thread (the Mod Menu's key thread when it's loaded, else the link's)."""
+    """The open key, from the game's own input (uilink.key_down: gamekeys)."""
     return uilink.key_down(name)
 
 
@@ -140,6 +145,7 @@ def _defeated(char: str | None) -> dict[str, float]:
 
 
 def state() -> dict[str, Any]:
+    S.wake = True  # a poll may start a roll or the backpack walk: the mod's tick looks at busy() next frame
     char = progress.scope()  # None: the account's dex
     return {
         "open": {**S.open_request, "fresh": _open_pending()},
@@ -177,6 +183,7 @@ def state() -> dict[str, Any]:
 
 
 def act(action: dict[str, Any]) -> None:
+    S.wake = True  # may start typing, a trip, rolls, the backpack walk (see busy())
     match action.get("do"):
         case "opened":
             if action.get("id") == S.open_request["id"]:
@@ -300,11 +307,20 @@ SMALL_THREAD = "weapondex-small"
 
 
 def _start_small_backfill(game_dir: Path) -> None:
-    """Small copies of pictures taken before they existed (picture.backfill), once, on a worker."""
+    """
+    Once, on a worker: the release's pictures if the game folder lacks any (fetch.restore: the
+    setup app is the only install that brings them), then small copies of pictures taken before
+    they existed (picture.backfill). One thread, so the backfill's small/index.json rewrite can't
+    race the restore's.
+    """
     if any(t.name == SMALL_THREAD for t in threading.enumerate()):
         return  # still running from before a hot reload
 
     def run() -> None:
+        try:
+            fetch.restore(game_dir, SETTINGS_DIR, lambda text: logging.info(f"[Kairosdex] {text}"))
+        except Exception as ex:  # noqa: BLE001 - offline, or no release: the dex works without pictures
+            logging.warning(f"[Kairosdex] couldn't get the missing pictures: {ex!r}")
         try:
             made = picture.backfill([game_dir / UI_DIR / "bosses", game_dir / UI_DIR / "items"])
             if made:
@@ -331,10 +347,13 @@ def publish(*, force: bool = False) -> None:
     if S.game_dir is None or (not force and now - S.published_at < PUBLISH_S):
         return
     S.published_at = now
+    if not force and S.packed:
+        return  # a packed .sdkmod can't change while the game runs: copied once, at register
     root = resources.files(__package__)
     from_source = isinstance(root, Path)
-    if not force and not from_source:
-        return  # a packed .sdkmod can't change while the game runs: copied once, at register
+    S.packed = not from_source
+    if not force and S.packed:
+        return
     for name in UI_FILES:
         source = root / name if name in ROOT_FILES else root / "ui" / name
         try:
@@ -424,6 +443,7 @@ def request_close() -> None:
 
 
 def toggle() -> None:
+    S.wake = True  # the F8 trace watches the screen show
     pc = get_pc(possibly_loading=True)
     menu = pc is not None and _menu_showing(pc)
     showing = _showing_now()
@@ -483,8 +503,7 @@ def _trace_tick() -> None:
 
 def start_typing() -> None:
     stop_typing()
-    # Starts its hook on its own thread; a hook Windows refused shows up in _poll_typing
-    S.typing = keyboard.Typing(S.search, MAX_SEARCH)
+    S.typing = uilink.TextBox(S.search, MAX_SEARCH)
     _changed()
 
 
@@ -501,11 +520,7 @@ def _poll_typing() -> None:
     typing = S.typing
     if typing is None:
         return
-    if typing.failed:
-        stop_typing()
-        say("Couldn't read the keyboard for typing.")
-        return
-    # The screen closed (or the menus did): don't keep swallowing keys
+    # The screen closed (or the menus did): the game's keys work again
     if not screen_open():
         stop_typing()
         return
@@ -568,8 +583,21 @@ def _tick_trips() -> None:
             logging.error(f"[Kairosdex] trip: {ex!r}")
 
 
+def busy() -> bool:
+    """
+    Something here needs a look every frame: typing, a traced F8, a trip, rolls, roll pictures,
+    the item picture bake, the backpack walk. Otherwise tick() can wait for the mod's slow pass.
+    Asked after each full pass (__init__._all); what starts these sets S.wake (or runs in a pass).
+    """
+    return bool(
+        S.typing is not None or _Trace.watching is not None or S.trip_request is not None
+        or travel.S.trip is not None or travel.S.hop is not None or roll.S.queue
+        or thumbs.Shots.pending or thumbs.S.active or owned.S.walk is not None
+    )  # fmt: skip
+
+
 def tick() -> None:
-    uilink.tick()
+    """Every frame while busy(), else every SLOW_S (__init__; the link is ticked every frame there)."""
     health.tick()
     _trace_tick()
     publish()

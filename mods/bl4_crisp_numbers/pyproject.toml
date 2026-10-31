@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Crisp Damage Numbers"
-version = "0.3.0"
+version = "0.3.1"
 description = "Damage numbers drawn at screen resolution instead of DLSS/FSR's lower render resolution, so they stay sharp."
 authors = [{ name = "flame" }]
 

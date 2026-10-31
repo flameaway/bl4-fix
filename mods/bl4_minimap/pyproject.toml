@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Minimap"
-version = "0.1.7"
+version = "0.1.9"
 description = "A round or square minimap drawn from the ECHO map: its art, fog of war, icons and route."
 authors = [{ name = "flame" }]
 

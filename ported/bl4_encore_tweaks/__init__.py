@@ -2,7 +2,8 @@
 Encore Tweaks for Borderlands 4: using a Big Encore machine refills everyone's health, shields,
 ammo and action skill cooldown, and can first kill the enemies around it.
 
-A port of Yeti's Encore Tweaks (GPL-3.0, see ported/README.md).
+A port of Yeti's Encore Tweaks (GPL-3.0, see ported/README.md). Modified by flameaway from
+2026-10-24 (changes since in git history).
 
 We hook the machine's use event (Script_BossReplay). Ammo comes from the game's own resupply:
 ServerOnRefillAmmo with a resupply vending machine we spawn for the call and destroy right after
@@ -22,8 +23,8 @@ from unrealsdk import logging, make_struct
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import IGNORE_STRUCT, BoundFunction, FGbxDefPtr, UObject, WrappedStruct
 
-__version__ = "0.1.0"
-__version_info__ = (0, 1, 0)
+__version__ = "0.1.1"
+__version_info__ = (0, 1, 1)
 
 USED_FUNC = (
     "/Game/InteractiveObjects/GameSystemMachines/BossReplay/Script_BossReplay.Script_BossReplay_C:"

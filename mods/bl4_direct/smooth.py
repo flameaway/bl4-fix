@@ -1,6 +1,6 @@
 """
-"Smoother enemies for friends": host-side engine settings (console variables) that make enemies
-move more smoothly on friends' screens. Off by default.
+Smoother enemies for friends: host-side engine settings (console variables) that make enemies
+move more smoothly on friends' screens. Always on since 0.5.3 (0.5.2 had it as an option, off).
 
 What they are (game build 26007962):
 - gbx.nav.net.TransformPeriod / gbx.nav.net.PathPeriod (game: 0.25 s). Gearbox doesn't stream an
@@ -22,8 +22,7 @@ Measured (docs/networking-performance.md 4.9-4.10, two copies on one PC, simulat
 
 Only the host's values matter, so they're held only while this game hosts with at least one
 friend connected (direct IP or SHiFT); solo and as a client nothing changes. Each value is read
-before our first change and written back when the option goes off, the mod is disabled or the
-last friend leaves. The game might set them again (map load): the tick re-checks them once a second.
+before our first change and written back when the mod is disabled or the last friend leaves. The game might set them again (map load): the tick re-checks them once a second.
 """
 
 from __future__ import annotations
@@ -33,15 +32,17 @@ from typing import Any
 
 import unrealsdk
 from mods_base import ENGINE, get_pc
-from unrealsdk import hooks, logging
+from unrealsdk import logging
+
+from . import frametick
 
 WANTED: dict[str, float] = {
     "gbx.nav.net.TransformPeriod": 0.0,
     "gbx.nav.net.PathPeriod": 0.0,
     "gbx.net.ReplicationBudgetSeconds": 0.005,
 }
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-CLEANUP_ID = "bl4_direct_smooth_cleanup"
+CLEANUP_KEY = "bl4_direct.smooth_cleanup"  # a one-shot frametick callback
+HOLD = True  # lab A/B runs only (dev/netlab_suite_run.py sets it False through the bridge): no player switch
 
 
 class S:
@@ -77,10 +78,10 @@ def hosting_friends() -> bool:
     return driver is not None and driver.ServerConnection is None and len(driver.ClientConnections) > 0
 
 
-def tick(enabled: bool) -> None:
-    """Called once a second on the game thread: hold our values while wanted, else put the game's back."""
+def tick() -> None:
+    """Called once a second on the game thread: hold our values while hosting friends, else put the game's back."""
     S.game_thread = threading.get_ident()
-    if not (enabled and hosting_friends()):
+    if not (HOLD and hosting_friends()):
         if S.original:
             restore()
         return
@@ -110,11 +111,11 @@ def cleanup() -> None:
         restore()
         return
 
-    def once(*_a: Any) -> None:
+    def once() -> None:
         try:
-            hooks.remove_hook(TICK_FUNC, hooks.Type.POST, CLEANUP_ID)
+            frametick.remove(CLEANUP_KEY)
             restore()
         except Exception as ex:  # noqa: BLE001 - never break the game's tick
             logging.error(f"[BL4 Direct] smoother enemies restore: {ex!r}")
 
-    hooks.add_hook(TICK_FUNC, hooks.Type.POST, CLEANUP_ID, once)
+    frametick.add(CLEANUP_KEY, once)

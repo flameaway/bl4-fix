@@ -27,6 +27,12 @@ from .loot import Loot
 from .mapdata import pin_location
 
 SCAN_INTERVAL = 0.25  # s between searches for enemies
+# A character's hostility is asked again after this long (a UFunction call per character per search
+# was most of a search's cost); a character new to the search is asked at once
+ATTITUDE_RECHECK_S = 1.0
+# The other players' pawns and your map pin are looked up this often (their positions every update)
+PLAYERS_CHECK_S = 0.25
+PIN_CHECK_S = 0.2
 HOSTILE = 2  # ETeamAttitude
 LOOT_REACH = 30000.0  # legendaries further than this (300 m) aren't shown, not even on the rim
 
@@ -67,6 +73,46 @@ class Scan:
     spec_class: Any = None
     # (pawn address, InternalIndex) -> class icon path, or the time to look again
     class_icons: dict[tuple[int, int], str | float] = {}  # noqa: RUF012
+    # (address, InternalIndex) -> (hostile, when to ask again), for the characters of the last search
+    attitudes: dict[tuple[int, int], tuple[bool, float]] = {}  # noqa: RUF012
+    players: list[tuple[WeakPointer, WeakPointer]] = []  # noqa: RUF012  # other players' (PlayerState, pawn)
+    players_at = 0.0  # when to look them up again
+    pin: tuple[float, float, float] | None = None
+    pin_at = 0.0
+
+
+class _Fields:
+    """Reflected properties for `location`, looked up once (native classes' fields live forever)."""
+
+    ok: bool | None = None
+    root: Any = None
+    attach: Any = None
+    rel: Any = None
+
+
+def location(actor: UObject) -> tuple[float, float, float]:
+    """
+    An actor's world location. Its root component's RelativeLocation is the world location while the
+    root isn't attached to anything: read as properties that's ~9 us inside the frame tick, where
+    `K2_GetActorLocation` (a UFunction call, which hands the GIL to waiting threads) took 15-50 us
+    (game 25456, 2026-10-29). Attached (a passenger seat, a turret): K2_GetActorLocation.
+    """
+    if _Fields.ok is None:
+        try:
+            scene_class = unrealsdk.find_class("SceneComponent")
+            _Fields.root = unrealsdk.find_class("Actor")._find("RootComponent")
+            _Fields.attach = scene_class._find("AttachParent")
+            _Fields.rel = scene_class._find("RelativeLocation")
+            _Fields.ok = True
+        except (ValueError, AttributeError):
+            _Fields.ok = False
+    if _Fields.ok:
+        root = actor._get_field(_Fields.root)
+        if root is not None and root._get_field(_Fields.attach) is None:
+            rel = root._get_field(_Fields.rel)
+            return rel.X, rel.Y, rel.Z
+    loc = actor.K2_GetActorLocation()
+    return loc.X, loc.Y, loc.Z
 
 
 def _class_icon(ps: UObject, pawn: UObject) -> str | None:
@@ -117,10 +163,20 @@ def _enemies(pc: UObject, pawn: UObject) -> list[UObject]:
         found = gs.GetAllActorsOfClass(pc, Scan.character_class, [])
         found = found[1] if isinstance(found, tuple) else found
         teams = unrealsdk.find_class("GbxTeamFunctionLibrary").ClassDefaultObject
-        Scan.enemies = [
-            WeakPointer(c) for c in found
-            if c is not None and c is not pawn and not c.bHidden and teams.GetAttitudeTowards(pawn, c) == HOSTILE
-        ]  # fmt: skip
+        known, attitudes = Scan.attitudes, {}
+        enemies = []
+        for c in found:
+            if c is None or c is pawn or c.bHidden:
+                continue
+            key = (c._get_address(), c.InternalIndex)  # noqa: SLF001
+            hostile, again = known.get(key, (False, 0.0))
+            if now >= again:
+                hostile, again = teams.GetAttitudeTowards(pawn, c) == HOSTILE, now + ATTITUDE_RECHECK_S
+            attitudes[key] = (hostile, again)
+            if hostile:
+                enemies.append(WeakPointer(c))
+        Scan.attitudes = attitudes  # only this search's characters: an address reused later is asked anew
+        Scan.enemies = enemies
     alive = []
     for ptr in Scan.enemies:
         actor = ptr()
@@ -135,36 +191,54 @@ def _enemies(pc: UObject, pawn: UObject) -> list[UObject]:
     return alive
 
 
-def collect(pc: UObject, pawn: UObject, world: UObject, *, loot_on: bool = False) -> list[Marker]:
+def collect(pc: UObject, pawn: UObject, world: UObject, *, loot_on: bool = False,
+            me: tuple[float, float, float] | None = None) -> list[Marker]:  # fmt: skip
+    """`me`: the player's location if the caller has it."""
     out: list[Marker] = []
     if loot_on:
         Loot.scan(pc)
-        me = pawn.K2_GetActorLocation()
+        mx, my, _ = me if me is not None else location(pawn)
         out += [
             Marker(kind, x, y, True, z) for kind, x, y, z in Loot.items()
-            if (x - me.X) ** 2 + (y - me.Y) ** 2 <= LOOT_REACH**2
+            if (x - mx) ** 2 + (y - my) ** 2 <= LOOT_REACH**2
         ]  # fmt: skip
-    try:
-        bosses = {b._get_address() for b in pc.BossState.VisibleBosses if b is not None}  # noqa: SLF001
-    except AttributeError:
-        bosses = set()
-    for actor in _enemies(pc, pawn):
-        loc = actor.K2_GetActorLocation()
-        out.append(Marker(BOSS if actor._get_address() in bosses else ENEMY, loc.X, loc.Y, False))  # noqa: SLF001
+    enemies = _enemies(pc, pawn)
+    bosses: set[int] = set()
+    if enemies:  # (the boss list is only needed to tell them apart)
+        try:
+            bosses = {b._get_address() for b in pc.BossState.VisibleBosses if b is not None}  # noqa: SLF001
+        except AttributeError:
+            pass
+    for actor in enemies:
+        x, y, _ = location(actor)
+        out.append(Marker(BOSS if actor._get_address() in bosses else ENEMY, x, y, False))  # noqa: SLF001
 
-    game_state = world.GameState
-    for ps in game_state.PlayerArray if game_state is not None else []:
-        if ps is None or ps is pc.PlayerState:
-            continue
-        other = ps.GetPawn()
-        if other is not None:
-            loc = other.K2_GetActorLocation()
+    now = time.monotonic()
+    if now >= Scan.players_at:
+        # Who the other players are (GetPawn is a UFunction call each): a few times a second
+        Scan.players_at = now + PLAYERS_CHECK_S
+        players = []
+        game_state = world.GameState
+        mine = pc.PlayerState
+        for ps in game_state.PlayerArray if game_state is not None else []:
+            if ps is None or ps is mine:
+                continue
+            other = ps.GetPawn()
+            if other is not None:
+                players.append((WeakPointer(ps), WeakPointer(other)))
+        Scan.players = players
+    for ps_ptr, pawn_ptr in Scan.players:
+        ps, other = ps_ptr(), pawn_ptr()
+        if ps is not None and other is not None:
+            x, y, z = location(other)
             icon = _class_icon(ps, other)
-            out.append(Marker(FRIEND_CLASS if icon else FRIEND, loc.X, loc.Y, True, loc.Z, icon))
+            out.append(Marker(FRIEND_CLASS if icon else FRIEND, x, y, True, z, icon))
 
-    pin = pin_location(pc, str(world.Name))
-    if pin is not None:
-        out.append(Marker(WAYPOINT, pin[0], pin[1], True))
+    if now >= Scan.pin_at:
+        Scan.pin_at = now + PIN_CHECK_S
+        Scan.pin = pin_location(pc, str(world.Name))
+    if Scan.pin is not None:
+        out.append(Marker(WAYPOINT, Scan.pin[0], Scan.pin[1], True))
     return out
 
 
@@ -193,3 +267,10 @@ def project(x: float, y: float, cx: float, cy: float, yaw: float, radius: float,
             return None
         u, v = u / dist, v / dist
     return u, v
+
+
+def offset(x: float, y: float, cx: float, cy: float, yaw: float, radius: float) -> tuple[float, float]:
+    """Like `project`, however far the point is (no clamping, never None)."""
+    dx, dy = x - cx, y - cy
+    c, s = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+    return (-dx * s + dy * c) / radius, -(dx * c + dy * s) / radius

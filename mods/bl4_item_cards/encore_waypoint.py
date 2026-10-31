@@ -32,7 +32,6 @@ from __future__ import annotations
 import ctypes
 import json
 import math
-import sys
 import time
 from importlib import resources
 from pathlib import Path
@@ -44,7 +43,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type, add_hook, remove_hook
 from unrealsdk.unreal import FGameDataHandle, WrappedStruct
 
-from . import card_page
+from . import card_page, gamekeys
 
 try:
     from bl4_direct import coop
@@ -83,8 +82,8 @@ GUARD_S = 15.0  # after our hop, a game move within this long gets our hop again
 MAX_HOPS = 3
 TRAVEL_TIMEOUT = 180.0
 
-# ctypes.windll, not PyDLL: these calls must let go of the GIL (GetAsyncKeyState can take ~100 ms,
-# e.g. while the desktop is streamed). Keys go through BL4 Mod Menu's key thread when it's loaded.
+# ctypes.windll, not PyDLL: these calls must let go of the GIL. Only the focus check uses them; keys
+# come from the game's own input (gamekeys).
 _user32 = ctypes.windll.user32
 _statics = unrealsdk.find_class("GameplayStatics").ClassDefaultObject
 _kernel32 = ctypes.windll.kernel32
@@ -93,6 +92,7 @@ _kernel32 = ctypes.windll.kernel32
 class _Key:
     def __init__(self) -> None:
         self.name: str | None = None
+        self.vk: int | None = None  # the name's virtual key, worked out when the binding changes
         self.down = False
         self.presses = 0
 
@@ -119,14 +119,11 @@ def _game_focused() -> bool:
 
 def _async_down(vk: int) -> bool:
     """
-    Whether a key is held while the game is in front. Read by BL4 Mod Menu's key thread when it's
-    loaded: GetAsyncKeyState can take ~100 ms on the game thread (a streamed desktop, 2026-10-24).
+    Whether a key is held, from the game's own input (gamekeys, shared by our mods; False while the
+    game isn't in front). Until 2026-10-30 this read Windows (GetAsyncKeyState, through BL4 Mod
+    Menu's key thread when it was loaded).
     """
-    keys = sys.modules.get("bl4_mod_menu.keys")
-    if keys is not None and hasattr(keys, "_Keys"):
-        return keys.vk_down(vk)
-    return _game_focused() and bool(_user32.GetAsyncKeyState(vk) & 0x8000)
-
+    return gamekeys.vk_down(vk)
 
 def virtual_key(name: str | None) -> int | None:
     """Windows key code for an Unreal key name: letters, number row ("One"), F1-F12."""
@@ -161,8 +158,10 @@ def _write_status(game_dir: Path) -> None:
 def _poll(key: _Key, name: str | None) -> bool:
     """Updates one key; True if the status file needs writing."""
     changed = name != key.name
-    key.name = name
-    vk = virtual_key(name)
+    if changed:
+        key.name = name
+        key.vk = virtual_key(name)  # not every frame: it builds a list and parses the name
+    vk = key.vk
     down = vk is not None and _async_down(vk)
     if down and not key.down:
         key.presses += 1

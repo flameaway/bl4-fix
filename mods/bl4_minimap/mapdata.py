@@ -24,6 +24,7 @@ import math
 import re
 import time
 from pathlib import Path
+from collections.abc import Generator
 from typing import Any
 
 import unrealsdk
@@ -45,7 +46,8 @@ RESNAP_DELAY_S = 0.5  # after the waypoint pin changes with the map open: let it
 # While the map is open: look whether its route line changed this often. The game redraws it some
 # time after a pin moves; the one read 0.5 s after the pin change could still be the old line.
 ROUTE_POLL_S = 0.25
-REFIND_S = 1.0  # search for new route actors (find_all, ~10 ms) at most this often, only when needed
+REFIND_S = 1.0  # search for new route actors at most this often, only when needed
+JOB_BUDGET_S = 0.0025  # per frame for a read of the open map (`MapData.run`)
 REFIND_FOR_S = 10.0  # ... and only this long after the map opened or the pin moved
 # World units: closer than this to the ECHO map's route, you're on it; further, it was copied from
 # somewhere else and the way from you to it is planned over the graph (`joined`)
@@ -119,6 +121,28 @@ def _character(pc: UObject) -> str | None:
     guid = state.ActiveCharGuid
     parts = [guid.A, guid.B, guid.C, guid.D]
     return "".join(f"{p & 0xFFFFFFFF:08x}" for p in parts) if any(parts) else None
+
+
+def _icons_of(actor: UObject, poi_component: UObject) -> list[dict[str, Any]]:
+    """The visible icons of one of the open map's icon actors."""
+    icons = []
+    for comp in actor.K2_GetComponentsByClass(poi_component):
+        if not comp.bVisible or comp.K2_GetComponentScale().X <= 0:
+            continue  # an old one from an earlier opening, on its way out
+        textures, scalars = _params(comp.MaterialInstance)
+        texture = textures.get(str(comp.MaterialTextureParamName))
+        if texture is None or scalars.get(str(comp.MaterialIsHiddenParamName), 0.0) > 0.5:
+            continue
+        loc = comp.K2_GetComponentLocation()
+        icons.append({
+            "x": round(loc.X * MAP_TO_WORLD, 1),
+            "y": round(loc.Y * MAP_TO_WORLD, 1),
+            "texture": texture._path_name(),  # noqa: SLF001
+            "blip": scalars.get(str(comp.MaterialIsBlipParamName), 0.0) > 0.5,
+            "pinned": scalars.get(str(comp.MaterialPinOpacityParamName), 0.0) > 0.5,
+            "area": bool(comp.bIsAreaComponent),
+        })
+    return icons
 
 
 def _params(material: UObject | None) -> tuple[dict[str, Any], dict[str, float]]:
@@ -234,6 +258,9 @@ class MapData:
     refind_at = 0.0  # next search for route actors allowed
     changed_at = 0.0  # when the map opened or the pin last moved
     join_key: tuple[Any, int] | None = None  # (planned route, version) `joined` last worked out
+    job: Generator[None, None, None] | None = None  # a read of the open map in progress (`run`)
+    world_query: bool | None = None  # GetAllActorsOfClass finds the map's icons (None: not known yet)
+    fallback_used = False  # find_all tried once because it found none
     join_result: list[tuple[float, float]] | None = None
 
     @classmethod
@@ -267,38 +294,91 @@ class MapData:
         tmp.replace(cls._path())
 
     @classmethod
-    def _snapshot(cls, pc: UObject | None = None, pin: tuple[float, float, float] | None = None) -> None:
+    def run(cls) -> None:
+        """
+        Every frame while a read of the open map runs (`job`): works on it for up to JOB_BUDGET_S.
+        The game is paused behind the map then, but a long tick still stutters the menu: one read in
+        one tick was 12-27 ms (Fortress_Grasslands_P, 14 icons; two `find_all`s of ~12 ms each, then a
+        UFunction call or four per icon and route segment).
+        """
+        if cls.job is None:
+            return
+        end = time.perf_counter() + JOB_BUDGET_S
+        try:
+            while time.perf_counter() < end:
+                next(cls.job)
+        except StopIteration:
+            cls.job = None
+        except Exception as ex:  # noqa: BLE001 - a read gone wrong mustn't break the minimap
+            cls.job = None
+            scene.log(f"map data: read failed: {ex!r}")
+
+    @classmethod
+    def _actors(cls, viewer: UObject, class_name: str) -> list[WeakPointer]:
+        """
+        The open map's actors of a class, from its own world (`GetAllActorsOfClass` with the viewer as
+        world context: under 0.1 ms where `find_all` walked every object, ~12 ms). If that finds no
+        icons with the map open, `find_all` once per session to tell whether it missed them.
+        """
+        level = viewer.Outer
+        found: list[Any] = []
+        if cls.world_query is not False:
+            try:
+                actor_class = unrealsdk.find_class(class_name)
+                gs = unrealsdk.find_class("GameplayStatics").ClassDefaultObject
+                result = gs.GetAllActorsOfClass(viewer, actor_class, [])
+                found = [a for a in (result[1] if isinstance(result, tuple) else result) if a is not None]
+            except (ValueError, AttributeError, TypeError):
+                found = []
+            if class_name == POI_CLASS and found:
+                cls.world_query = True
+        if cls.world_query is False:
+            found = list(unrealsdk.find_all(class_name, exact=class_name != POI_CLASS))
+        elif not found and class_name == POI_CLASS and not cls.fallback_used:
+            cls.fallback_used = True
+            found = list(unrealsdk.find_all(class_name, exact=False))
+            if any(a.Outer is level for a in found):
+                cls.world_query = False  # the world query missed them: find_all from now on
+                scene.log("map data: GetAllActorsOfClass found no map icons, using find_all")
+        return [WeakPointer(a) for a in found if a.Outer is level]
+
+    @classmethod
+    def _start(cls, job: Generator[None, None, None]) -> None:
+        cls.job = job
+        cls.run()
+
+    @classmethod
+    def _snapshot_job(cls, pc: WeakPointer, pin: tuple[float, float, float] | None) -> Generator[None, None, None]:
+        """
+        Reads the open map's icons and route, a piece per step (`run`). Only WeakPointers are kept
+        from one step to the next.
+        """
         viewer = scene.Viewer.get()
         if viewer is None:
             return
-        level = viewer.Outer
+        pois = cls._actors(viewer, POI_CLASS)
+        viewer = None
         poi_component = unrealsdk.find_class("OakMapViewerPOIIconComponent")
         icons: list[dict[str, Any]] = []
-        for actor in unrealsdk.find_all(POI_CLASS, exact=False):
-            if actor.Outer is not level or actor.bHidden or str(actor.Class.Name) in SKIP_POI_CLASSES:
+        for ptr in pois:
+            yield
+            actor = ptr()
+            if actor is None or actor.bHidden or str(actor.Class.Name) in SKIP_POI_CLASSES:
                 continue  # (class default objects live in their package, not the viewer's level)
-            for comp in actor.K2_GetComponentsByClass(poi_component):
-                if not comp.bVisible or comp.K2_GetComponentScale().X <= 0:
-                    continue  # an old one from an earlier opening, on its way out
-                textures, scalars = _params(comp.MaterialInstance)
-                texture = textures.get(str(comp.MaterialTextureParamName))
-                if texture is None or scalars.get(str(comp.MaterialIsHiddenParamName), 0.0) > 0.5:
-                    continue
-                loc = comp.K2_GetComponentLocation()
-                icons.append({
-                    "x": round(loc.X * MAP_TO_WORLD, 1),
-                    "y": round(loc.Y * MAP_TO_WORLD, 1),
-                    "texture": texture._path_name(),  # noqa: SLF001
-                    "blip": scalars.get(str(comp.MaterialIsBlipParamName), 0.0) > 0.5,
-                    "pinned": scalars.get(str(comp.MaterialPinOpacityParamName), 0.0) > 0.5,
-                    "area": bool(comp.bIsAreaComponent),
-                })
-        actors = [a for a in unrealsdk.find_all("OakMapViewerWaypointPath", exact=True) if a.Outer is level]
-        cls.paths = [WeakPointer(a) for a in actors]
-        cls.route_sig = cls._signature(actors)
-        routes = cls._read_routes(actors, pc, pin)
+            icons.extend(_icons_of(actor, poi_component))
+            actor = None
+        yield
+        viewer = scene.Viewer.get()
+        if viewer is None:
+            return
+        paths = cls._actors(viewer, "OakMapViewerWaypointPath")
+        viewer = None
+        cls.paths = paths
+        cls.route_sig = cls._signature([a for a in (p() for p in paths) if a is not None])
+        routes = yield from cls._routes_job(paths, pc, pin)
         if routes is None:
             routes = cls.routes  # lines the game has just reset: keep what we read before
+        yield
         if icons:
             cls.icons = icons
         cls.routes = routes
@@ -308,10 +388,11 @@ class MapData:
         scene.log(f"map data: {len(icons)} icons, {len(routes)} route(s)")
 
     @classmethod
-    def _read_routes(cls, actors: list[UObject], pc: UObject | None,
-                     pin: tuple[float, float, float] | None) -> list[list[tuple[float, float]]] | None:  # fmt: skip
+    def _routes_job(cls, paths: list[WeakPointer], pc: WeakPointer,
+                    pin: tuple[float, float, float] | None) -> Generator[None, None, list[list[tuple[float, float]]] | None]:  # fmt: skip
         """
-        The map's live route line (world units), as a list of one (or none), and its colour.
+        The map's live route line (world units), as a list of one (or none), and its colour; a
+        segment per step.
 
         The map keeps every line it drew while it's open (World_P 2026-10-29: 6 at once, 4 white-blue
         to the tracked bounty and 2 orange from a mission before), all visible to us. The live one is
@@ -324,37 +405,52 @@ class MapData:
         """
         lines: list[tuple[int, list[tuple[float, float]], tuple[float, float, float, float] | None]] = []
         reset = 0
-        for path_actor in actors:
-            if path_actor.bHidden:
+        for ptr in paths:
+            yield
+            path_actor = ptr()
+            if path_actor is None or path_actor.bHidden:
                 continue
-            points: list[tuple[float, float]] = []
+            number = _name_number(path_actor)
+            # This step: the segments' meshes and the line's colour (property reads); then a segment
+            # (four UFunction calls) per step
+            meshes: list[WeakPointer] = []
             color = None
             for segment in path_actor.PathSplines:
                 mesh = segment.SplineMesh
                 if mesh is None or not mesh.bVisible:
+                    continue
+                meshes.append(WeakPointer(mesh))
+                if color is None:
+                    for p in getattr(segment.Material, "VectorParameterValues", []):
+                        if str(p.ParameterInfo.Name) == "LineColor":
+                            c = p.ParameterValue
+                            color = (c.R, c.G, c.B, 1.0)
+            path_actor = mesh = segment = None
+            points: list[tuple[float, float]] = []
+            for mesh_ptr in meshes:
+                yield
+                mesh = mesh_ptr()
+                if mesh is None:
                     continue
                 start, end = mesh.GetStartPosition(), mesh.GetEndPosition()
                 if not points:
                     points.append((start.X * MAP_TO_WORLD, start.Y * MAP_TO_WORLD))
                 bent = _curve(start, mesh.GetStartTangent(), end, mesh.GetEndTangent())
                 points.extend((x * MAP_TO_WORLD, y * MAP_TO_WORLD) for x, y in bent)
-                if color is None:
-                    for p in getattr(segment.Material, "VectorParameterValues", []):
-                        if str(p.ParameterInfo.Name) == "LineColor":
-                            c = p.ParameterValue
-                            color = (c.R, c.G, c.B, 1.0)
+                mesh = start = end = None
             if len(points) < 2:  # noqa: PLR2004
                 continue
             if max(abs(x - points[0][0]) + abs(y - points[0][1]) for x, y in points) < EMPTY_ROUTE:
                 reset += 1
                 continue
-            lines.append((_name_number(path_actor), points, color))
+            lines.append((number, points, color))
         if reset and not lines:
             return None
         if not lines:
             return []
         # The live line starts where the player stands (the map was opened from here)
-        pawn = pc.Pawn if pc is not None else None
+        controller = pc()
+        pawn = controller.Pawn if controller is not None else None
         if pawn is not None:
             loc = pawn.K2_GetActorLocation()
             here = [ln for ln in lines if (ln[1][0][0] - loc.X) ** 2 + (ln[1][0][1] - loc.Y) ** 2 <= ROUTE_START_SLACK**2]
@@ -383,6 +479,7 @@ class MapData:
         is_open = camera is not None and camera.TextureTarget is not None
         now = time.monotonic()
         if not is_open:
+            cls.job = None  # (a read cut short by the map closing: its actors are gone)
             cls.opened_at = 0.0
             cls.snapped = False
             cls.resnap_at = 0.0
@@ -391,10 +488,16 @@ class MapData:
         if cls.opened_at == 0.0:
             cls.opened_at = cls.changed_at = now
         pin = pin_location(pc, world_name)
+        if cls.job is not None:
+            if cls.snapped and pin != cls.snap_pin:
+                cls.snap_pin = pin
+                cls.resnap_at = now + RESNAP_DELAY_S
+                cls.changed_at = now
+            return  # a read is running (`run`, every frame)
         if not cls.snapped and now - cls.opened_at >= SNAPSHOT_DELAY_S:
             cls.snapped = True
             cls.snap_pin = pin
-            cls._snapshot(pc, pin)
+            cls._start(cls._snapshot_job(WeakPointer(pc), pin))
             cls.poll_at = now + ROUTE_POLL_S
         elif cls.snapped and pin != cls.snap_pin:
             # A pin placed, moved or removed on the open map: it redraws its route; read it again
@@ -403,7 +506,7 @@ class MapData:
             cls.changed_at = now
         elif cls.resnap_at and now >= cls.resnap_at:
             cls.resnap_at = 0.0
-            cls._snapshot(pc, pin)
+            cls._start(cls._snapshot_job(WeakPointer(pc), pin))
             cls.poll_at = now + ROUTE_POLL_S
         elif cls.snapped and now >= cls.poll_at:
             cls.poll_at = now + ROUTE_POLL_S
@@ -439,14 +542,19 @@ class MapData:
             viewer = scene.Viewer.get()
             if viewer is None:
                 return
-            level = viewer.Outer
-            actors = [a for a in unrealsdk.find_all("OakMapViewerWaypointPath", exact=True) if a.Outer is level]
-            cls.paths = [WeakPointer(a) for a in actors]
+            cls.paths = cls._actors(viewer, "OakMapViewerWaypointPath")
+            actors = [a for a in (w() for w in cls.paths) if a is not None]
         sig = cls._signature(actors)
         if sig == cls.route_sig:
             return
         cls.route_sig = sig
-        routes = cls._read_routes(actors, pc, pin)
+        cls._start(cls._poll_job(list(cls.paths), WeakPointer(pc), pin, now))
+
+    @classmethod
+    def _poll_job(cls, paths: list[WeakPointer], pc: WeakPointer, pin: tuple[float, float, float] | None,
+                  now: float) -> Generator[None, None, None]:  # fmt: skip
+        """The route line read again (it changed), a segment per step."""
+        routes = yield from cls._routes_job(paths, pc, pin)
         if routes is None or routes == cls.routes:
             return
         cls.routes = routes

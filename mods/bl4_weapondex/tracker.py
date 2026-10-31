@@ -7,7 +7,9 @@ Two ways in, since neither covers everything on its own:
 - The boss health bars: PlayerController.BossState.VisibleBosses lists the bosses whose bar
   shows. We keep a weak pointer to each and check IsDead() every frame. That covers bosses
   outside arenas and the client side of co-op, where the arena's events may not run. With no boss
-  watched, the list is only looked at SCAN_S apart (reading it cost ~0.1 ms a frame in a hook).
+  watched, the list is only looked at SCAN_S apart (reading it cost ~0.1 ms a frame in a hook;
+  2 Hz since 2026-10-29: a boss bar shows long before its boss dies, and a dead boss still in
+  the list counts at the next look, since IsDead is checked right after it's matched).
 
 A boss is matched to the dex by its object name, which is its def (Char_GrassBoss_2147...), or
 else by the UI name it shows (data.boss_for). Never keep a plain reference to a game actor across
@@ -26,7 +28,7 @@ from unrealsdk.unreal import UObject, WeakPointer
 from . import data
 
 _watched: list[tuple[WeakPointer, str]] = []
-SCAN_S = 0.2
+SCAN_S = 0.5
 _scanned_at = 0.0
 
 
@@ -59,7 +61,9 @@ def tick(beaten: Callable[[str], None]) -> None:
         _watched.clear()
         return
     try:
-        visible = list(pc.BossState.VisibleBosses)
+        bars = pc.BossState.VisibleBosses
+        # By index: list(bars) (the array's iterator) cost ~18 us even empty, len ~1 us (2026-10-29)
+        visible = [bars[i] for i in range(len(bars))]
     except AttributeError:
         visible = []
     for actor in visible:

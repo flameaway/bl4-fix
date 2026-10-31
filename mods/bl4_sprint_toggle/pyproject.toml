@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Sprint Toggle"
-version = "0.1.0"
+version = "0.1.1"
 description = "Press once to sprint, again to walk: sprint picks itself back up after stops, shots, aiming, slides and jumps. Pick any key or controller button (or your sprint key), or sprint always."
 authors = [{ name = "flame" }]
 

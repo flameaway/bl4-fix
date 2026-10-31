@@ -134,6 +134,35 @@
         return b;
     }
 
+    // The Mod Menu's own Off / On switch (the game's Options toggle); two buttons if it has none
+    function toggle(api, on, fn, enabled) {
+        var tpl = ns.templates && ns.templates.toggle;
+        if (!tpl) {
+            return button(api, on ? "On" : "Off", function () {
+                fn(!on);
+            }, enabled);
+        }
+        var t = tpl.cloneNode(true);
+        var left = t.querySelector(".toggle_button_left");
+        var right = t.querySelector(".toggle_button_right");
+        var texts = t.querySelectorAll(".toggle_button_text");
+        if (texts[0]) texts[0].textContent = "Off";
+        if (texts[1]) texts[1].textContent = "On";
+        if (left) left.classList.toggle("active", !on);
+        if (right) right.classList.toggle("active", on);
+        if (enabled !== false) {
+            if (left) api.onClick(left, function () {
+                if (on) fn(false);
+            });
+            if (right) api.onClick(right, function () {
+                if (!on) fn(true);
+            });
+        } else {
+            t.classList.add("bl4mm_disabled");
+        }
+        return t;
+    }
+
     // A text field: click to type in it (Python reads the keys), or Paste
     function field(api, name, hint) {
         var s = dc.state;
@@ -163,6 +192,31 @@
         }
         var hosting = s.mode === "hosting";
         var connected = s.mode === "connected";
+
+        // The friend list or a firewall switch changed and Windows Firewall is behind: ask here
+        // before Windows does (Python only sends ask_firewall while there's something to change)
+        var ASKS = {
+            friends: ["Your friend list changed", "Your firewall rule still has your old friend list: friends you added can't reach a game you host " +
+                "(and anyone you removed still can)."],  // prettier-ignore
+            on: ["Turn on the firewall rule", "Adds BL4 Direct's rule to Windows Firewall: only this PC, your friends and (if allowed) your local " +
+                "network can reach a game you host."],  // prettier-ignore
+            off: ["Remove the firewall rule", "Takes BL4 Direct's rule out of Windows Firewall."],
+            lan: ["Local network setting changed", "Changes who on your local network and VPN can reach a game you host."]
+        };
+        var ask = s.ask_firewall && ASKS[s.ask_firewall];
+        if (ask) {
+            api.title("Update your firewall?");
+            api.row(ask[0], ask[1] + " Continue: Windows asks if \"Network Command Shell\" may make changes. That's netsh, " +
+                "Windows' own firewall tool (Show more details lists the rule): choose Yes. Not now: do it later with Update in the Firewall section.", [  // prettier-ignore
+                value(api, "Windows asks next", "bl4dc_small"),
+                button(api, "Continue", function () {
+                    send({ do: "firewall" });
+                }, !s.asking),
+                button(api, "Not now", function () {
+                    send({ do: "firewall_later" });
+                })
+            ]);
+        }
 
         api.title("Your game");
         var status, statusDesc, statusCls = "";
@@ -208,7 +262,7 @@
                 : s.firewall_off
                 ? "Reloads your current map as a co-op host on UDP port " + s.port + "."
                 : "Reloads your current map as a co-op host on UDP port " + s.port + ". Only friends in your list (and your local network) can get in." +
-                  (s.firewall ? "" : " Windows asks once to let your friends through the firewall.");  // prettier-ignore
+                  (s.firewall ? "" : " Your firewall rule is behind your friend list: friends you added can't get in until you update it (Firewall section).");  // prettier-ignore
             api.row("Host a game", hostDesc, [
                 button(api, "Host", function () {
                     travel({ do: "host" });
@@ -238,27 +292,37 @@
             api.row(ipName, ipDesc, [value(api, "Looking it up...")]);
         }
 
-        if (s.firewall_off) {
-            if (hosting) {
-                api.row("Firewall", "No firewall rule: anyone who can reach UDP " + s.port + " (port scanners, anyone with your IP) " +
-                    "can try to connect. Recommended: turn on \"Firewall rule for hosting\" in BL4 Fix Setup (Co-op page) " +
-                    "so only your friends get through.", [value(api, "Off: recommended on", "bl4dc_warn")]);  // prettier-ignore
-            }
-        } else if (hosting || !s.firewall) {
-            var fwParts = [value(api, s.firewall ? "Up to date" : s.asking ? "Waiting for Windows" : "Needs updating",
-                s.firewall ? "bl4dc_on" : "bl4dc_warn")];  // prettier-ignore
-            if (!s.firewall) {
-                fwParts.push(button(api, "Update", function () {
-                    send({ do: "firewall" });
-                }, !s.asking));
-            }
-            api.row("Firewall", "Only the friends in your list (and your local network) can reach a game you host. " +
-                "After adding or removing friends, Windows asks once to update the rule.", fwParts);  // prettier-ignore
-        }
-
         api.row("Versions", "You and your friends should see the same versions here, or joining may fail.", [
             value(api, s.compat, "bl4dc_small")
         ]);
+
+        // Firewall: the switches (saved in the friends file, shared with BL4 Fix Setup) and what
+        // Windows Firewall blocks or lets in right now
+        var fw = s.fw;
+        if (fw) {
+            api.title("Firewall");
+            api.row("Firewall rule", "On: a Windows Firewall rule blocks the co-op port (UDP " + s.port + ") to everyone except this PC, " +
+                "the friends in your list and (if allowed) your local network. It only ever blocks; it never opens anything. " +
+                "Off: no rule, and Steam's own rule lets anyone who can reach the port try to connect while you host. " +
+                "Changing it asks first (Continue), then Windows asks for admin.", [  // prettier-ignore
+                toggle(api, fw.on, function (on) {
+                    send({ do: "set_firewall", on: on });
+                }, !s.asking)
+            ]);
+            api.row("Allow local network", "On: devices on your home network and VPN (Tailscale, ZeroTier) can join a game you host " +
+                "without being in your friends list. Off: only this PC and your friends. Only matters while the firewall rule is on.", [  // prettier-ignore
+                toggle(api, fw.lan, function (on) {
+                    send({ do: "set_lan", on: on });
+                }, !s.asking)
+            ]);
+            var fwParts = [value(api, s.asking ? "Waiting for Windows" : fw.summary, s.asking ? "bl4dc_warn" : fw.cls)];
+            if (fw.action) {
+                fwParts.push(button(api, fw.action === "remove" ? "Remove" : "Update", function () {
+                    send({ do: "firewall" });
+                }, !s.asking));
+            }
+            api.row("Status", fw.details, fwParts);
+        }
 
         api.title("Friends");
         if (!s.friends.length) {
@@ -269,7 +333,7 @@
         s.friends.forEach(function (f) {
             var addr = f.address + (f.port !== 7777 ? ":" + f.port : "");
             api.row(f.name, "Join " + f.name + "'s game at " + f.address + ":" + f.port + ". They must be hosting and have your IP in their list. " +
-                "Remove takes them off your list (and out of your firewall rule when you host).", [  // prettier-ignore
+                "Remove takes them off your list (and out of your firewall rule once you update it).", [  // prettier-ignore
                 value(api, addr, "bl4dc_addr bl4dc_small"),
                 button(api, "Join", function () {
                     travel({ do: "join", name: f.name });
@@ -289,7 +353,7 @@
                 send({ do: "paste", field: "ip" });
             })
         ]);
-        api.row("Add friend", "Adds them to your list. If you're hosting, Windows asks to let them through your firewall.", [
+        api.row("Add friend", "Adds them to your list. With the firewall rule on, the page then asks to let them through it.", [
             button(api, "Add", function () {
                 send({ do: "add" });
             }, !!(s.fields.name.trim() && s.fields.ip.trim()), true)
@@ -326,8 +390,19 @@
 
     // endregion
 
+    // A click anywhere but the field being typed in stops typing (capture: rows stop propagation)
+    function clickOff(evt) {
+        if (!alive() || !dc.state || !dc.state.typing) return;
+        for (var n = evt.target; n; n = n.parentNode) {
+            if (n.classList && n.classList.contains("bl4dc_field")) return;
+        }
+        send({ do: "type", field: null });
+    }
+    document.addEventListener("click", clickOff, true);
+
     ext.teardowns[KEY] = function () {
         dc.gen = 0;
+        document.removeEventListener("click", clickOff, true);
         timers.forEach(clearTimeout);
         if (pollTimer !== null) clearTimeout(pollTimer);
         if (ns.modPages && ns.modPages[MOD] && ns.modPages[MOD].gen === gen) delete ns.modPages[MOD];

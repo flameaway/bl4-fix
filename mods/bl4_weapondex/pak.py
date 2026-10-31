@@ -198,16 +198,21 @@ class _Summary:
 _summaries: dict[str, _Summary] = {}  # by lowercased path
 _FORGET_AFTER = 10.0
 _forget_timer: threading.Timer | None = None
+_forget_lock = threading.Lock()
 
 
 def _forget_soon() -> None:
     global _forget_timer
-    if _forget_timer is not None:
-        _forget_timer.cancel()
-    # Only clears a dict, so it's fine on its own thread
-    _forget_timer = threading.Timer(_FORGET_AFTER, _summaries.clear)
-    _forget_timer.daemon = True
-    _forget_timer.start()
+    # Several worker threads look paths up at once: unlocked, two of them could start the same
+    # Timer ("thread already started", 2026-10-29)
+    with _forget_lock:
+        if _forget_timer is not None:
+            _forget_timer.cancel()
+        # Only clears a dict, so it's fine on its own thread
+        timer = threading.Timer(_FORGET_AFTER, _summaries.clear)
+        timer.daemon = True
+        timer.start()
+        _forget_timer = timer
 
 
 def _stamps(paks: list[Path]) -> dict[str, tuple[int, int]]:

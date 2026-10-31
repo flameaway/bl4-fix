@@ -12,11 +12,18 @@ The serial: `type, 0, 1, level| 2, seed||` then the composition and the parts in
 table `{n}`, another table `{t:n}`, a run of one other table `{t:[a b]}`, and a part that has no
 serial index as text `"ClassMod.statspecial_ricochet_damage"` (as the game's own serials do). Numbers take the shorter
 of the two encodings, as the game's own serials do (the type is a varbit from 256 up). Format as
-documented by the community decoders; our own encoder, checked against bl4_reroll/serial.py and
-real serials (dev/re/serialgen/test_mod_gen.py).
+bl4_reroll/serial.py encodes it (the encoder follows it, so this file is AGPL-3.0: the notice
+below), checked against real serials (dev/re/serialgen/test_mod_gen.py).
 
 Plain Python (no SDK imports).
 """
+
+# SPDX-License-Identifier: AGPL-3.0
+# This file's serial encoder follows bl4_reroll/serial.py, a Python rewrite of the Go serial code in
+# Nicnl's borderlands4-serials (https://github.com/Nicnl/borderlands4-serials, by Nicnl and its
+# contributors), which is licensed AGPL-3.0. So this file is licensed under the GNU Affero General
+# Public License v3.0 (LICENSE-AGPL in this mod), not the GPL-3.0 that covers the rest of the mod.
+# Modified by flameaway, first in 2026-10 (changes since in git history).
 
 from __future__ import annotations
 

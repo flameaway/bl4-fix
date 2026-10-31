@@ -23,24 +23,23 @@ import threading
 import time
 from typing import Any
 
-from mods_base import ENGINE, BoolOption, SliderOption, build_mod, get_pc, hook
-from unrealsdk import hooks, logging
-from unrealsdk.hooks import Type
-from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
+from mods_base import ENGINE, BoolOption, SliderOption, build_mod, get_pc
+from unrealsdk import logging
 
-from . import gc_tune, memory, python_state, render
+from . import frametick, gc_tune, memory, python_state, render
 
 __version__ = "0.2.1"
 __version_info__ = (0, 2, 1)
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-CLEANUP_ID = "bl4_perf.cleanup"
+CLEANUP_ID = "bl4_perf.cleanup"  # frametick key of the one-shot cleanup on the game thread
 CHECK_INTERVAL = 5.0  # s between cvar checks
+LOADING_CHECK_S = 1.0  # while there's no character (loading): the GC's moment, looked at more often
 
 
 class _S:
     game_thread: int | None = None
     next_check = 0.0
+    menu_seen = False  # a menu was up at the last check too (settled: not opening right now)
 
 
 def _log(msg: str) -> None:
@@ -144,9 +143,9 @@ memory_option = SliderOption(
 )
 
 
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    # fires several times a frame: the work below is gated, the rest is two compares
+@frametick.tick("bl4_perf")  # once per engine frame (shared/frametick: one hook for all our mods)
+def tick() -> None:
+    # every frame: the work below is gated, the rest is two compares
     try:
         if _S.game_thread is None:
             _S.game_thread = threading.get_ident()
@@ -161,9 +160,15 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
             viewport = ENGINE.GameViewport
             world = viewport.World if viewport is not None else None
             pc = get_pc(possibly_loading=True)
-            # Nobody sees a frame: a menu is up (cursor), or there's no character (loading)
-            quiet = pc is None or pc.Pawn is None or bool(pc.bShowMouseCursor)
-            if done := gc_tune.step(world._get_address() if world is not None else None, quiet=quiet):  # noqa: SLF001
+            # No character: loading (nobody sees a frame). A menu (cursor) counts only once it was
+            # up at the last check too: a pass as it opens stalls its opening animation
+            loading = pc is None or pc.Pawn is None
+            menu = not loading and bool(pc.bShowMouseCursor)
+            settled, _S.menu_seen = menu and _S.menu_seen, menu
+            if loading:
+                _S.next_check = now + LOADING_CHECK_S
+            address = world._get_address() if world is not None else None  # noqa: SLF001
+            if done := gc_tune.step(address, quiet=settled, loading=loading):
                 _log(f"Python objects frozen ({done})")
         if dlss_option.value:
             render.enforce(render.DLSS)
@@ -189,12 +194,12 @@ def _cleanup(*, python: bool = True, cvars: bool | list[str] = True) -> None:
 
     def once(*_a: Any) -> None:
         try:
-            hooks.remove_hook(TICK_FUNC, Type.POST, CLEANUP_ID)
+            frametick.remove(CLEANUP_ID)
             run()
         except Exception as ex:  # noqa: BLE001
             logging.error(f"[Performance Fixes] {ex!r}")
 
-    hooks.add_hook(TICK_FUNC, Type.POST, CLEANUP_ID, once)
+    frametick.add(CLEANUP_ID, once)
 
 
 def _enable() -> None:

@@ -20,18 +20,15 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import os
 import re
 import socket
 import time
-from pathlib import Path
 from typing import Any
 
 import unrealsdk
 from mods_base import (
     ENGINE,
     SETTINGS_DIR,
-    BoolOption,
     ButtonOption,
     DropdownOption,
     KeybindOption,
@@ -45,16 +42,18 @@ from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
 # coop loads here too, so a host running only BL4 Direct still answers friends
-from . import arrival, buddies, coop, health, page, smooth, ui  # noqa: F401
+from . import arrival, buddies, coop, frametick, health, page, smooth, ui  # noqa: F401
 from .shared import (
     DEFAULT_PORT,
     FRIENDS_FILE_NAME,
     MOD_VERSION,
     Config,
     Friend,
+    NETSH,
     compat_code,
-    firewall_command,
+    find_rules,
     is_ipv4,
+    netsh_command,
     normalize_ipv4,
 )
 
@@ -66,8 +65,6 @@ DIRECT_DRIVER = "/Script/OnlineSubsystemSteam.SteamNetDriver"
 FRIENDS_FILE = SETTINGS_DIR / FRIENDS_FILE_NAME
 GAME_DIR = SETTINGS_DIR.parent.parent
 NO_FRIENDS = "(no friends added - use the BL4 Direct app)"
-# Runs the firewall update elevated (shared.firewall_command). The full path: never one found on PATH
-POWERSHELL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
 
 # The driver class the game had configured before we swapped it, or None if not swapped
 _original_driver: str | None = None
@@ -245,7 +242,6 @@ RELOAD_TIMEOUT = 60.0
 _watch_since = 0.0
 _watch_checked = False
 _last_check = 0.0
-_last_tick = 0.0
 WATCHDOG_SETTLE = 8.0  # seconds after a map is playable before the first port check
 WATCHDOG_INTERVAL = 10.0  # then keep checking this often: the socket can also die mid-game
 WATCHDOG_COOLDOWN = 60.0  # never auto-rehost more often than this
@@ -335,13 +331,9 @@ def _watchdog_tick() -> None:
     host(_hosting_port, auto=True)
 
 
-@hook("/Script/Engine.CameraModifier:BlueprintModifyCamera", Type.POST)
-def hosting_watchdog(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    global _last_tick
-    now = time.monotonic()
-    if now - _last_tick < 1.0:
-        return
-    _last_tick = now
+@frametick.tick("bl4_direct.watchdog", every=1.0)
+def hosting_watchdog() -> None:
+    """Once a second (shared frametick)."""
     try:
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
         _client_tick()
@@ -349,7 +341,7 @@ def hosting_watchdog(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: Boun
     except Exception as ex:  # noqa: BLE001 - never let the watchdog break the game's tick
         log_error(f"hosting watchdog: {ex!r}")
     try:
-        smooth.tick(smooth_option.value)
+        smooth.tick()
     except Exception as ex:  # noqa: BLE001
         log_error(f"smoother enemies: {ex!r}")
     try:
@@ -469,12 +461,13 @@ class PanelApi:
 
     @staticmethod
     def host() -> str | None:
-        """Hosts; first asks to update the firewall if the friend list changed. Returns an error."""
-        error = None
-        if not Config.load(FRIENDS_FILE).firewall_up_to_date():
-            error = PanelApi.update_firewall()
+        """
+        Hosts. Never asks about the firewall (2026-10-30, the user's ask): the page offers that
+        when the friend list changes, and its Firewall row shows a rule that's out of date.
+        Returns an error (none any more; kept for the panel and page).
+        """
         host()
-        return error
+        return None
 
     @staticmethod
     def firewall_up_to_date() -> bool:
@@ -510,16 +503,18 @@ class PanelApi:
     @staticmethod
     def update_firewall() -> str | None:
         """
-        Rewrites the firewall rule (PowerShell, via UAC) to match the friends file. Returns an error,
-        if any. The prompt runs in the background; the panel reports it if the player says no.
-        Used to run the setup app's copy in the game folder, which is gone (2026-10-28).
+        Rewrites the firewall rule (netsh, via UAC: "Network Command Shell") to match the friends
+        file. Returns an error, if any. The lookup and the prompt run in the background; the panel
+        reports it if the player says no. Used to run the setup app's copy in the game folder, which
+        is gone (2026-10-28), then a hidden PowerShell (until 2026-10-30, see shared.py).
         """
         config = Config.load(FRIENDS_FILE)
         signature = config.firewall_signature()
-        try:
-            args = firewall_command(config.firewall_spec())
-        except ValueError as ex:
-            return f"Couldn't update the firewall: {ex}."
+        spec = config.firewall_spec()
+
+        def args() -> str | None:
+            # On the prompt's worker: finding our rule takes a hidden PowerShell (~0.6 s)
+            return netsh_command(spec, [name for name, _ in find_rules()])
 
         def applied() -> None:
             # Load again: friends may have changed while Windows asked
@@ -530,7 +525,7 @@ class PanelApi:
 
         refused = "Firewall update cancelled - they can't join your game until you allow it."
         failed = "The firewall update failed - try Update again, or re-run BL4 Fix Setup."
-        if not ui.run_elevated(str(POWERSHELL), args, refused, applied, failed):
+        if not ui.run_elevated(str(NETSH), args, refused, applied, failed):
             return "Windows is already asking about the firewall - answer that prompt first."
         return None
 
@@ -633,19 +628,6 @@ offline_button = ButtonOption(
     on_press=lambda _: (disable_direct(), show_status()),
 )
 
-smooth_option = BoolOption(
-    "Smoother enemies for friends",
-    False,
-    description=(
-        "While you host with friends connected, your game sends enemy positions as often as it can"
-        " (the game's default is 4 times a second) and spends a little more time per frame sending"
-        " them, so enemies jump around much less on your friends' screens. Only the host needs this;"
-        " your friends change nothing. More upload (about 17 KB/s per friend instead of 9 in testing)"
-        " and no frame rate cost seen. Solo and when you join someone it does nothing."
-    ),
-)
-
-
 # endregion
 # region Hooks
 
@@ -731,9 +713,11 @@ def _prepare_arrival_fix() -> None:
 def on_friend_arrived(obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
     if _hosting_port is None:
         return
-    with contextlib.suppress(Exception):
+    try:
         if not obj.IsLocalController():
             _arrived.add(obj.Name)
+    except Exception as ex:  # noqa: BLE001 - a friend missing here gets dropped at the next fast travel
+        logging.error(f"[BL4 Direct] couldn't note a friend's arrival (fast travel may drop them): {ex!r}")
 
 
 def _mark_friends_ready(reason: str) -> None:
@@ -788,7 +772,6 @@ mod = build_mod(
         reload_button,
         status_button,
         offline_button,
-        smooth_option,
     ],
     hooks=[
         on_network_error,

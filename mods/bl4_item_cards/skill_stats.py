@@ -26,8 +26,9 @@ Cost: a full pass is a few hundred attribute
 evaluations, too much for one frame. So a pass is a job done in slices of under a millisecond, at
 most one slice per frame: read the skill graphs, evaluate the attributes, and only if any input
 differs from the last pass, render the changed skills, serialize, and hand the text to a writer
-thread. Passes start every second while the mouse cursor is up (menus), every 5 s otherwise, and
-at once when a menu opens or the character changes; firmware numbers are re-evaluated every 10 s.
+thread. Passes start every second while the mouse cursor is up (menus), every 15 s otherwise, at
+once when a menu opens or the character changes, and half a second after the equipped gear
+changes; firmware numbers are re-evaluated every 10 s.
 """
 
 from __future__ import annotations
@@ -56,13 +57,16 @@ UVH_ATTRIBUTE = "vault_hunter_level"
 EXTRA_RANKS = 6
 MISSING = math.nan
 
-# Game-thread budget. The camera hook fires several times a frame: calls closer together than
-# STEP_GAP_S count as one frame and get at most one slice.
+# Game-thread budget: tick() runs once per engine frame (the shared frame tick) and does at most
+# one slice
 STEP_BUDGET_S = 0.0005  # a slice starts no new unit after this (a unit is ~0.03-0.3 ms)
-STEP_GAP_S = 0.005
 CHECK_S = 0.25  # how often to look at whether a pass is due, while none runs
 MENU_PASS_S = 1.0  # cursor up (menus): cards show there, keep them fresh
-GAMEPLAY_PASS_S = 5.0  # cursor hidden: only ground-loot cards on the HUD
+# Cursor hidden: only ground-loot cards on the HUD. What changes their numbers in play is mostly
+# gear (a pass starts GEAR_SETTLE_S after the equipped slots change) and menus (a pass at once
+# when one opens), so the timed pass is rare (it was 5 s: ~17 slices of 0.5 ms every 5 s, for nothing)
+GAMEPLAY_PASS_S = 15.0
+GEAR_SETTLE_S = 0.5  # equipped gear changed: let its effects (class mod points...) apply first
 FIRMWARE_PASS_S = 10.0
 PUBLISH_S = 1.0  # dev only: republish our loose script/stylesheet from source
 
@@ -75,11 +79,13 @@ class _S:
     library: Any = WeakPointer()  # GbxAttributeBlueprintLibrary's CDO
     job: _Pass | None = None
     last_check = 0.0
-    last_step = 0.0
     last_publish = 0.0
+    publish_stamp: tuple | None = None  # dev: card_page.dev_stamp() after the last publish
     last_pass = -math.inf  # when the last pass started
     last_pawn = 0  # address of the character the last pass was for
     menu = False  # cursor up at the last check
+    gear: Any = None  # the equipped slots' ArrayReplicationKey at the last check
+    gear_at = 0.0  # when it changed (a pass is due GEAR_SETTLE_S later); 0 = no change waiting
     # Raw inputs of the last pass that rendered; equal inputs mean the same file
     last_key: Any = None
     # Firmware numbers, re-evaluated every FIRMWARE_PASS_S: {attribute: value}
@@ -551,6 +557,14 @@ class _Writer:
                 cls.failed = f"[Item Cards] couldn't write {target.name}: {ex}"
 
 
+def _gear_key(pawn: Any) -> int | None:
+    """Changes when the character's equipped gear does (the slots' fast-array replication key)."""
+    try:
+        return int(pawn.EquippedInventorySlots.ArrayReplicationKey)
+    except (AttributeError, ValueError, TypeError):
+        return None
+
+
 def _start_pass(game_dir: Path, now: float) -> None:
     """Starts a pass if one is due. Cheap: a few property reads, at most every CHECK_S."""
     if (failed := _Writer.failed) is not None:
@@ -561,16 +575,21 @@ def _start_pass(game_dir: Path, now: float) -> None:
         _S.menu = False
         return
     pawn = pc.Pawn
-    if pawn is None or not hasattr(pawn, "GbxProgressionManager") or pawn.GbxProgressionManager is None:
+    if pawn is None or getattr(pawn, "GbxProgressionManager", None) is None:
         return
     menu = bool(pc.bShowMouseCursor)
     opened = menu and not _S.menu
     _S.menu = menu
     address = pawn._get_address()  # noqa: SLF001
     new_pawn = address != _S.last_pawn
+    gear = _gear_key(pawn)
+    if gear != _S.gear:
+        _S.gear, _S.gear_at = gear, now
+    gear_due = _S.gear_at and now - _S.gear_at >= GEAR_SETTLE_S
     interval = MENU_PASS_S if menu else GAMEPLAY_PASS_S
-    if not (new_pawn or opened or now - _S.last_pass >= interval):
+    if not (new_pawn or opened or gear_due or now - _S.last_pass >= interval):
         return
+    _S.gear_at = 0.0
     if new_pawn:
         _S.firmware_values = None
     firmware = card_page.data_current(game_dir, "firmware_data", check=False)
@@ -583,8 +602,7 @@ def _start_pass(game_dir: Path, now: float) -> None:
     skills = card_page.skill_data_current(game_dir, check=False)
     _S.job = _Pass(pc, pawn, skills, firmware, fresh)
     _S.last_pass = now
-    _S.last_step = now  # its first slice goes in a later frame
-    _S.last_pawn = address
+    _S.last_pawn = address  # its first slice goes in the next frame's tick
 
 
 def _step(job: _Pass) -> None:
@@ -609,19 +627,19 @@ def _step(job: _Pass) -> None:
 
 def tick(game_dir: Path) -> None:
     """
-    Called on every camera hook call (several per frame); throttles itself. Advances the current
-    pass by one slice, or starts one when it's due. Game thread.
+    Called once per engine frame (the shared frame tick). Advances the current pass by one slice,
+    or starts one when it's due (looked at every CHECK_S). Game thread.
     """
     now = time.monotonic()
     if card_page.FROM_SOURCE and now - _S.last_publish >= PUBLISH_S:
         _S.last_publish = now
-        # Dev: edits to the script and styles go live within a second (the page reloads them)
-        card_page.publish_files(game_dir)
+        # Dev: edits to the script and styles go live within a second (the page reloads them);
+        # only when a source or a published copy changed (a few stats, not ~2.7 ms of reads)
+        if (stamp := card_page.dev_stamp(game_dir)) != _S.publish_stamp:
+            card_page.publish_files(game_dir)
+            _S.publish_stamp = card_page.dev_stamp(game_dir)
     job = _S.job
     if job is not None:
-        if now - _S.last_step < STEP_GAP_S:
-            return
-        _S.last_step = now
         try:
             _step(job)
         except Exception:

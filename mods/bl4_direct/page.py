@@ -12,9 +12,10 @@ F6 opens the Mod Menu on this page (the pause menu never shows on the way, the M
 that) and closes it again. Where the page can't show (no Mod Menu, or its page doesn't answer)
 the UMG panel in ui.py opens instead, as before.
 
-Typing: no key events reach page scripts, so a field being typed in reads the keyboard through
-a low-level hook (keyboard.py) that also keeps the keys from the game's menus. Enter / Tab move
-on, Esc stops, Ctrl+V pastes.
+Typing: no key events reach the menus page, so a field being typed in uses the BL4 UI Link's
+TextBox from the Mod Menu's copy (the game's own text input on the ECHO overlay page, its keys kept
+from the game's menus; the page only exists inside the Mod Menu's screen). Enter / Tab move on, Esc
+stops, Ctrl+V pastes.
 
 Host, Stop, Leave and Join travel: the page closes the menus first and the action runs here a
 moment later, once they're down (never travel from inside the UI).
@@ -23,7 +24,9 @@ moment later, once they're down (never travel from inside the UI).
 from __future__ import annotations
 
 import sys
+import threading
 import time
+import traceback
 from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
@@ -32,7 +35,8 @@ from typing import Any
 from mods_base import SETTINGS_DIR, get_pc
 from unrealsdk import logging
 
-from . import keyboard, ui
+from . import clipboard, ui
+from .shared import FRIENDS_FILE_NAME, UAC_HINT, Config, find_rules, is_ipv4
 
 KEY = "bl4direct"
 # The page is drawn for the mod with this name in the Mod Menu (its pyproject name)
@@ -53,6 +57,9 @@ SHOWN_S = 0.6
 # A travel action waits for the menus to close, at least this long and at most TRAVEL_MAX_S
 TRAVEL_MIN_S = 0.15
 TRAVEL_MAX_S = 1.5
+# What Windows Firewall has is read again at most this often while the page shows (a hidden
+# PowerShell on a worker, ~0.6 s), and at once after a prompt or a switch
+LIVE_S = 30.0
 MAX_NAME = 24
 MAX_IP = 21  # 255.255.255.255:65535
 # The old options the page itself replaces: hidden on the HTML page (they stay in the basic panel)
@@ -75,12 +82,41 @@ class S:
     published_at = 0.0
     fields: dict[str, str] = {"name": "", "ip": ""}  # noqa: RUF012
     typing_field: str | None = None
-    typing: keyboard.Typing | None = None
+    typing: Any = None  # the Mod Menu's uilink.TextBox while a field is typed in
     toast: dict[str, Any] = {"id": 0, "text": "", "error": False}  # noqa: RUF012
     # The versions line (reads Steam's manifest: once a session is enough)
     compat: str | None = None
     # A travel waiting for the menus to close: (action, asked at, the Mod Menu's menus_closed then)
     travel: tuple[Callable[[], None], float, int] | None = None
+    # Why the page asks (Continue / Not now) before Windows' prompt: "friends", "on", "off", "lan",
+    # or "" (2026-10-30, the user's ask: only when the list or a firewall setting changes; Host never)
+    ask_firewall = ""
+    was_asking = False
+
+
+class Live:
+    """Our rules in Windows Firewall right now (find_rules on a worker), for the Status row."""
+
+    rules: list[tuple[str, str]] | None = None  # None: not read yet
+    error: str | None = None
+    checked = 0.0
+    busy = False
+
+    @classmethod
+    def refresh(cls, *, force: bool = False) -> None:
+        if cls.busy or (not force and time.monotonic() - cls.checked < LIVE_S):
+            return
+        cls.busy, cls.checked = True, time.monotonic()
+        threading.Thread(target=cls._read, name="bl4_direct.firewall_read", daemon=True).start()
+
+    @classmethod
+    def _read(cls) -> None:
+        try:
+            cls.rules, cls.error = find_rules(), None
+        except Exception as ex:  # noqa: BLE001
+            cls.error = str(ex)
+        finally:
+            cls.checked, cls.busy = time.monotonic(), False
 
 
 def _menu_module(name: str) -> Any:
@@ -119,6 +155,8 @@ def state() -> dict[str, Any]:
         # Turned off in the setup app: no rule, and hosting doesn't ask Windows for anything
         "firewall_off": config is not None and not config.firewall,
         "asking": ui.Elevated.busy,
+        "fw": (fw := _firewall_status(config)),
+        "ask_firewall": S.ask_firewall if fw["action"] else "",
         "friends": [{"name": f.name, "address": f.address, "port": f.port} for f in friends],
         "compat": _compat(),
         "key": ui.key_text(),
@@ -127,6 +165,89 @@ def state() -> dict[str, Any]:
         "toast": S.toast,
         "hide": HIDDEN_OPTIONS,
     }
+
+
+def _friends_file() -> Path:
+    return SETTINGS_DIR / FRIENDS_FILE_NAME
+
+
+def _firewall_status(config: Config | None) -> dict[str, Any]:
+    """
+    The Firewall section: the two switches and what's blocked or let in, from the friends file
+    and what Windows Firewall has right now (Live). action: "update", "remove" or None.
+    """
+    asking = ui.Elevated.busy
+    if S.was_asking and not asking:
+        Live.refresh(force=True)  # a prompt just ended: show what it did
+    S.was_asking = asking
+    Live.refresh()
+    if config is None:
+        return {"on": False, "lan": False, "summary": "", "details": "", "cls": "", "action": None}
+    port = config.host_port
+    friends = [f for f in config.friends if is_ipv4(f.address)]
+    rules = Live.rules
+    live = (
+        "checking" if rules is None and Live.error is None
+        else f"couldn't read it ({Live.error})" if rules is None
+        else "; ".join((d or n).rstrip(".") for n, d in rules) if rules
+        else "no BL4 Direct rule"
+    )  # fmt: skip
+    present = bool(rules) if rules is not None else None  # None: not known yet
+    current = config.firewall_up_to_date()
+    if config.firewall:
+        allowed = ["this PC"]
+        if config.allow_lan:
+            allowed.append("your local network and VPN (home networks, Tailscale, ZeroTier)")
+        allowed += [f"{f.name} ({f.address})" for f in friends]
+        details = (
+            f"UDP {port}, the co-op port, lets in: {'; '.join(allowed)}. Everyone else on the internet is blocked."
+            if current and present is not False
+            else f"Not applied yet: Windows Firewall doesn't match your list. Update: Windows asks if "
+                 f'"Network Command Shell" may make changes (netsh, its own firewall tool). Then UDP {port} '
+                 f"lets in: {'; '.join(allowed)}; everyone else is blocked."
+        )  # fmt: skip
+        if present is False:
+            summary, cls, action = "Not in Windows Firewall yet", "bl4dc_warn", "update"
+        elif not current:
+            summary, cls, action = "Needs updating", "bl4dc_warn", "update"
+        else:
+            who = ["this PC"] + (["local network"] if config.allow_lan else [])
+            if friends:
+                who.append(f"{len(friends)} friend{'s' if len(friends) != 1 else ''}")
+            summary, cls, action = "Lets in " + ", ".join(who), "bl4dc_on", None
+    else:
+        details = (
+            f"No BL4 Direct rule: Steam's own rule lets anyone who can reach UDP {port} (port scanners, "
+            "anyone with your IP) try to connect while you host. Turn the rule on so only your friends get through."
+        )  # fmt: skip
+        if present:
+            summary, cls, action = "Off, old rule still there", "bl4dc_warn", "remove"
+            details = "Turned off, but BL4 Direct's rule is still in Windows Firewall. Remove takes it out. " + details
+        else:
+            summary, cls, action = "Off: anyone can try to join", "bl4dc_warn", None
+    details += f"\n\nWindows Firewall now: {live}."
+    return {"on": config.firewall, "lan": config.allow_lan, "summary": summary, "details": details,
+            "cls": cls, "action": action}  # fmt: skip
+
+
+def _set_firewall_setting(field: str, on: bool, reason: str) -> None:
+    """Saves a switch of the Firewall section; asks (Continue / Not now) if the rule must change."""
+    path = _friends_file()
+    config = Config.load(path)
+    if getattr(config, field) == on:
+        return
+    setattr(config, field, on)
+    if not config.firewall and Live.rules == []:
+        # Off with no rule of ours in Windows: nothing to remove, nothing to ask
+        config.firewall_applied = config.firewall_signature()
+    config.save(path)
+    Live.refresh(force=True)
+    if config.firewall_up_to_date() and not (field == "firewall" and not on and Live.rules):
+        S.ask_firewall = ""
+        say("Saved.")
+    else:
+        S.ask_firewall = reason
+        say("Saved. Windows Firewall changes when you Continue at the top of this page.")
 
 
 def _compat() -> str:
@@ -149,7 +270,7 @@ def act(action: dict[str, Any]) -> None:
             if field in FIELDS:
                 stop_typing()
                 max_len, allowed = FIELDS[field]
-                text = "".join(c for c in keyboard.clipboard_text().strip() if allowed(c))[:max_len]
+                text = "".join(c for c in clipboard.clipboard_text().strip() if allowed(c))[:max_len]
                 if text:
                     S.fields[field] = text
                 else:
@@ -176,10 +297,19 @@ def act(action: dict[str, Any]) -> None:
             ui.PublicIp.state = "idle"
             ui.PublicIp.lookup()
         case "firewall":
+            S.ask_firewall = ""
             if error := api.update_firewall():
                 say(error, error=True)
             else:
-                say("Windows will ask permission to update your firewall.")
+                say(UAC_HINT)
+        case "firewall_later":
+            S.ask_firewall = ""
+            say("Not now: Windows Firewall stays as it is until you press Update (Firewall section, Status).")
+        case "set_firewall":
+            on = bool(action.get("on"))
+            _set_firewall_setting("firewall", on, "on" if on else "off")
+        case "set_lan":
+            _set_firewall_setting("allow_lan", bool(action.get("on")), "lan")
         case "dont_resume":
             api.cancel_hosting_intent()
         case "host":
@@ -219,17 +349,16 @@ def _add_friend() -> None:
 
 def _after_friends_changed(done: str) -> None:
     """
-    Only a host needs friends in its firewall (joining is an outgoing connection), so the firewall
-    is normally updated when you press Host. If you're already hosting, do it now.
+    The firewall rule follows the friend list (2026-10-30, the user's ask): when a change leaves it
+    behind, the page asks at the top (Continue / Not now) before Windows' prompt, whether or not
+    you're hosting. Hosting itself never asks.
     """
     if ui.api.firewall_up_to_date():  # also when the rule is turned off
+        S.ask_firewall = ""
         say(done)
-    elif ui.session()[0] != "hosting":
-        say(f"{done} When you host, Windows will ask once to let your friends through your firewall.")
-    elif error := ui.api.update_firewall():
-        say(f"{done} But: {error}", error=True)
     else:
-        say(f"{done} Windows will ask permission to update your firewall.")
+        S.ask_firewall = "friends"
+        say(f"{done} Update your firewall to let them in: Continue at the top of this page.")
 
 
 def _travel(action: Callable[[], None]) -> None:
@@ -258,7 +387,7 @@ def _run_travel() -> None:
         action()
     except Exception as ex:  # noqa: BLE001
         ui.log(f"Couldn't do that: {ex!r}")
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
 
 
 # endregion
@@ -268,8 +397,11 @@ def _run_travel() -> None:
 def start_typing(field: str) -> None:
     stop_typing()
     max_len, allowed = FIELDS[field]
-    # Starts its hook on its own thread; a hook Windows refused shows up in _poll_typing
-    S.typing = keyboard.Typing(S.fields[field], max_len, allowed)
+    link = _menu_module("uilink")
+    if link is None or not hasattr(link, "TextBox"):
+        say("Typing needs a newer BL4 Mod Menu. Use Paste, or the BL4 Direct app.", error=True)
+        return
+    S.typing = link.TextBox(S.fields[field], max_len, clipboard.clipboard_text, allowed=allowed, named=True)
     S.typing_field = field
     _changed()
 
@@ -289,12 +421,8 @@ def _poll_typing() -> None:
     typing, field = S.typing, S.typing_field
     if typing is None or field is None:
         return
-    if typing.failed:
-        stop_typing()
-        say("Couldn't read the keyboard for typing. Use Paste, or the BL4 Direct app.", error=True)
-        return
     exts = _menu_module("extensions")
-    # The page closed (or the menus did): don't keep swallowing keys
+    # The page closed (or the menus did): the game's keys work again
     if exts is None or not exts.page_open(KEY, SHOWN_S):
         stop_typing()
         return
@@ -411,9 +539,16 @@ def tick() -> None:
         _run_travel()
     if S.typing is not None:
         _poll_typing()
-    # Only in a dev setup, and only while the page shows (a release's files can't change)
-    if DEV and S.typing is None and (exts := _menu_module("extensions")) is not None and exts.page_open(KEY, SHOWN_S):
-        publish()
+    # Only in a dev setup, and only while the page shows (a release's files can't change); asked
+    # once per PUBLISH_S, not every frame (page_open was ~10 us a frame, 2026-10-29)
+    global _dev_next  # noqa: PLW0603
+    if DEV and S.typing is None and (now := time.monotonic()) >= _dev_next:
+        _dev_next = now + PUBLISH_S
+        if (exts := _menu_module("extensions")) is not None and exts.page_open(KEY, SHOWN_S):
+            publish()
+
+
+_dev_next = 0.0  # dev: when tick() next looks at whether to republish the page's files
 
 
 # endregion

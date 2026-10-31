@@ -15,15 +15,12 @@ ones that count.
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
-from mods_base import SliderOption, build_mod, hook
+from mods_base import SliderOption, build_mod
 from unrealsdk import logging
-from unrealsdk.hooks import Type
-from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import health, limits
+from . import frametick, health, limits
 
 try:
     from bl4_direct import coop
@@ -33,7 +30,6 @@ except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo/host beha
 __version__ = "0.2.0"
 __version_info__ = (0, 2, 0)
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 INTERVAL = 0.5  # s
 FEATURE = "backpack_size"
 # {"size": backpack, "bank": n, "lost_loot": n}; 0 (or missing, from 0.1.0) = the game's own
@@ -54,10 +50,9 @@ def _sizes() -> dict[str, int]:
 
 
 def _size_changed(_option: SliderOption, _value: float) -> None:
-    global _next_check
     if coop is not None and coop.is_client():
         return  # the host's numbers count
-    _next_check = 0.0  # the option's value is set after this call: the next tick applies it
+    frametick.soon("bl4_backpack_size")  # the option's value is set after this call: the next tick applies it
 
 
 size_option = SliderOption(
@@ -102,8 +97,6 @@ lost_loot_option = SliderOption(
     on_change_while_enabled=_size_changed,
 )
 
-_next_check = 0.0
-
 
 def _tell_clients(sizes: dict[str, int]) -> None:
     """As host: sends our sizes to friends running the mod, when they or the list of them changed."""
@@ -118,24 +111,22 @@ def _tell_clients(sizes: dict[str, int]) -> None:
 
 
 def _on_host_sizes(data: dict[str, Any]) -> None:
-    global _next_check
-
-    def number(key: str) -> int:
+    def number(key: str, option: SliderOption) -> int:
+        # Capped at our own slider's maximum: those are the numbers known to work
         value = data.get(key)
-        return value if isinstance(value, int) and value > 0 else 0
+        ok = isinstance(value, int) and not isinstance(value, bool) and value > 0
+        return min(value, int(option.max_value)) if ok else 0
 
-    sizes = {limits.BACKPACK: number("size"), limits.BANK: number("bank"), limits.LOST_LOOT: number("lost_loot")}
+    sizes = {limits.BACKPACK: number("size", size_option), limits.BANK: number("bank", bank_option),
+             limits.LOST_LOOT: number("lost_loot", lost_loot_option)}  # fmt: skip
     _Co.host_sizes = sizes if any(sizes.values()) else None
-    _next_check = 0.0
+    frametick.soon("bl4_backpack_size")  # applied at the next frame
 
 
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    global _next_check
-    now = time.monotonic()
-    if now < _next_check:
-        return
-    _next_check = now + INTERVAL
+# Twice a second through the shared frame tick (frametick/; frames in between cost nothing); the
+# first one right after enabling. A slider change or the host's numbers apply at the next frame (soon).
+@frametick.tick("bl4_backpack_size", every=INTERVAL)
+def tick() -> None:
     try:
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
         if coop is not None and coop.is_client():
@@ -154,8 +145,6 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
 
 
 def _enable() -> None:
-    global _next_check
-    _next_check = 0.0
     _Co.told = None
 
 

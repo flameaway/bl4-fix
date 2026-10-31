@@ -36,23 +36,19 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
+from . import frametick
+
 try:
     from bl4_direct import coop
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: local player only
     coop = None
 
-__version__ = "0.1.1"
-__version_info__ = (0, 1, 1)
+__version__ = "0.1.2"
+__version_info__ = (0, 1, 2)
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 # A player pressing / releasing fire: RPCs from their game, which reach the host's hooks
 FIRE_START_FUNC = "/Script/GbxWeapon.Weapon:ServerStartUsing"
 FIRE_STOP_FUNC = "/Script/GbxWeapon.Weapon:ServerStopUsing"
-# The tick hook fires ~6 times a frame (3 camera modifiers x 2 camera updates), the calls close
-# together: act on the first call after a gap (a new frame), and at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
-_last_call = _ticked_at = 0.0
 AMMO_BEHAVIOR = "WeaponBehavior_AmmoPool"
 TRACE_VISIBILITY = 0  # ETraceTypeQuery 1, which containers block (verified for every kind in a level)
 TRACE_RADIUS = 12.0  # cm
@@ -62,11 +58,14 @@ SKIP_NAMES = ("PowercoreDrop", "LostCapsule")
 # Don't re-send a use for the same container while automatic fire keeps hitting it
 RESEND_DELAY = 1.0
 FEATURE = "shoot_open"
-REMOTE_EVERY_S = 0.008  # the camera hook fires several times a frame; other players once a frame
 EYE_HEIGHT = 60.0  # cm above a remote pawn's origin, when its camera isn't known to us
 CAMERA_NEAR = 400.0  # cm: a remote player's camera manager further than this from them is stale
 HELD_TRACE_S = 0.05  # while another player holds fire, trace along their aim this often
 HELD_MAX_S = 15.0  # a release we never heard about doesn't keep opening what they look at
+# The equipped gun (pawn -> ActiveWeapons -> Slots[0] -> Weapon, and a new gun's ammo behavior) is
+# looked up this often; between lookups a frame reads only the cached ammo count. A swap or pickup
+# plays an equip animation longer than this before the new gun can fire, so no shot is missed.
+RESOLVE_S = 0.1
 
 
 def log(msg: str) -> None:
@@ -99,6 +98,7 @@ class Gun:
         self.held_since = 0.0  # 0 = not held
         self.pressed = False  # a press not traced yet (a tap can start and stop in one frame)
         self.traced_at = 0.0
+        self.resolved_at = -1e9  # the last lookup of the equipped gun (RESOLVE_S)
 
     def press(self) -> None:
         self.held_since = time.monotonic()
@@ -117,31 +117,43 @@ class Gun:
             return True
         return False
 
-    def shots_fired(self, pawn: UObject) -> bool:
-        """True if the loaded ammo went down since last frame."""
-        slots = pawn.ActiveWeapons.Slots
+    def resolve(self, pawn: UObject | None, now: float) -> None:
+        """Looks up the equipped gun (None: no character): a new one starts counting from its ammo."""
+        self.resolved_at = now
+        slots = pawn.ActiveWeapons.Slots if pawn is not None else ()
         weapon = slots[0].Weapon if len(slots) else None
         if weapon is None:
             self.weapon = WeakPointer()
-            return False
+            self.ammo_behavior = WeakPointer()
+            return
         if weapon is not self.weapon():
             # Swapped guns (or picked one up): start counting from this one
             self.weapon = WeakPointer(weapon)
             behavior = next((b for b in weapon.behaviors if b and b.Class.Name == AMMO_BEHAVIOR), None)
             self.ammo_behavior = WeakPointer(behavior)
             self.loaded = behavior.LoadedAmmo if behavior else -1
-            return False
+
+    def ammo_dropped(self) -> bool:
+        """True if the cached gun's loaded ammo went down since last frame."""
         behavior = self.ammo_behavior()
         if behavior is None:
             return False
         previous, self.loaded = self.loaded, behavior.LoadedAmmo
         return self.loaded < previous
 
+    def shots_fired(self, pawn: UObject, now: float) -> bool:
+        """True if the loaded ammo went down since last frame (the gun looked up every RESOLVE_S)."""
+        if now - self.resolved_at >= RESOLVE_S:
+            before = self.ammo_behavior()
+            self.resolve(pawn, now)
+            if self.ammo_behavior() is not before:
+                return False  # a new gun: counted from now
+        return self.ammo_dropped()
+
 
 _local_gun = Gun()
 # Host: the other players' guns, by controller address
 _remote_guns: dict[int, tuple[WeakPointer, Gun]] = {}
-_remote_checked_at = 0.0
 
 
 def _view(pc: UObject, pawn: UObject, local: bool) -> tuple[Any, Any]:
@@ -212,11 +224,7 @@ def _remote_gun(pc: UObject) -> Gun:
 
 def _watch_remote() -> None:
     """Host: the other players' shots (players who run our mods but turned this one off are skipped)."""
-    global _remote_checked_at
     now = time.monotonic()
-    if now - _remote_checked_at < REMOTE_EVERY_S:
-        return
-    _remote_checked_at = now
     seen: set[int] = set()
     for pc in coop.remote_controllers():
         features = coop.player_features(pc)
@@ -229,7 +237,7 @@ def _watch_remote() -> None:
         gun = _remote_gun(pc)
         # Their fire button is what we can rely on; the ammo check stays in case the host's copy
         # of their ammo does drop (both evaluated: each keeps its own state current)
-        fired = gun.shots_fired(pawn)
+        fired = gun.shots_fired(pawn, now)
         if gun.trigger_due(now) or fired:
             target = _crosshair_target(pc, pawn, local=False)
             if target is not None:
@@ -271,28 +279,37 @@ def remote_fire_stop(obj: UObject, _args: WrappedStruct, _ret: Any, _func: Bound
         _log_error(ex)
 
 
-@hook(TICK_FUNC, Type.POST)
-def watch_shots(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    global _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
-    pc = get_pc(possibly_loading=True)
-    if pc is None:
-        return
+@frametick.tick("bl4_shoot_open")
+def watch_shots() -> None:
+    """Once per engine frame (the shared frame tick)."""
     try:
         if coop is not None:
-            if coop.is_client():
+            role = coop.role()  # one cached read (was is_client() + role())
+            if role == "client":
                 if coop.host_has(FEATURE):
                     return  # the host's copy opens what we shoot
-            elif _remote_guns or coop.role() == "host":
+            elif _remote_guns or role == "host":
+                if get_pc(possibly_loading=True) is None:
+                    return
                 _watch_remote()
-        pawn = pc.Pawn
-        if pawn is None or not pawn.Class._inherits(_character_class):
-            return
-        if _local_gun.shots_fired(pawn):
+        # Every frame only the cached gun's ammo is read; the character and its gun are looked up
+        # every RESOLVE_S (they were ~8 property reads a frame, 2026-10-29), and the controller
+        # only then or on a shot (get_pc was ~7-10 us every frame, 2026-10-29)
+        gun = _local_gun
+        now = time.monotonic()
+        if now - gun.resolved_at >= RESOLVE_S:
+            pc = get_pc(possibly_loading=True)
+            if pc is None:
+                return
+            pawn = pc.Pawn
+            gun.resolve(pawn if pawn is not None and pawn.Class._inherits(_character_class) else None, now)
+        if gun.ammo_dropped():
+            pc = get_pc(possibly_loading=True)
+            if pc is None:
+                return
+            pawn = pc.Pawn
+            if pawn is None or not pawn.Class._inherits(_character_class):
+                return
             target = _crosshair_target(pc, pawn)
             if target is not None:
                 _try_open(pc, target)

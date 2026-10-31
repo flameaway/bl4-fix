@@ -406,8 +406,9 @@ class Scene:
         return True
 
     @classmethod
-    def needs_film(cls) -> bool:
-        return cls.current is None or cls.current.stale or not cls.current.alive()
+    def needs_film(cls, *, alive: bool = True) -> bool:
+        """`alive=False`: skip the pointer checks (two WeakPointer calls; the caller asks at a slower rate)."""
+        return cls.current is None or cls.current.stale or (alive and not cls.current.alive())
 
     @classmethod
     def use(cls, pc: UObject, x: float, y: float, yaw: float, radius: float, grid: float) -> bool:

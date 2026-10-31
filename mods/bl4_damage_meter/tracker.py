@@ -47,6 +47,7 @@ MELEE_RANGE = 320.0  # unreal units (cm) between the character and a melee hit
 HOSTILE = 2  # ETeamAttitude
 TOP = 6  # sources per player in the board
 REFRESH_S = 0.5  # players, bindings and equipped items
+INFO_S = 2.0  # a player's name, character and controller (sooner while one is missing)
 BOSS_SCAN_S = 0.25  # boss bars and boss deaths
 MAX_CAUSERS = 4096
 MAX_PENDING = 20000  # hits queued between two ticks (never near it: a tick runs every frame)
@@ -56,6 +57,7 @@ _U64 = struct.Struct("<Q").unpack_from
 _I32 = struct.Struct("<i").unpack_from
 _F32 = struct.Struct("<f").unpack_from
 _VEC = struct.Struct("<3d").unpack_from
+_warned: set[str] = set()  # errors already logged this session (the refresh runs twice a second)
 
 
 class Tally:
@@ -154,7 +156,10 @@ class S:
     session_start = 0.0
     session_last = 0.0
     refreshed = 0.0
+    info_at: dict[int, float] = {}  # noqa: RUF012 - PlayerState address -> when its name/character/controller were read
     boss_scanned = 0.0
+    # tick() has nothing to do before this (no hits queued): the mod's frame tick skips the call
+    next_at = 0.0
     revision = 0  # bumped on every counted hit: the board changed
     # Diagnostics (the `carnage stats` command)
     events = 0
@@ -498,6 +503,7 @@ def new_session() -> None:
     """A new game session (back from the main menu, another character): a clean board."""
     unbind_all()
     S.players.clear()
+    S.info_at.clear()
     S.order = []
     S.report = None
     reset()
@@ -557,7 +563,7 @@ def _scan_bosses(now: float) -> None:
         if pc is None:
             continue
         try:
-            visible = list(pc.BossState.VisibleBosses)
+            visible = elements(pc.BossState.VisibleBosses)
         except AttributeError:
             continue
         for actor in visible:
@@ -626,10 +632,20 @@ def _make_report(boss: Boss, now: float) -> None:
 # region Upkeep
 
 
+def elements(array: Any) -> list[Any]:
+    """
+    A game array's elements as a list, by index. `list(array)` (pyunrealsdk's iterator) cost
+    ~18 us for an empty array and ~55 us for one element inside the frame tick; len + indexing
+    ~1 + ~2 us an element (measured 2026-10-29, game 25456).
+    """
+    return [array[i] for i in range(len(array))]
+
+
 def _player_states() -> list[Any]:
-    world = ENGINE.GameViewport.World if ENGINE.GameViewport else None
+    viewport = ENGINE.GameViewport
+    world = viewport.World if viewport else None
     game_state = world.GameState if world is not None else None
-    return list(game_state.PlayerArray) if game_state is not None else []
+    return elements(game_state.PlayerArray) if game_state is not None else []
 
 
 _causer_classes: dict[int, bool] = {}
@@ -650,7 +666,11 @@ def _has_causer_data(pawn: Any) -> bool:
 
 
 def tick(now: float) -> None:
-    """Players, their characters (bind new ones) and equipped items every REFRESH_S; bosses more often."""
+    """
+    Players, their characters (bind new ones) and equipped items every REFRESH_S; bosses more often.
+    Needed only while hits are queued (`S.pending`) or once `S.next_at` has come (callers may skip
+    it otherwise: a frame with neither has nothing to do here).
+    """
     if not S.ok:
         return
     # The hook's time since the last tick (about a frame): the worst frame for `carnage stats`
@@ -665,8 +685,10 @@ def tick(now: float) -> None:
         except Exception as ex:  # noqa: BLE001
             logging.dev_warning(f"[Carnage Meter] bosses: {ex!r}")
     if now - S.refreshed < REFRESH_S:
+        S.next_at = min(S.boss_scanned + BOSS_SCAN_S, S.refreshed + REFRESH_S)
         return
     S.refreshed = now
+    S.next_at = min(S.boss_scanned + BOSS_SCAN_S, now + REFRESH_S)
     local = get_pc(possibly_loading=True)
     local_ps = local.PlayerState if local is not None else None
     present: set[int] = set()
@@ -686,14 +708,15 @@ def tick(now: float) -> None:
                 _rekey(player, key)
         player.seen = now
         player.is_local = local_ps is not None and key == local_ps._get_address()
-        try:
-            player.name = str(ps.GetPlayerName()) or player.name
-            player.char = str(ps.ReplicatedCharacterDef) or player.char
-            owner = ps.Owner  # the player's controller (on the host, for every player)
-            if owner is not None and (player.controller is None or player.controller() is not owner):
-                player.controller = WeakPointer(owner) if owner.Class._find_prop("BossState") else None
-        except Exception:  # noqa: BLE001
-            pass
+        # Name, character and controller seldom change: every INFO_S (a UFunction call and a few
+        # reads per player), at once for a new PlayerState or while one of them is missing
+        controller = player.controller() if player.controller is not None else None
+        if (controller is None or not player.name or not player.char
+                or now - S.info_at.get(key, -INFO_S) >= INFO_S):  # fmt: skip
+            if len(S.info_at) > 256:  # old PlayerStates (one per map travel): bounded
+                S.info_at.clear()
+            S.info_at[key] = now
+            _read_info(player, ps)
         pawn = ps.PawnPrivate
         if pawn is None or not _has_causer_data(pawn):
             player.pawn, player.pawn_addr = None, 0
@@ -718,6 +741,20 @@ def tick(now: float) -> None:
     for player in S.players.values():
         direct.update(player.equipped.by_actor)
     S.direct = direct
+
+
+def _read_info(player: Player, ps: Any) -> None:
+    """A player's name, character and controller (its boss bars)."""
+    try:
+        player.name = str(ps.GetPlayerName()) or player.name
+        player.char = str(ps.ReplicatedCharacterDef) or player.char
+        owner = ps.Owner  # the player's controller (on the host, for every player)
+        if owner is not None and (player.controller is None or player.controller() is not owner):
+            player.controller = WeakPointer(owner) if owner.Class._find_prop("BossState") else None
+    except Exception as ex:  # noqa: BLE001 - a name or boss bars missing: say so once, keep counting
+        if (message := repr(ex)) not in _warned:
+            _warned.add(message)
+            logging.error(f"[Carnage Meter] couldn't read a player's name/controller: {message}")
 
 
 def _returning(ps: Any, current: set[int]) -> Player | None:

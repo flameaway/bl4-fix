@@ -46,6 +46,7 @@ class S:
     game_dir: Path | None = None
     published_at = 0.0
     published: dict[str, tuple[int, int]] = {}  # noqa: RUF012
+    packed = False  # running from a packed .sdkmod (learned at register): publish() has nothing to do
     open_request: dict[str, Any] = {"id": 0, "own": False}  # noqa: RUF012
     open_requested_at = -1e9
     open_pending = False
@@ -137,10 +138,13 @@ def publish(*, force: bool = False) -> None:
     if S.game_dir is None or (not force and now - S.published_at < PUBLISH_S):
         return
     S.published_at = now
+    if not force and S.packed:
+        return  # a packed .sdkmod can't change while the game runs: copied once, at register
     root = resources.files(__package__)
     from_source = isinstance(root, Path)
-    if not force and not from_source:
-        return  # a packed .sdkmod can't change while the game runs: copied once, at register
+    S.packed = not from_source
+    if not force and S.packed:
+        return
     for name in UI_FILES:
         source = root / "ui" / name
         try:
@@ -293,33 +297,33 @@ def popup_event(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _fight_no() -> int | None:
+def _fight_no(role: str) -> int | None:
     """The fight under way (the host's, as a client: from its last board)."""
-    if share.role() != "client":
+    if role != "client":
         return tracker.S.fight_no
     board = share.S.board
     return board.get("fight", {}).get("no") if board else None
 
 
-def _back_to_fight(report: dict[str, Any] | None) -> None:
+def _back_to_fight(report: dict[str, Any] | None, role: str) -> None:
     """Once a newer fight than the boss report's has begun, the screen opens on This Fight again."""
     if S.view.get("scope") != "boss" or report is None or report.get("fight_no") is None:
         return
-    current = _fight_no()
+    current = _fight_no(role)
     if current is not None and current != report["fight_no"]:
         S.view = {"scope": "fight"}
         changed()
 
 
-def _tick_report() -> None:
+def _tick_report(role: str) -> None:
     """A boss died: tell our friends, then (REPORT_DELAY_S later) the HUD pop-up and the Boss Report tab."""
-    report = _report()
+    report = share.S.report if role == "client" else tracker.S.report  # _report(), with this frame's role
     if report is None or report["id"] == S.report_seen:
-        _back_to_fight(report)
+        _back_to_fight(report, role)
         return
     if not S.report_due:
-        S.report_due = time.monotonic() + (REPORT_DELAY_S if share.role() != "client" else 0.2)
-        if share.role() == "host":
+        S.report_due = time.monotonic() + (REPORT_DELAY_S if role != "client" else 0.2)
+        if role == "host":
             share.push_report(report)
         return
     if time.monotonic() < S.report_due:
@@ -334,11 +338,14 @@ def _tick_report() -> None:
             logging.dev_warning(f"[Carnage Meter] pop-up: {ex}")
 
 
-def tick() -> None:
-    uilink.tick()
+def tick(role: str | None = None) -> None:
+    """
+    Every SLOW_S (__init__._slow; the link itself is ticked every frame there). `role`:
+    share.role() as of now (asked here if not given).
+    """
     health.tick()
     publish()
-    _tick_report()
+    _tick_report(share.role() if role is None else role)
     if S.waiting_until and time.monotonic() > S.waiting_until:
         S.waiting_until = 0.0
         if not screen_open():

@@ -52,6 +52,9 @@ RECONNECT_OFF = 1000.0  # further than this from the way back, look for a new on
 RECONNECT_MIN_S = 0.5
 BACK_CHECK_POINTS = 60  # the part of the way back checked each update (you're near its start)
 ON_NODE = 100.0  # a route point this close to a node is that node (the map's line runs through them)
+# A whole plan (A*) runs a slice a frame (`run`) instead of in one tick (31 ms at worst on World_P)
+PLAN_BUDGET_S = 0.002
+PLAN_STEP = 64  # nodes expanded between looks at the clock
 
 
 class Breadcrumbs:
@@ -78,9 +81,11 @@ class Breadcrumbs:
     back_line: Any = None
     back_way: list[tuple[float, float]] | None = None
     back_at = 0.0
+    job: Any = None  # a plan in progress (generator, `run`)
 
     @classmethod
     def clear(cls) -> None:
+        cls.job = None
         cls.graph = WeakPointer()
         cls.world = ""
         cls.count = cls.loaded = 0
@@ -224,13 +229,27 @@ class Breadcrumbs:
 
     @classmethod
     def _path(cls, start: int, goal: int) -> list[int]:
-        """A* over the graph (straight-line distances)."""
+        """A* over the graph (straight-line distances), in one go (offline tests)."""
+        steps = cls._path_steps(start, goal)
+        while True:
+            try:
+                next(steps)
+            except StopIteration as done:
+                return done.value
+
+    @classmethod
+    def _path_steps(cls, start: int, goal: int) -> Any:
+        """A* over the graph (straight-line distances); yields every PLAN_STEP nodes, returns the path."""
         pos, links, enabled = cls.pos, cls.links, cls.enabled
         gx, gy, gz = pos[goal]
         came: dict[int, int] = {}
         cost = {start: 0.0}
         frontier = [(0.0, start)]
+        popped = 0
         while frontier:
+            popped += 1
+            if popped % PLAN_STEP == 0:
+                yield
             _, k = heapq.heappop(frontier)
             if k == goal:
                 path = [k]
@@ -357,14 +376,35 @@ class Breadcrumbs:
             strayed = math.dist(me, cls.planned_from) > REPLAN_OFF_ROUTE
         if moved or (strayed and now - cls.planned_at >= REPLAN_MIN_S):
             cls.goal, cls.planned_at, cls.planned_from = goal, now, me
-            cls.route, cls.reaches_goal = [], False
+            cls.route, cls.reaches_goal, cls.job = [], False, None
             start, end = cls._nearest(*me), cls._nearest(*goal)
             if start is not None and end is not None and math.dist(cls.pos[start], me) <= OFF_GRAPH:
-                nodes = cls._path(start, end)
-                route = [(cls.pos[k][0], cls.pos[k][1]) for k in nodes]
-                cls.route = [*route, (goal[0], goal[1])] if route else []
-                cls.reaches_goal = math.dist(cls.pos[end], goal) <= OFF_GRAPH
+                # Planned a slice a frame (`run`); the caller has the map's copy or nothing meanwhile
+                cls.job = cls._plan(start, end, goal)
+                cls.run()
         return cls.route or None
+
+    @classmethod
+    def _plan(cls, start: int, end: int, goal: tuple[float, float, float]) -> Any:
+        pos = cls.pos
+        nodes = yield from cls._path_steps(start, end)
+        if pos is not cls.pos:
+            return  # the graph was read again meanwhile (another level)
+        route = [(pos[k][0], pos[k][1]) for k in nodes]
+        cls.route = [*route, (goal[0], goal[1])] if route else []
+        cls.reaches_goal = math.dist(pos[end], goal) <= OFF_GRAPH
+
+    @classmethod
+    def run(cls) -> None:
+        """Every frame while a plan runs: works on it for up to PLAN_BUDGET_S."""
+        if cls.job is None:
+            return
+        stop = time.perf_counter() + PLAN_BUDGET_S
+        try:
+            while time.perf_counter() < stop:
+                next(cls.job)
+        except StopIteration:
+            cls.job = None
 
 
 def _off(line: list[tuple[float, float]], x: float, y: float) -> float:

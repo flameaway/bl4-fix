@@ -1,7 +1,7 @@
 [project]
 name = "BL4 Less Fog"
-version = "0.1.1"
-description = "Thin out the haze over the world: lower fog density and push it further away, live."
+version = "0.1.2"
+description = "Remove the fog and the distance haze (the default), or thin them out and push them further away, live."
 authors = [{ name = "flame" }]
 
 [tool.sdkmod]

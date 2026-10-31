@@ -4,7 +4,8 @@ dive and landing animations, your gun stays up and you can act right after it la
 slam damage change.
 
 A port of Yeti's TPS Style Slams (GPL-3.0, see ported/README.md), rewritten so turning it off (or
-an option) puts every value back.
+an option) puts every value back. Modified by flameaway from 2026-10-24 (changes since in git
+history).
 
 The slam is data: the move (Move_GroundSlam), its tricks (looping dive, landing) and their trick
 options. We change those objects in place, remembering each original value; they load with your
@@ -30,6 +31,8 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
+from . import frametick
+
 try:
     from bl4_direct import coop
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo behavior
@@ -40,12 +43,23 @@ __version_info__ = (0, 1, 1)
 
 FEATURE = "slam_tweaks"
 
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 LANDING_SCRIPT_FUNC = (
     "/Game/PlayerCharacters/_Shared/Tricks/ControlledMoves/Trick_GroundSlamExit."
     "Trick_GroundSlamExit_Script_Instanced_C:OnBegin_Mut"
 )
 CHECK_S = 1.0
+# Objects we wanted that weren't loaded at the last apply, and objects we changed that may have been
+# unloaded, are looked at a few per LATE_STEP_S (one find_object, ~0.09 ms, per step) instead of all
+# at once each second (~1-2 ms in one frame, 2026-10-29). Each missing one about once a second for
+# LATE_FAST_S after an apply (the slam assets can load after the character), then about every
+# LATE_SLOW_S (a DLC that isn't installed never loads)
+LATE_STEP_S = 0.1
+LATE_FAST_S = 30.0
+LATE_SLOW_S = 5.0
+LATE_WEAK_BATCH = 8  # (unused since 2026-10-29: see LATE_WEAK_S)
+# The changed objects' WeakPointers are all checked this often, in one step (13 reads, ~20-40 us).
+# It was 8 per step: ~80 reads a second, most of the late tick's ~0.3 ms/s (2026-10-29)
+LATE_WEAK_S = 1.0
 SLAM_GRAVITY = 40.0  # the move's gravity scale (the game's is 12)
 
 _character_class = unrealsdk.find_class("OakCharacter")
@@ -114,7 +128,7 @@ _LANDING: list[Change] = [
 
 def _apply_soon(*_: Any) -> None:
     State.dirty = True
-    State.next_check = 0.0
+    frametick.soon("bl4_slam_tweaks")  # applied at the next frame
 
 
 landing_option = BoolOption(
@@ -141,7 +155,6 @@ class State:
     # (object path, field path) -> (object, the game's value; objects as WeakPointers)
     changed: dict[tuple[str, Field], tuple[WeakPointer, Any]] = {}
     pawn: WeakPointer | None = None
-    next_check = 0.0
     # movement component address -> (it, the game's Value and BaseValue) for the damage option
     damage: dict[int, tuple[WeakPointer, float, float]] = {}
     sync: Any = None  # (pawn, data allowed, damaged pawns) at the last apply
@@ -151,6 +164,13 @@ class State:
     # (class, path) of the objects we want to change that didn't exist at the last apply: the
     # character can show up before its slam assets have loaded (DLC ones may never exist)
     missing: frozenset[tuple[str, str]] = frozenset()
+    late = False  # late_check found something: the next tick applies again
+    applied_at = 0.0  # when a new character / option / co-op change was last applied
+    next_find = 0.0
+    find_cursor = 0
+    weak_cursor = 0
+    next_weak = 0.0
+    roots: tuple[frozenset[tuple[str, str]], list[tuple[str, str]]] | None = None  # see _late_roots
 
 
 class _Gone:
@@ -245,10 +265,43 @@ def _late_objects() -> bool:
     """
     Whether the last apply needs redoing for objects alone: one we wanted loaded since (one
     find_object per missing path, ~0.05 ms), or one we changed was unloaded and may come back fresh.
+    (All at once: late_check spreads the same checks out.)
     """
     if any(weak() is None for weak, _ in State.changed.values()):
         return True
     return any(_find(cls, path) is not None for cls, path in State.missing)
+
+
+def _late_roots(missing: frozenset[tuple[str, str]]) -> list[tuple[str, str]]:
+    """
+    The missing paths worth a find_object (~0.1-0.3 ms each in the frame tick, 2026-10-29): a
+    subobject ("A.A:options") can't exist while its asset ("A.A") is missing too, so it's skipped
+    until the asset loads (that find re-runs the whole apply). 10 missing paths -> 6 finds a round.
+    """
+    cached = State.roots
+    if cached is not None and cached[0] is missing:
+        return cached[1]
+    paths = {path for _, path in missing}
+    roots = sorted(m for m in missing if (outer := m[1].partition(":")[0]) == m[1] or outer not in paths)
+    State.roots = (missing, roots)
+    return roots
+
+
+def _late_step(now: float) -> bool:
+    """One step of _late_objects: every changed object once per LATE_WEAK_S, and at most one missing path."""
+    if State.changed and now >= State.next_weak:
+        State.next_weak = now + LATE_WEAK_S
+        if any(weak() is None for weak, _ in State.changed.values()):
+            return True
+    missing = State.missing
+    if not missing or now < State.next_find:
+        return False
+    roots = _late_roots(missing)
+    every = 1.0 if now - State.applied_at < LATE_FAST_S else LATE_SLOW_S
+    State.next_find = now + every / len(roots)
+    cls, path = roots[State.find_cursor % len(roots)]
+    State.find_cursor += 1
+    return _find(cls, path) is not None
 
 
 def _restore_damage(keep: set[int] | None = None) -> None:
@@ -336,12 +389,10 @@ def _set_landing_hook(on: bool) -> None:
             landing_started.disable()
 
 
-@hook(TICK_FUNC, Type.POST)
-def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -> None:
-    now = time.monotonic()
-    if now < State.next_check:
-        return
-    State.next_check = now + CHECK_S
+# Once a second through the shared frame tick (frametick/; frames in between cost nothing); the
+# first one right after enabling
+@frametick.tick("bl4_slam_tweaks", every=CHECK_S)
+def tick() -> None:
     try:
         pc = get_pc(possibly_loading=True)
         pawn = pc.Pawn if pc is not None else None
@@ -351,8 +402,11 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
         allowed = _data_allowed()
         sync = (pawn._get_address(), allowed, frozenset(p._get_address() for p in pawns))
         unchanged = not State.dirty and State.sync == sync and State.pawn is not None and State.pawn() == pawn
-        if unchanged and not (allowed and _late_objects()):
+        if unchanged and not (allowed and State.late):
             return
+        State.late = False
+        if not unchanged:
+            State.applied_at = time.monotonic()
         missing_before = len(State.missing)
         State.pawn = WeakPointer(pawn)
         State.sync = sync
@@ -373,13 +427,26 @@ def tick(_obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunction) -
         logging.error(f"[Slam Tweaks] {ex!r}")
 
 
+@frametick.tick("bl4_slam_tweaks.late", every=LATE_STEP_S)
+def late_check() -> None:
+    """Looks for slam objects that loaded (or unloaded) since the last apply, a few at a time."""
+    try:
+        if State.late or not State.data_allowed or State.pawn is None:
+            return
+        if _late_step(time.monotonic()):
+            State.late = True
+            frametick.soon("bl4_slam_tweaks")  # applied at the next frame
+    except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
+        logging.error(f"[Slam Tweaks] {ex!r}")
+
+
 # endregion
 
 
 def _enable() -> None:
-    State.next_check = 0.0
     State.pawn = None
     State.dirty = True
+    State.late = False
 
 
 def _disable() -> None:
@@ -392,7 +459,7 @@ def _disable() -> None:
 
 mod = build_mod(
     options=[landing_option, damage_option],
-    hooks=[tick],
+    hooks=[tick, late_check],
     on_enable=_enable,
     on_disable=_disable,
 )

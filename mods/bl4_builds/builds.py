@@ -12,6 +12,7 @@ import json
 import re
 import sys
 import time
+import traceback
 import zlib
 from collections.abc import Callable
 from importlib import resources
@@ -226,7 +227,7 @@ def _apply(build: dict[str, Any], *, skills: bool, specializations: bool) -> dic
     except game.native.NotFound as ex:
         raise Refused(f"This game version moved the equip code ({ex}); Build Presets needs an update.") from ex
     except Exception as ex:  # noqa: BLE001 - tell the player, not just the log
-        logging.exception(ex)
+        logging.error("".join(traceback.format_exception(ex)))
         raise Refused(f"Loading the build failed while equipping ({ex!r}); see the SDK log.") from ex
     finally:
         invalidate()
@@ -237,7 +238,7 @@ def _apply(build: dict[str, Any], *, skills: bool, specializations: bool) -> dic
         except game.BuildError as ex:
             raise Refused(str(ex)) from ex
         except Exception as ex:  # noqa: BLE001
-            logging.exception(ex)
+            logging.error("".join(traceback.format_exception(ex)))
             raise Refused(f"The build's gear is on, but putting the skills back failed ({ex!r}); see the SDK log.") from ex
         finally:
             invalidate()
@@ -327,19 +328,33 @@ def _serve_load(req: Any) -> dict[str, Any]:
     if package is not None and not package.mod.is_enabled:
         return {"ok": False, "error": "Build Presets is off on the host"}
     data = req.data
+    skills = data.get("skills")
+    if skills is not None and not isinstance(skills, dict):
+        return {"ok": False, "error": "bad request"}
+    wanted = data.get("gear") or {}
+    if not isinstance(wanted, dict):
+        wanted = {}
     with game.acting_for(req.pc):
         try:
             by_key = {_serial_key(item.serial): item.serial for item in game.backpack()}
-        except game.BuildError as ex:
+            _, pawn, _ = game._player()  # noqa: SLF001
+            slot_count = len(pawn.EquippedInventorySlots.items)
+        except (game.BuildError, AttributeError) as ex:
             return {"ok": False, "error": str(ex)}
         gear, missing = {}, []
-        for slot, key in (data.get("gear") or {}).items():
+        for slot_s, key in wanted.items():
+            # Slot numbers reach the native equip call: only the asker's own slots, and only
+            # int serial keys (a modified client could send anything)
+            if not (isinstance(slot_s, str) and slot_s.isascii() and slot_s.isdigit()):
+                continue
+            slot = int(slot_s)
+            if slot >= slot_count or isinstance(key, bool) or not isinstance(key, int):
+                continue
             serial = by_key.get(key)
             if serial is None:
-                missing.append(int(slot))
+                missing.append(slot)
             else:
                 gear[str(slot)] = {"serial": serial}
-        skills = data.get("skills")
         build = {"gear": gear, "skills": skills or {}}
         try:
             raw = _apply(build, skills=skills is not None, specializations=bool(data.get("specs", True)))

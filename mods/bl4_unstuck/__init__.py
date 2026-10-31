@@ -19,36 +19,31 @@ from __future__ import annotations
 
 import argparse
 import time
+import traceback
 from typing import Any
 
 import unrealsdk
-from mods_base import ENGINE, BoolOption, ButtonOption, SliderOption, build_mod, command, get_pc, hook
+from mods_base import ENGINE, BoolOption, ButtonOption, SliderOption, build_mod, command, get_pc
 from unrealsdk import logging
-from unrealsdk.hooks import Type
 from unrealsdk.unreal import UObject, WeakPointer
 
-from . import health, hold, respawn
+from . import frametick, health, hold, respawn
 
 try:
     from bl4_direct import coop
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo / host only
     coop = None
 
-__version__ = "0.1.0"
-__version_info__ = (0, 1, 0)
+__version__ = "0.1.1"
+__version_info__ = (0, 1, 1)
 
 FEATURE = KIND = "unstuck"
-TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
-# The tick hook fires ~6 times a frame: act on the first call after a gap, at least every MAX_WAIT_S
-FRAME_GAP_S = 0.004
-MAX_WAIT_S = 0.012
 CHECK_EVERY_S = 0.5  # the stuck check
 SLOW = 20.0  # uu/s: slower than this counts as not moving
 COOLDOWN_S = 30.0  # after a move, another automatic one only after this long (else release only)
 AFTER_S = 6.0  # after a release, keep releasing a hold that comes back (a teleport can start it)
 AFTER_EVERY_S = 0.25
 MENU_WAIT_S = 3.0  # "Unstuck now": longest wait for the menus to close
-_last_call = _ticked_at = 0.0
 
 _char_class = unrealsdk.find_class("OakCharacter")
 _statics = unrealsdk.find_class("GameplayStatics").ClassDefaultObject
@@ -138,6 +133,8 @@ def _free_and_move(pc: UObject | None) -> dict[str, Any]:
 
 
 def _host_unstuck(req: Any) -> dict[str, Any]:
+    if not mod.is_enabled:
+        return {"ok": False, "error": "Unstuck is off on the host"}
     return _free_and_move(req.controller())
 
 
@@ -230,14 +227,9 @@ def _check_after(now: float) -> None:
     S.after = keep
 
 
-@hook(TICK_FUNC, Type.POST)
-def _tick(*_: Any) -> None:
-    global _ticked_at, _last_call
-    started = time.perf_counter()
-    gap, _last_call = started - _last_call, started
-    if gap < FRAME_GAP_S and started - _ticked_at < MAX_WAIT_S:
-        return
-    _ticked_at = started
+@frametick.tick("bl4_unstuck")
+def _tick() -> None:
+    """Once per engine frame (the shared frame tick)."""
     now = time.monotonic()
     try:
         health.tick()  # "needs an update" statuses for all our mods (shared/health; a clock compare most calls)
@@ -253,7 +245,7 @@ def _tick(*_: Any) -> None:
     except Exception as ex:  # noqa: BLE001 - never let our tick break the game's
         if repr(ex) not in S.errors:
             S.errors.add(repr(ex))
-            logging.exception(ex)
+            logging.error("".join(traceback.format_exception(ex)))
 
 
 def _menus_up() -> bool:
