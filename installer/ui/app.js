@@ -30,6 +30,8 @@ const S = {
   // Disk Space: the last scan's numbers for the current choice (api.space_info), the voice
   // languages to keep, whether to blank old patch data
   space: { info: null, keep: null, old: true, seq: 0 },
+  // Safe mode (api.safe_mode: core.safe_mode_status): on, aside, missing, left, others, time
+  safe: null,
 };
 
 /* ---------- templates ---------- */
@@ -346,6 +348,7 @@ function showDetails(d) {
   $("#d-meta").className = "su_details_meta small_text_2" + (d.metaCls ? " " + d.metaCls : "");
   $("#d-body").textContent = d.body || "";
   $("#log").hidden = !d.log;
+  $(".su_details").classList.toggle("su_details_long", !!d.long);
 }
 
 function pageDetails() {
@@ -436,7 +439,8 @@ function firewallRow() {
     title: "Firewall rule for hosting", meta: f.firewall ? "Only friends can reach your hosted games" : "Off: recommended on",
     metaCls: f.firewall ? "su_ok" : "su_warn",
     body: FIREWALL_WHY + "\n\nOn: one Windows Firewall rule that blocks inbound UDP on your host port from everyone except this PC, the friends on your Co-op list and (if allowed) your local network. " +
-      "It only ever blocks; it never opens anything. Windows asks for admin when the rule changes.\n\nOff: BL4 Fix never touches your firewall (an old BL4 Direct rule is removed).",
+      "It only ever blocks; it never opens anything. When the rule changes, Windows asks if \"Network Command Shell\" may make changes: " +
+      "that's netsh, Windows' own firewall tool, and Show more details lists the rule.\n\nOff: BL4 Fix never touches your firewall (an old BL4 Direct rule is removed).",
   }, { status, onClick: () => setFirewall(!f.firewall) });
 }
 
@@ -510,6 +514,11 @@ function renderSystem() {
       title: "Compatibility code", body: "Friends with the same code can play together. Different codes usually mean a different game patch or mod version.",
     });
   }
+  title("Safety");
+  safeModeRow();
+  row("Safety", [valueText("Open source  //  Saves read only", "su_dim")], {
+    title: "Safety", meta: "What BL4 Fix does and doesn't do", body: SAFETY_TEXT, long: true,
+  });
   title("Maintenance");
   const u = S.update;
   const appParts = [valueText(S.info.version, "su_mono")];
@@ -521,10 +530,87 @@ function renderSystem() {
     body: (u && u.stale ? updateSummary(u) + "\n\n" : "") + "The app checks GitHub for a newer release each time it starts. Update replaces this app in place and restarts it; your mods, friends and settings stay.",
   }, { status: u && u.stale ? { kind: "warn", text: "Update" } : null });
   row("Refresh", [listButton("Check again", () => !S.busy && refreshStatus(), "su_small")], { title: "Refresh", body: "Reads the install again." });
+  row("Report a problem", [listButton("Make report", bugReport, "su_small" + (st && st.valid ? "" : " su_disabled"))], {
+    title: "Report a problem", meta: "For a bug, an error or a crash",
+    body: REPORT_WHY,
+  });
   row("Uninstall", [listButton("Uninstall...", uninstall, "su_small su_danger")], {
     title: "Uninstall", meta: "Removes every mod BL4 Fix installed", metaCls: "su_bad",
     body: "Also removes the firewall rule. Your friends list and mod settings are kept.",
   });
+}
+
+/* ---------- safety + safe mode (core.set_safe_mode) ---------- */
+
+const SAFETY_TEXT =
+  "Open source: BL4 Fix's mods are GPL-3.0, at github.com/flameaway/bl4-fix.\n" +
+  "Saves: only read, never written. The one exception is a restore you ask for in Save Backups, applied after the game closes, with your old saves kept aside.\n" +
+  "Internet: GitHub for update checks and the downloads you press; api.ipify.org to show your public IP for co-op; Microsoft for the VC++ runtime when it's missing. Nothing else.\n" +
+  "Bug reports: stay on your PC until you attach one yourself, with names, paths and IP addresses masked.\n" +
+  "Other modders' repositories: their mods aren't checked by BL4 Fix and run with the game's rights. Add only repositories you trust.\n" +
+  "Safe mode sets other modders' mods aside if one breaks the game.";
+
+const SAFE_MODE_WHY =
+  "For when a mod breaks the game: sets every mod that isn't BL4 Fix's aside (not deleted) until you turn this off. BL4 Fix's mods keep working.";
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function safeModeRow() {
+  const s = S.safe;
+  const known = !!(S.status && S.status.valid && s && "on" in s);
+  const on = known && s.on;
+  const aside = known ? s.aside.length : 0;
+  const others = known ? s.others.length : 0;
+  let meta = "", body = SAFE_MODE_WHY + "\n(They wait in sdk_mods\\.bl4_safe_mode. Close the game first.)";
+  if (!known) meta = "Pick the game folder first";
+  else if (on) {
+    meta = `${plural(aside, "mod")} set aside`;
+    if (aside) body += "\n\nSet aside: " + s.aside.join(", ");
+    if (others) body += "\n\nAdded since (these load): " + s.others.join(", ") + ". Turn safe mode off and on again to set them aside too.";
+  } else {
+    meta = others ? `${plural(others, "mod")} by other modders installed` : "No other modders' mods installed";
+    if (others) body += "\n\nWould set aside: " + s.others.join(", ");
+  }
+  if (known && s.left.length) body += "\n\nStill set aside, because sdk_mods has one with the same name again: " + s.left.join(", ");
+  const t = toggle(on, known ? setSafeMode : null);
+  if (!known) t.classList.add("su_locked");
+  row("Safe mode", [t], { title: "Safe mode", meta, metaCls: on ? "su_warn" : "", body }, {
+    status: on ? { kind: "warn", text: `${aside} aside` } : null,
+    onClick: known ? () => setSafeMode(!on) : null,
+  });
+}
+
+async function setSafeMode(on) {
+  if (S.busy || !S.status || !S.status.valid) return;
+  if (S.status.running) return toast("Close Borderlands 4 first", true);
+  startTask("safe_mode", on ? "Safe mode on" : "Safe mode off");
+  if (!(await S.api.set_safe_mode(S.gameDir, on))) endTask();
+}
+
+/* ---------- bug reports (the Mod Menu's report.py) ---------- */
+
+const REPORT_WHY =
+  "Saves one zip with what a bug report needs: mod and game versions, the errors our mods logged, the SDK logs, " +
+  "the newest game crash, your installed mods and their settings. Your Windows user name, Steam names, friends, IPs and " +
+  "account ids are masked, and your saves are never included. Nothing is sent: you attach the zip to a GitHub issue yourself.\n\n" +
+  "In game the same report is in the Mod Menu (F7) > Report a problem. Use this one when the game won't start.";
+
+async function bugReport() {
+  if (S.busy) return;
+  if (!S.status || !S.status.valid) return toast("Pick the Borderlands 4 folder first", true);
+  startTask("report", "Making a bug report");
+  if (!(await S.api.bug_report(S.gameDir))) endTask();
+}
+
+async function reportDone() {
+  const r = await S.api.report_result();
+  if (!r || !r.path) return;
+  S.api.show_report();
+  const body = `Saved as ${r.name}. Explorer shows it now.\n\n` +
+    "Open a new issue on GitHub (the versions are filled in for you), say what happened and drag the zip into it.";
+  if (await confirmDialog("Report ready", body, "Open GitHub issue", false, { cancelText: "Close", okCls: "", backdrop: false })) S.api.open_issue();
 }
 
 /* ---------- disk space (installer/slim.py) ---------- */
@@ -701,6 +787,7 @@ function updateMenu() {
 async function refreshStatus() {
   S.status = S.gameDir ? await S.api.status(S.gameDir) : { valid: false };
   if (S.status.valid) S.selected = new Set(S.status.chosen);
+  S.safe = S.status.valid ? await S.api.safe_mode(S.gameDir) : null;
   render();
 }
 
@@ -785,7 +872,7 @@ function startTask(name, label) {
   S.task = name;
   S.logCount = 0;
   addLog(label, "su_head");
-  if (name !== "friends" && name !== "firewall") {
+  if (name !== "friends" && name !== "firewall" && name !== "safe_mode") {
     $("#working-title").textContent = label;
     $("#working-line").textContent = "Starting...";
     $("#pfill").style.width = "3%";
@@ -819,6 +906,20 @@ window.app = {
     if (name === "selfupdate") {
       if (error) celebrate(false, error);
       else celebrate(true, "Restarting with the new version...", "Updated");
+      return;
+    }
+    if (name === "safe_mode") {
+      await refreshStatus();
+      const s = S.safe || {};
+      const n = (s.aside || []).length;
+      if (error) toast("Safe mode: " + error, true);
+      else if (s.on) toast(`Safe mode on: ${n} mod${n === 1 ? "" : "s"} by other modders set aside`);
+      else toast("Safe mode off: other modders' mods are back" + ((s.left || []).length ? ` (${s.left.length} kept aside, see Activity)` : ""), !!(s.left || []).length);
+      return;
+    }
+    if (name === "report") {
+      if (error) celebrate(false, error);
+      else await reportDone();
       return;
     }
     if (name === "space_scan") {
@@ -1031,6 +1132,18 @@ function mockApi() {
   if (demo === "dialog") setTimeout(() => uninstall(), 600);
   if (demo === "working") setTimeout(() => { startTask("install", "Installing"); app.onLog("Installing Python SDK 0.3 (was: none)..."); app.onLog("Installed bl4_minimap."); }, 600);
   if (demo === "hover") setTimeout(() => { $$(".menu_options_entry")[3].classList.add("hover_effect"); S.nav.coop.btn.classList.add("hover_effect"); S.nav.coop.slot.classList.add("hover_effect"); $$(".su_btn")[0]?.classList.add("hover_effect"); }, 600);
+  if (demo === "report") setTimeout(() => { showPage("system"); bugReport(); }, 600);
+  // &demo=safety / safemode: the System page with that row hovered (its details pane showing)
+  if (demo === "safety" || demo === "safemode") {
+    const name = demo === "safety" ? "Safety" : "Safe mode";
+    const hover = (tries) => {
+      if (S.info && S.page !== "system") showPage("system");
+      const entry = $$(".menu_options_entry").find((e) => $(".menu_options_entry_text", e)?.textContent === name);
+      if (entry && S.safe) entry.dispatchEvent(new MouseEvent("mouseenter"));
+      else if (tries) setTimeout(() => hover(tries - 1), 200);
+    };
+    setTimeout(() => hover(30), 600);
+  }
   if (demo === "space") setTimeout(() => spaceScan().then(() => sleep(3000)).then(() => setKeep("German", true)).then(() => sleep(300)).then(() => { if (params.has("bottom")) $("#entries").scrollTop = 99999; }), 600);
   const ok = (key, label, value, hint, good = true) => ({ key, label, ok: good, value, hint });
   return {
@@ -1093,6 +1206,17 @@ function mockApi() {
       return true;
     },
     space_freed: async () => 132.48 * 1073741824,
+    bug_report: async () => {
+      (async () => { for (const l of ["Collecting versions, errors, logs and the newest crash...", "Done. Report saved: C:\\...\\sdk_mods\\.bug_reports\\bl4fix-report-20261029-181203.zip"]) { await sleep(300); app.onLog(l); } app.onTaskDone("report", null); })();
+      return true;
+    },
+    report_result: async () => ({ path: "C:\\...\\bl4fix-report-20261029-181203.zip", name: "bl4fix-report-20261029-181203.zip", url: "https://github.com/flameaway/bl4-fix/issues/new?template=bug.yml" }),
+    show_report: async () => {},
+    open_issue: async () => {},
+    safe_mode: async () => (params.has("safe")
+      ? { on: true, aside: ["PersistentLoot.sdkmod", "better_hud"], missing: [], left: [], others: [], time: 1793000000 }
+      : { on: false, aside: [], missing: [], left: [], others: ["PersistentLoot.sdkmod", "better_hud"], time: 0 }),
+    set_safe_mode: async () => { setTimeout(() => { app.onLog("Safe mode on: 2 mods by other modders set aside (2 now). BL4 Fix's mods keep working."); app.onTaskDone("safe_mode", null); }, 400); return true; },
     minimize: async () => {}, close: async () => {}, drag: async () => {},
   };
 }

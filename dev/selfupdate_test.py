@@ -8,6 +8,7 @@ local http server instead of GitHub, a fake exe in a temp folder instead of the 
 
 from __future__ import annotations
 
+import base64
 import functools
 import hashlib
 import http.server
@@ -26,7 +27,33 @@ import core  # noqa: E402
 import selfupdate  # noqa: E402
 import shared  # noqa: E402
 
+sys.path.insert(0, str(REPO / "tools"))
+import release_key  # noqa: E402  # Windows' crypto helpers (signs with throwaway keys here)
+
 results: list[tuple[bool, str]] = []
+
+
+def throwaway_key() -> bytes:
+    """A new ECDSA P-256 private key blob, never saved."""
+    import ctypes  # noqa: PLC0415
+
+    _, bc = release_key._libs()
+    alg, key = release_key.handle(), release_key.handle()
+    release_key._ok(bc.BCryptOpenAlgorithmProvider(ctypes.byref(alg), "ECDSA_P256", None, 0), "open")
+    try:
+        release_key._ok(bc.BCryptGenerateKeyPair(alg, ctypes.byref(key), 256, 0), "generate")
+        release_key._ok(bc.BCryptFinalizeKeyPair(key, 0), "finalize")
+        try:
+            return release_key._export_bc(bc, key, "ECCPRIVATEBLOB")
+        finally:
+            bc.BCryptDestroyKey(key)
+    finally:
+        bc.BCryptCloseAlgorithmProvider(alg, 0)
+
+
+def sign(private: bytes, path: Path) -> None:
+    raw = release_key._sign_backup(private, hashlib.sha256(path.read_bytes()).digest())
+    path.with_name(path.name + ".sig").write_bytes(base64.b64encode(raw) + b"\n")
 
 
 def check(ok: bool, what: str) -> None:
@@ -87,7 +114,21 @@ def main() -> int:
         # --- check (network) ---
         (release / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
         r, manifest = selfupdate.check(f"{base}/manifest.json")
-        check(r is not None and r["stale"] and manifest["release"] == "v-test", "check: reads the served manifest")
+        check(r is None, "check: an unsigned release is no offer")
+        private = throwaway_key()
+        selfupdate.TRUSTED_KEYS = (base64.b64encode(release_key.backup_public(private)).decode(),)
+        sign(private, release / "manifest.json")
+        r, manifest = selfupdate.check(f"{base}/manifest.json")
+        check(r is not None and r["stale"] and manifest["release"] == "v-test", "check: reads the served (signed) manifest")
+        signed = (release / "manifest.json").read_bytes()
+        (release / "manifest.json").write_bytes(signed.replace(b"v-test", b"v-tesT"))
+        check(selfupdate.check(f"{base}/manifest.json") == (None, None), "check: a changed manifest is no offer (signature)")
+        (release / "manifest.json").write_bytes(signed)
+        try:
+            selfupdate._get("https://example.com/BL4FixSetup.exe", 100)
+            check(False, "a download from anywhere but GitHub is refused")
+        except RuntimeError as ex:
+            check("isn't from GitHub" in str(ex), "a download from anywhere but GitHub is refused")
         check(selfupdate.check(f"{base}/missing.json") == (None, None), "check: a missing manifest is no offer, no error")
         check(selfupdate.check("http://127.0.0.1:9/manifest.json") == (None, None), "check: offline is no offer, no error")
         (release / "bad.json").write_text('{"format": 2}', encoding="utf-8")

@@ -161,6 +161,8 @@ input { user-select: text; }
 
 .su_details.menu_options_details_container { flex: 1 1; height: auto; min-height: 26rem; max-height: 60%; align-self: flex-start; margin: 0; justify-content: flex-start; position: relative; background-color: rgba(3, 16, 25, 0.82); }
 .su_details .menu_options_details_container_inner { height: auto; width: 100%; position: relative; }
+/* Rows with a longer text (Safety) let the pane grow over the art below */
+.su_details.su_details_long { max-height: 84%; }
 .su_details .menu_options_details { padding: 2rem 2.6rem; display: flex; flex-direction: column; overflow: visible; height: auto; }
 .su_details .menu_options_details_title { font-family: Industry-DemiBold; font-size: 3.6rem; color: #e4d9ce; text-transform: uppercase; margin-bottom: 1rem; }
 .su_details_meta { font-family: Industry-Normal; font-size: 1.9rem; color: #00c6ff; margin: 0 0 1.4rem 0; }

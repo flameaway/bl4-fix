@@ -1,0 +1,54 @@
+# Rebuilds every published release from its tag on GitHub's machines, checks the result is byte
+# for byte the release's files (tools/verify_release.py), and attests those files: anyone can then
+# run `gh attestation verify <file> --repo flameaway/bl4-fix` to see GitHub built that exact file
+# from this repository's source at that tag. The setup exe isn't rebuilt (its window uses the
+# game's own files, which only a PC with the game has); it's checked against the signed manifest.
+name: Verify release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to verify (e.g. v2026.10.30)
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      # The zlib that built the release (tools/release.py ZLIB_PINNED): .sdkmods are deflated
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.4"
+
+      - name: Download the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$env:TAG" --dir release --repo "${{ github.repository }}"
+
+      - name: Rebuild and compare
+        id: verify
+        run: |
+          python -c "import zlib; print('zlib', zlib.ZLIB_RUNTIME_VERSION)"
+          python tools/verify_release.py --tag "$env:TAG" --release-dir release --list verified.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = (Get-Content verified.txt) -join "`n"
+          "files<<EOF`n$files`nEOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Attest the verified files
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.verify.outputs.files }}

@@ -15,15 +15,22 @@ With no arguments, opens the GUI. Command line use (from a terminal):
     BL4FixSetup.exe --firewall on|off    (off: no firewall rule; with --install, before the first one)
     BL4FixSetup.exe --remove-firewall    (just take the firewall rule away)
 
-The app runs without admin rights. Steps that need them (firewall rule, VC++ runtime, a game
-folder this user can't write to) run in an elevated copy of it: `--log-file` is how that copy
-hands its output back (core._run_self_elevated).
+The app runs without admin rights. The firewall rule runs Windows' netsh elevated (its UAC prompt
+reads "Network Command Shell"); the VC++ runtime has its own prompt; a game folder this user can't
+write to runs an elevated copy of the app: `--log-file` is how that copy hands its output back
+(core._run_self_elevated).
     BL4FixSetup.exe --apply-firewall
     BL4FixSetup.exe --prepare-pages    (the installed mods' shim paks + page scripts, see core)
 
 Disk Space (slim.py; never part of --install):
     BL4FixSetup.exe --disk-scan [--keep LANGS]    (what it would free; changes nothing)
     BL4FixSetup.exe --disk-free --keep LANGS|all [--old-patches on|off]
+
+Safe mode (for when a mod breaks the game; never while it runs):
+    BL4FixSetup.exe --safe-mode on|off|status    (other modders' mods to sdk_mods/.bl4_safe_mode and back)
+
+Bug reports (the Mod Menu's report.py; works with the game closed or running):
+    BL4FixSetup.exe --bug-report [DIR]    (zip into DIR, default sdk_mods/.bug_reports)
 """
 
 from __future__ import annotations
@@ -97,6 +104,14 @@ def cli(args: argparse.Namespace) -> int:
     if args.disk_scan or args.disk_free:
         return _disk_space(game, args)
 
+    if args.bug_report is not None:
+        path, url = core.bug_report(game, Path(args.bug_report) if args.bug_report else None)
+        print(f"Report: {path}\nAttach it to a new issue: {url}")
+        return 0
+
+    if args.safe_mode:
+        return _safe_mode(game, args.safe_mode)
+
     if args.list_mods:
         installed = core.installed_mods(game)
         for info in catalog.MODS:
@@ -150,6 +165,28 @@ def cli(args: argparse.Namespace) -> int:
         print("\n".join(st.lines()))
         print(f"Friends: {', '.join(f'{f.name} {f.address}:{f.port}' for f in config.friends) or 'none'}")
         return 0 if st.ready else 1
+    return 0
+
+
+def _safe_mode(game: Path, what: str) -> int:
+    """--safe-mode on|off|status: other modders' mods set aside in sdk_mods/.bl4_safe_mode (core)."""
+    import core  # noqa: PLC0415
+
+    if what != "status":
+        result = core.set_safe_mode(game, what == "on")
+        for name, reason in result["skipped"]:
+            print(f"  skipped {name}: {reason}")
+    st = core.safe_mode_status(game)
+    if st["on"]:
+        print(f"Safe mode: on, {len(st['aside'])} mod{'' if len(st['aside']) == 1 else 's'} set aside"
+              + (f" ({', '.join(st['aside'])})" if st["aside"] else ""))
+        if st["others"]:
+            print(f"  added since (loads; turn it on again to set aside): {', '.join(st['others'])}")
+    else:
+        print(f"Safe mode: off, {len(st['others'])} mod{'' if len(st['others']) == 1 else 's'} by other modders in sdk_mods"
+              + (f" ({', '.join(st['others'])})" if st["others"] else ""))
+    if st["left"]:
+        print(f"  still in {core.SAFE_MODE_REL.as_posix()} (sdk_mods has the same name): {', '.join(st['left'])}")
     return 0
 
 
@@ -221,6 +258,10 @@ def main() -> int:
     parser.add_argument("--disk-free", action="store_true", help="remove unused voice languages / old patch data")
     parser.add_argument("--keep", metavar="LANGS", help="with --disk-*: voice languages to keep (comma list, or all)")
     parser.add_argument("--old-patches", choices=["on", "off"], default="on", help="with --disk-*: free old patch data")
+    parser.add_argument("--safe-mode", choices=["on", "off", "status"],
+                        help="set other modders' mods aside (on), put them back (off), or show it")
+    parser.add_argument("--bug-report", nargs="?", const="", metavar="DIR",
+                        help="write a bug report zip (default: sdk_mods/.bug_reports) and print the issue link")
 
     if len(sys.argv) == 1:
         _run_gui()

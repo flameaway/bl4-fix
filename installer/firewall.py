@@ -3,69 +3,59 @@ Windows Firewall rule that limits who can reach a hosted game.
 
 The rule itself (a block rule for the co-op port covering every address but the allowlist) is built
 in shared.py (the bundled copy of mods/bl4_direct/shared.py), so the setup app and the mod's own
-Update button make the same rule. This module runs it from an elevated setup app.
+Update button make the same rule with the same netsh command. Run here directly when this app is
+admin, else through `run` (core.run_as_admin): the UAC prompt then names netsh ("Network Command
+Shell", Microsoft Windows) with the rule in plain words, not this app.
 """
 
 from __future__ import annotations
 
-import json
 import subprocess
-import tempfile
-from collections.abc import Iterable
-from pathlib import Path
+from collections.abc import Callable, Iterable
 
 import shared  # the payload copy (core puts it on sys.path first)
 
 RULE_GROUP = shared.FIREWALL_GROUP
 blocked_ranges = shared.blocked_ranges
 
-APPLY_SCRIPT = (
-    "param([string]$SpecFile)\n$spec = Get-Content -Raw $SpecFile | ConvertFrom-Json\n" + shared.FIREWALL_SCRIPT
-)
+# run(exe, params) -> exit code, with a UAC prompt (core.run_as_admin)
+Runner = Callable[[str, str], int]
 
 
-def _run_ps(script: str, spec: dict) -> str:
-    with tempfile.TemporaryDirectory() as tmp:
-        script_path = Path(tmp) / "apply.ps1"
-        spec_path = Path(tmp) / "spec.json"
-        script_path.write_text(script, encoding="utf-8")
-        spec_path.write_text(json.dumps(spec), encoding="utf-8")
-        res = subprocess.run(
-            [
-                "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                "-File", str(script_path), "-SpecFile", str(spec_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    if res.returncode != 0:
-        raise RuntimeError(f"firewall update failed: {res.stderr.strip() or res.stdout.strip()}")
-    return res.stdout.strip()
-
-
-def apply_rule(port: int, allowed_ips: Iterable[str], allow_lan: bool) -> str:
-    """Replaces our firewall rule. Needs admin."""
-    return _run_ps(APPLY_SCRIPT, shared.firewall_rule(port, allowed_ips, allow_lan))
-
-
-def remove_rule() -> str:
-    """Deletes our firewall rule. Needs admin."""
-    return _run_ps(APPLY_SCRIPT, {"group": RULE_GROUP, "port": 0})
-
-
-def rule_summary() -> str | None:
-    """Description of the current rule, or None if there isn't one."""
+def _apply(spec: dict, run: Runner | None) -> str:
+    args = shared.netsh_command(spec, [name for name, _ in shared.find_rules()])
+    if args is None:
+        return "nothing to change"
+    if run is not None:
+        if code := run(str(shared.NETSH), args):
+            raise RuntimeError(f"firewall update failed (netsh exit code {code})")
+        return "ok"
     res = subprocess.run(
-        [
-            "powershell", "-NoProfile", "-Command",
-            f"Get-NetFirewallRule -Group '{RULE_GROUP}' -ErrorAction SilentlyContinue"
-            " | Select-Object -ExpandProperty Description",
-        ],
+        f'"{shared.NETSH}" {args}',
         capture_output=True,
         text=True,
         check=False,
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
-    return res.stdout.strip() or None
+    if res.returncode != 0:
+        raise RuntimeError(f"firewall update failed: {res.stdout.strip() or res.stderr.strip()}")
+    return res.stdout.strip()
+
+
+def apply_rule(port: int, allowed_ips: Iterable[str], allow_lan: bool, run: Runner | None = None) -> str:
+    """Adds or updates our firewall rule. Needs admin: this app's, or `run`'s prompt."""
+    return _apply(shared.firewall_rule(port, allowed_ips, allow_lan), run)
+
+
+def remove_rule(run: Runner | None = None) -> str:
+    """Deletes our firewall rule, if there is one. Needs admin: this app's, or `run`'s prompt."""
+    return _apply({"group": RULE_GROUP, "port": 0}, run)
+
+
+def rule_summary() -> str | None:
+    """Description of the current rule (an old PowerShell-made one too), or None if there isn't one."""
+    try:
+        rules = shared.find_rules()
+    except RuntimeError:
+        return None
+    return "; ".join(description or name for name, description in rules) or None

@@ -74,6 +74,7 @@ class Api:
         self._slim: slim.Scanner | None = None  # the Disk Space page's last scan
         self._slim_lock = threading.Lock()
         self._space_freed = 0
+        self._report: tuple[Path, str] | None = None  # the last bug report: (zip, issue link)
 
     # region page plumbing
 
@@ -324,6 +325,47 @@ class Api:
             self._log(f"Done. Freed {slim.gb(self._space_freed)}.")
 
         return self._task("space", run)
+
+    # endregion
+    # region bug reports (the Mod Menu's report.py, through core.bug_report)
+
+    def bug_report(self, game_dir: str) -> bool:
+        path = Path(game_dir)
+
+        def run() -> None:
+            self._report = None
+            self._report = core.bug_report(path, log=self._log)
+
+        return self._task("report", run)
+
+    def report_result(self) -> dict:
+        """The last report: its file and the GitHub issue link ({} before one is made)."""
+        if not self._report:
+            return {}
+        zip_path, url = self._report
+        return {"path": str(zip_path), "name": zip_path.name, "url": url}
+
+    def show_report(self) -> None:
+        if self._report:
+            core.show_report(self._report[0])
+
+    def open_issue(self) -> None:
+        if self._report:
+            os.startfile(self._report[1])  # noqa: S606
+
+    # endregion
+    # region safe mode (other modders' mods set aside: core.set_safe_mode)
+
+    def safe_mode(self, game_dir: str) -> dict:
+        """core.safe_mode_status ({} for a folder that isn't the game)."""
+        path = Path(game_dir)
+        if not game_dir or not core.is_game_dir(path):
+            return {}
+        return core.safe_mode_status(path)
+
+    def set_safe_mode(self, game_dir: str, on: bool) -> bool:
+        path = Path(game_dir)
+        return self._task("safe_mode", lambda: core.set_safe_mode(path, bool(on), self._log))
 
     # endregion
     # region friends

@@ -27,6 +27,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -34,6 +36,7 @@ from typing import Any
 import catalog
 import core
 import shared
+import signing  # a byte-identical copy of mods/bl4_mod_menu/signing.py
 
 # Same repository as the Mod Menu's updater (mods/bl4_mod_menu/updates.py REPO)
 REPO = "flameaway/bl4-fix"
@@ -45,6 +48,35 @@ MAX_EXE = 256 << 20
 CHUNK = 256 << 10
 # Tests serve releases from a local http server; real downloads must stay on https
 ALLOW_HTTP = False
+# The release keys a manifest must be signed by; None = signing.PUBLIC_KEYS (tests sign their own)
+TRUSTED_KEYS: tuple[str, ...] | None = None
+# The only hosts this app downloads from, like the Mod Menu (updates.github_url): GitHub and where
+# it serves release files after a redirect
+GITHUB_HOSTS = ("github.com",)
+GITHUB_DOMAINS = (".github.com", ".githubusercontent.com")
+
+
+def _github(url: str) -> bool:
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return False
+    if parts.username is not None or parts.password is not None:
+        return False
+    if parts.scheme == "http" and ALLOW_HTTP:
+        return host == "127.0.0.1"
+    return parts.scheme == "https" and (host in GITHUB_HOSTS or host.endswith(GITHUB_DOMAINS))
+
+
+class _GitHubRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201, PLR0913
+        if not _github(newurl):
+            raise urllib.error.HTTPError(newurl, code, "refused a redirect away from GitHub", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_GitHubRedirects())
 
 
 def manifest_url(repo: str = REPO) -> str:
@@ -64,10 +96,12 @@ def _vkey(version: str | None) -> tuple[int, ...]:
 
 
 def _get(url: str, limit: int, on_bytes: Any = None) -> bytes:
-    if not (url.startswith("https://") or (ALLOW_HTTP and url.startswith("http://"))):
-        raise RuntimeError(f"refusing a non-https download: {url}")
+    if not _github(url):
+        raise RuntimeError(f"refusing a download that isn't from GitHub: {url}")
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310
-    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as res:  # noqa: S310
+    with _OPENER.open(req, timeout=TIMEOUT_S) as res:
+        if not _github(res.geturl()):
+            raise RuntimeError(f"refusing a download that isn't from GitHub: {res.geturl()}")
         chunks, total = [], 0
         while chunk := res.read(CHUNK):
             total += len(chunk)
@@ -80,7 +114,22 @@ def _get(url: str, limit: int, on_bytes: Any = None) -> bytes:
 
 
 def fetch_manifest(url: str | None = None) -> dict[str, Any]:
-    manifest = json.loads(_get(url or manifest_url(), MAX_MANIFEST).decode("utf-8"))
+    """The release's manifest.json, once its signature by BL4 Fix's release key checks out
+    (signing.py, the Mod Menu's copy): the app it lists is only downloaded from a signed release."""
+    url = url or manifest_url()
+    data = _get(url, MAX_MANIFEST)
+    try:
+        signature = _get(url + signing.SIGNATURE_SUFFIX, 4096)
+    except urllib.error.HTTPError as ex:
+        ex.close()  # (its response would be left open: a ResourceWarning in the log)
+        if ex.code != 404:  # noqa: PLR2004
+            raise
+        raise RuntimeError("the newest release isn't signed by BL4 Fix's release key") from ex
+    try:
+        signing.verify(data, signature, TRUSTED_KEYS)
+    except signing.SignatureError as ex:
+        raise RuntimeError(str(ex)) from ex
+    manifest = json.loads(data.decode("utf-8"))
     if not isinstance(manifest, dict) or manifest.get("format") != MANIFEST_FORMAT:
         raise RuntimeError("the release's manifest.json is in a format this app doesn't know")
     if not isinstance(manifest.get("mods"), dict) or not isinstance(manifest.get("app"), dict) or not manifest.get("release"):

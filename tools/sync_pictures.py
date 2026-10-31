@@ -9,6 +9,10 @@ a long job), so they're kept in git instead of making every builder bake them. R
 bake, then commit assets/. Each folder and its small/ copies: index.json plus the pictures it lists,
 nothing else (raw/ and trials/ are bake scratch); pictures no longer listed are removed.
 --check only reports what would change (build.py runs it to warn about unsynced bakes).
+
+It also writes each mod's pictures.json (every picture in assets/ and its version): the mod
+compares it with the game folder and downloads the release's pictures when some are missing
+(Kairosdex fetch.py). build.py refuses a stale list.
 """
 
 from __future__ import annotations
@@ -32,6 +36,45 @@ def _index(folder: Path) -> dict[str, int]:
     except (OSError, ValueError):
         return {}
     return index if isinstance(index, dict) else {}
+
+
+LIST_NAME = "pictures.json"
+
+
+def list_text(info: catalog.ModInfo) -> str:
+    """The mod's pictures.json for what assets/ holds now: {folder: {picture: version}}."""
+    lists = {sub: _index(ASSETS / sub) for rel in info.assets for sub in (rel, f"{rel}/small")}
+    return json.dumps(lists, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def list_path(info: catalog.ModInfo) -> Path:
+    return REPO / info.source / info.id / LIST_NAME
+
+
+def stale_lists() -> list[str]:
+    """Mods whose pictures.json doesn't match assets/."""
+    stale = []
+    for info in catalog.MODS:
+        if not info.assets:
+            continue
+        try:
+            current = list_path(info).read_text(encoding="utf-8")
+        except OSError:
+            current = ""
+        if current != list_text(info):
+            stale.append(info.id)
+    return stale
+
+
+def write_lists() -> list[str]:
+    """Rewrites every stale pictures.json; returns the mods it changed."""
+    stale = stale_lists()
+    for mod_id in stale:
+        info = catalog.BY_ID[mod_id]
+        tmp = list_path(info).with_suffix(".tmp")
+        tmp.write_text(list_text(info), encoding="utf-8", newline="\n")
+        tmp.replace(list_path(info))
+    return stale
 
 
 def sync(game: Path, check: bool = False) -> list[str]:
@@ -70,6 +113,8 @@ def main() -> None:
     parser.add_argument("--check", action="store_true", help="only report what would change")
     args = parser.parse_args()
     changes = sync(args.game, args.check)
+    lists = stale_lists() if args.check else write_lists()
+    changes += [f"{mod_id}: {LIST_NAME} {'is stale' if args.check else 'rewritten'}" for mod_id in lists]
     for line in changes:
         print(line)
     if not changes:

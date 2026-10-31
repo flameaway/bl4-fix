@@ -7,6 +7,7 @@ build script, under `payload/`.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import hashlib
 import json
@@ -16,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import urllib.request
 import winreg
@@ -101,8 +103,9 @@ def is_admin() -> bool:
 # region Admin on demand
 #
 # The app runs as the player (no UAC prompt to start it). Only a few steps need admin: the firewall
-# rule, the VC++ runtime, and a game folder the player can't write to (Steam's own folders let
-# every user write). Those run in an elevated copy of this app (its CLI), behind one UAC prompt.
+# rule (netsh itself elevated, so the prompt names Windows' firewall tool: firewall.py), the VC++
+# runtime, and a game folder the player can't write to (Steam's own folders let every user write).
+# The last runs in an elevated copy of this app (its CLI), behind one UAC prompt.
 
 # Set by main.py in an elevated copy: never ask again from there (no prompt loops)
 NO_ELEVATE = False
@@ -816,19 +819,16 @@ def apply_firewall(game_dir: Path, log=print) -> None:  # noqa: ANN001
         config.firewall_applied = config.firewall_signature()
         config.save(friends_file(game_dir))
         return
-    if not is_admin():
-        log("Windows asks for admin to update the firewall rule...")
-        _run_self_elevated(["--apply-firewall", "--game", str(game_dir)], log)
-        return
+    run = _firewall_runner(log)
     if not config.firewall:
         # Off: take away the rule we added before
-        firewall.remove_rule()
+        firewall.remove_rule(run)
         log("Firewall: removed the BL4 Direct rule (turned off).")
         config.firewall_applied = config.firewall_signature()
         config.save(friends_file(game_dir))
         return
     ips = list(dict.fromkeys(f.address for f in config.friends if shared.is_ipv4(f.address)))
-    firewall.apply_rule(config.host_port, ips, config.allow_lan)
+    firewall.apply_rule(config.host_port, ips, config.allow_lan, run)
     config.firewall_applied = config.firewall_signature()
     config.save(friends_file(game_dir))
     log(
@@ -841,12 +841,19 @@ def remove_firewall_rule(log=print) -> None:  # noqa: ANN001
     """Takes our firewall rule away, if there is one (asks for admin then)."""
     if firewall.rule_summary() is None:
         return
+    firewall.remove_rule(_firewall_runner(log))
+    log("Removed the BL4 Direct firewall rule.")
+
+
+def _firewall_runner(log=print):  # noqa: ANN001, ANN202
+    """
+    None when this app is admin (netsh runs directly), else run_as_admin: the UAC prompt then shows
+    netsh ("Network Command Shell") with the rule in plain words, not this app (2026-10-30).
+    """
     if is_admin():
-        firewall.remove_rule()
-        log("Removed the BL4 Direct firewall rule.")
-    else:
-        log("Windows asks for admin to remove the firewall rule...")
-        _run_self_elevated(["--remove-firewall"], log)
+        return None
+    log(shared.UAC_HINT)
+    return run_as_admin
 
 
 def uninstall(game_dir: Path, remove_sdk: bool, log=print) -> None:  # noqa: ANN001
@@ -910,6 +917,7 @@ PAGE_MODULES: tuple[tuple[str, str, bool], ...] = (
     ("bl4_item_cards", "uilink", False),
     ("bl4_respec", "uilink", False),
     ("bl4_instant_tabs", "uilink", False),
+    ("bl4_item_pictures", "uilink", False),
 )
 # Loose scripts those pages load at once, which these mods publish from code that only runs in
 # game (it imports the SDK): (mod id, folder in the .sdkmod, folder under uiresources). Item
@@ -928,6 +936,7 @@ PAGE_SCRIPTS: tuple[tuple[str, str, str], ...] = (
     ("bl4_item_cards", "uilink/ui", "bl4link"),
     ("bl4_respec", "uilink/ui", "bl4link"),
     ("bl4_instant_tabs", "uilink/ui", "bl4link"),
+    ("bl4_item_pictures", "uilink/ui", "bl4link"),
 )
 
 
@@ -1033,6 +1042,219 @@ def set_skip_intro(game_dir: Path, on: bool, log=print) -> None:  # noqa: ANN001
     else:
         movies.restore(game_dir)
         log("Skip intro: off - the logo movies are back.")
+
+
+# endregion
+# region Safe mode
+#
+# "Start without other modders' mods": for when a mod breaks the game. Every mod in sdk_mods that
+# isn't in the catalog (and isn't the SDK's own) moves into sdk_mods/.bl4_safe_mode/, which the SDK
+# doesn't load (it skips dot entries); nothing is deleted. The record there lists what moved, by
+# the name it had in sdk_mods. The Mod Menu reads the same folder and record in game ("N mods set
+# aside"): keep the format. Safe mode is on while the record exists.
+
+SAFE_MODE_REL = Path("sdk_mods/.bl4_safe_mode")
+SAFE_MODE_RECORD = "safe_mode.json"
+SAFE_MODE_FORMAT = 1
+# The SDK's own entries in sdk_mods (oak2-sdk.zip and what it makes), never set aside
+SDK_OWN = frozenset({"mods_base", "console_mod_menu", "keybinds", "unrealsdk", "pyunrealsdk", "settings", "__main__.py"})
+
+
+def _other_mod_entry(entry: Path) -> bool:
+    """Whether an sdk_mods entry is a mod the SDK would load that isn't BL4 Fix's or the SDK's."""
+    name = entry.name
+    if name.startswith((".", "_")) or name.lower() in SDK_OWN:
+        return False
+    if entry.is_dir():
+        # The SDK skips folders with a dot in the name (not a valid module): nothing to set aside
+        mod_id = name if "." not in name else None
+    elif entry.is_file() and entry.suffix.lower() == ".sdkmod":
+        mod_id = entry.stem
+    else:
+        return False
+    return mod_id is not None and mod_id not in catalog.BY_ID and mod_id.lower() not in SDK_OWN
+
+
+def other_mods(game_dir: Path) -> list[str]:
+    """Other modders' mods in sdk_mods right now (names as they are there: foo.sdkmod, foo)."""
+    sdk_mods = game_dir / "sdk_mods"
+    try:
+        entries = sorted(sdk_mods.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        return []
+    return [e.name for e in entries if _other_mod_entry(e)]
+
+
+def _safe_mode_record(game_dir: Path) -> dict | None:
+    """The record (safe mode is on), or None. An unreadable record still counts as on."""
+    path = game_dir / SAFE_MODE_REL / SAFE_MODE_RECORD
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"format": SAFE_MODE_FORMAT, "moved": [], "time": 0}
+    if not isinstance(data, dict):
+        return {"format": SAFE_MODE_FORMAT, "moved": [], "time": 0}
+    moved = data.get("moved")
+    data["moved"] = [m for m in moved if isinstance(m, str) and m] if isinstance(moved, list) else []
+    return data
+
+
+def _safe_name(name: str) -> bool:
+    """A name from the record that stays one entry directly in sdk_mods (no paths smuggled in)."""
+    return bool(name) and name not in (".", "..") and "/" not in name and "\\" not in name and ":" not in name
+
+
+def _aside_entries(game_dir: Path) -> list[str]:
+    """What sits in the safe mode folder besides the record (and its temp file)."""
+    try:
+        entries = (game_dir / SAFE_MODE_REL).iterdir()
+        return sorted((e.name for e in entries if not e.name.startswith(SAFE_MODE_RECORD)), key=str.lower)
+    except OSError:
+        return []
+
+
+def safe_mode_status(game_dir: Path) -> dict:
+    """
+    on: the record exists. aside: what the record lists that is in the folder. missing: listed but
+    gone (moved back by hand). left: in the folder but not listed (a copy that couldn't go back
+    because sdk_mods had one again, or a move a crash didn't record). others: other modders' mods
+    in sdk_mods now (what turning it on would set aside). time: when it was turned on.
+    """
+    record = _safe_mode_record(game_dir)
+    present = _aside_entries(game_dir)
+    listed = record["moved"] if record else []
+    return {
+        "on": record is not None,
+        "aside": [n for n in listed if n in present],
+        "missing": [n for n in listed if n not in present],
+        "left": [n for n in present if n not in listed],
+        "others": other_mods(game_dir),
+        "time": (record or {}).get("time", 0),
+    }
+
+
+def set_safe_mode(game_dir: Path, on: bool, log=print) -> dict:  # noqa: ANN001
+    """
+    On: moves every other modder's mod into sdk_mods/.bl4_safe_mode and writes the record (turning
+    it on again sets aside mods added since). Off: moves them back, skipping (and reporting) any
+    whose name sdk_mods has again, then removes the record and the folder if it's empty.
+    Returns {"moved": [names], "skipped": [[name, reason]]}. Not while the game runs: it has the
+    mods open (and a mod moved under it would vanish mid-session).
+    """
+    if game_running():
+        raise RuntimeError("Close Borderlands 4 first.")
+    if _needs_admin_for(game_dir):
+        log("This user can't change the game folder: Windows asks for admin to change safe mode.")
+        _run_self_elevated(["--safe-mode", "on" if on else "off", "--game", str(game_dir)], log)
+        return {"moved": [], "skipped": [], "elevated": True}
+    sdk_mods = game_dir / "sdk_mods"
+    aside = game_dir / SAFE_MODE_REL
+    record_path = aside / SAFE_MODE_RECORD
+    moved: list[str] = []
+    skipped: list[list[str]] = []
+    if on:
+        record = _safe_mode_record(game_dir) or {"format": SAFE_MODE_FORMAT, "moved": []}
+        aside.mkdir(parents=True, exist_ok=True)
+        for name in other_mods(game_dir):
+            target = aside / name
+            if target.exists() or target.is_symlink():
+                skipped.append([name, "a copy with that name is already set aside"])
+                log(f"Left {name} in place: a copy with that name is already in {SAFE_MODE_REL.as_posix()}.")
+                continue
+            try:
+                (sdk_mods / name).rename(target)
+            except OSError as ex:
+                skipped.append([name, f"couldn't move it ({ex.strerror or ex})"])
+                log(f"Couldn't set {name} aside: {ex}")
+                continue
+            moved.append(name)
+        # Keep what's still set aside from before; drop names put back by hand since
+        listed = [n for n in record["moved"] if n not in moved and _safe_name(n) and (aside / n).exists()]
+        _write_json(record_path, {"format": SAFE_MODE_FORMAT, "moved": [*listed, *moved], "time": int(time.time())})
+        total = len(listed) + len(moved)
+        log(f"Safe mode on: {total} mod{'' if total == 1 else 's'} by other modders set aside"
+            f" ({len(moved)} now). BL4 Fix's mods keep working.")
+        return {"moved": moved, "skipped": skipped}
+
+    record = _safe_mode_record(game_dir)
+    listed = [n for n in (record["moved"] if record else []) if _safe_name(n)]
+    # Also anything else in the folder: a copy an earlier Off couldn't put back, or a move a crash
+    # left unrecorded
+    for name in dict.fromkeys([*listed, *_aside_entries(game_dir)]):
+        source, target = aside / name, sdk_mods / name
+        if not (source.exists() or source.is_symlink()):
+            continue  # already moved back by hand
+        if target.exists() or target.is_symlink():
+            skipped.append([name, "sdk_mods has one with that name again"])
+            log(f"Kept {name} aside: sdk_mods has one with that name again (it's still in {SAFE_MODE_REL.as_posix()}).")
+            continue
+        try:
+            source.rename(target)
+        except OSError as ex:
+            skipped.append([name, f"couldn't move it back ({ex.strerror or ex})"])
+            log(f"Couldn't put {name} back: {ex}")
+            continue
+        moved.append(name)
+    record_path.unlink(missing_ok=True)
+    with contextlib.suppress(OSError):
+        aside.rmdir()  # only when empty
+    log(f"Safe mode off: {len(moved)} mod{'' if len(moved) == 1 else 's'} put back"
+        + (f", {len(skipped)} left aside." if skipped else "."))
+    return {"moved": moved, "skipped": skipped}
+
+
+# endregion
+# region Bug reports
+#
+# The Mod Menu's report.py builds the zip (versions, errors, logs, the newest crash, mods and
+# their settings, private details masked). The app runs it with the game closed, for when the game
+# won't start: the installed Mod Menu's copy (it matches the files the game writes), else this
+# app's payload copy. Like the page modules, without the mod's __init__ (which needs the game).
+
+REPORT_ENTRY = "bl4_mod_menu/report.py"
+
+
+def _report_module(game_dir: Path):  # noqa: ANN202
+    import types  # noqa: PLC0415
+
+    sources = [game_dir / "sdk_mods" / "bl4_mod_menu.sdkmod", payload_mod("bl4_mod_menu")]
+    for sdkmod in sources:
+        try:
+            with zipfile.ZipFile(sdkmod) as zf:
+                code = zf.read(REPORT_ENTRY)
+        except (OSError, KeyError, zipfile.BadZipFile):
+            continue  # missing, or a Mod Menu from before bug reports
+        module = types.ModuleType("_bl4setup_report")
+        module.__file__ = f"{sdkmod}/{REPORT_ENTRY}"
+        exec(compile(code, module.__file__, "exec"), module.__dict__)  # noqa: S102 - our own mod's file
+        return module
+    source = Path(__file__).resolve().parents[1] / "mods" / REPORT_ENTRY
+    if not getattr(sys, "frozen", False) and source.is_file():  # run from the repo, payload not rebuilt yet
+        module = types.ModuleType("_bl4setup_report")
+        module.__file__ = str(source)
+        exec(compile(source.read_bytes(), str(source), "exec"), module.__dict__)  # noqa: S102
+        return module
+    raise RuntimeError("No Mod Menu with bug reports found: Install (or repair) BL4 Fix first.")
+
+
+def bug_report(game_dir: Path, out_dir: Path | None = None, log=print) -> tuple[Path, str]:  # noqa: ANN001
+    """Builds a report zip (default: sdk_mods/.bug_reports). Returns it and the GitHub issue link."""
+    if not is_game_dir(game_dir):
+        raise RuntimeError(f"{game_dir} doesn't look like a Borderlands 4 install")
+    report = _report_module(game_dir)
+    log("Collecting versions, errors, logs and the newest crash...")
+    path = report.build(game_dir, out_dir)
+    log(f"Done. Report saved: {path}")
+    return path, report.issue_url(path)
+
+
+def show_report(path: Path) -> None:
+    """Opens Explorer with the report selected."""
+    # One string, not a list: subprocess quotes the whole "/select,<path with spaces>", and Explorer
+    # ignores a quoted /select and opens Documents
+    subprocess.Popen(f'explorer.exe /select,"{os.path.normpath(path)}"', creationflags=subprocess.CREATE_NO_WINDOW)  # noqa: S603, S607
 
 
 # endregion

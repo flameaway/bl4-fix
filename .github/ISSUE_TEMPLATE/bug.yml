@@ -1,0 +1,67 @@
+name: Bug report
+description: Something in a BL4 Fix mod doesn't work, shows an error or crashes the game.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The quickest way to a fix is the report zip:
+        **in game: Mod Menu (F7, or MODS in the pause menu) > Report a problem**, or if the game won't start,
+        **BL4 Fix Setup > System > Report a problem**. It holds the versions, errors, logs and the newest
+        crash, with your user name, IPs and account ids masked. Nothing is sent anywhere on its own.
+  - type: input
+    id: mods
+    attributes:
+      label: Which mod(s)?
+      description: The mod(s) the problem is in, if you know (e.g. Minimap, Reroll).
+      placeholder: Minimap
+  - type: dropdown
+    id: role
+    attributes:
+      label: Playing solo or in co-op?
+      options:
+        - Solo
+        - Co-op, I was the host
+        - Co-op, I joined someone (client)
+        - At the title screen / the game didn't start
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you do?
+      description: The steps that lead to the problem.
+      placeholder: |
+        1. Opened the map
+        2. Pressed N
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+      description: The error, crash or wrong behaviour you saw. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: textarea
+    id: report
+    attributes:
+      label: Report zip
+      description: Drag the zip from "Report a problem" into this box (it opens the folder for you).
+      placeholder: bl4fix-report-....zip
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: Filled in for you when you came here from "Report a problem". Otherwise the game build and your mod versions (Mod Menu > a mod's page).
+      render: text
+  - type: textarea
+    id: others
+    attributes:
+      label: Other mods installed
+      description: Mods that aren't BL4 Fix's (other .sdkmod files, pak mods in Paks/~mods).

@@ -106,6 +106,8 @@ class App(tk.Tk):
         ttk.Button(buttons, text="Install / Apply", command=self.install).pack(side="left")
         ttk.Button(buttons, text="Refresh", command=self.refresh_status).pack(side="left", padx=4)
         ttk.Button(buttons, text="Uninstall...", command=self.uninstall).pack(side="right")
+        ttk.Button(buttons, text="Report a problem", command=self.bug_report).pack(side="right", padx=4)
+        ttk.Button(buttons, text="Safe mode...", command=self.safe_mode).pack(side="right")
 
         ttk.Label(frame, text="Log:").pack(anchor="w", padx=8)
         self.log_text = tk.Text(frame, height=8, wrap="word", state="disabled", font=("Consolas", 9))
@@ -233,6 +235,50 @@ class App(tk.Tk):
         if remove_sdk is None:
             return
         self._run_task("Uninstall", lambda: core.uninstall(game, bool(remove_sdk), self.log))
+
+    def safe_mode(self) -> None:
+        """Safe mode on/off (core.set_safe_mode): other modders' mods set aside, not deleted."""
+        game = self.game()
+        if not game or self.busy:
+            return
+        st = core.safe_mode_status(game)
+        why = (
+            "For when a mod breaks the game: sets every mod that isn't BL4 Fix's aside (not deleted)"
+            " until you turn this off. BL4 Fix's mods keep working."
+        )
+        if st["on"]:
+            names = ", ".join(st["aside"]) or "none"
+            question = f"Safe mode is on: {len(st['aside'])} set aside ({names}).\n\nTurn it off and put them back?"
+        else:
+            names = ", ".join(st["others"]) or "none"
+            question = f"{why}\n\nOther modders' mods installed: {len(st['others'])} ({names}).\n\nTurn safe mode on?"
+        if not messagebox.askyesno("BL4 Fix: Safe mode", question):
+            return
+        on = not st["on"]
+        self._run_task("Safe mode " + ("on" if on else "off"), lambda: core.set_safe_mode(game, on, self.log))
+
+    def bug_report(self) -> None:
+        """A bug report zip (the Mod Menu's report.py), shown in Explorer, then the GitHub issue."""
+        game = self.game()
+        if not game or self.busy:
+            return
+
+        def offer(path: Path, url: str) -> None:
+            core.show_report(path)
+            if messagebox.askyesno(
+                "BL4 Fix",
+                f"Saved as {path.name} (Explorer shows it now). Your user name, IPs and account ids are masked;"
+                " nothing was sent.\n\nOpen a new GitHub issue to attach it?",
+            ):
+                import os  # noqa: PLC0415
+
+                os.startfile(url)  # noqa: S606
+
+        def run() -> None:
+            path, url = core.bug_report(game, log=self.log)
+            self.on_ui(lambda: offer(path, url))
+
+        self._run_task("Bug report", run)
 
     # endregion
     # region Friends tab

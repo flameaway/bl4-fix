@@ -150,8 +150,7 @@ def main() -> int:
     out.mkdir(parents=True)
 
     sdkmod = out / f"{info.id}.sdkmod"
-    extra = {"LICENSE": REPO_ROOT / "ported" / "LICENSE"} if info.source == "ported" else None
-    build.build_sdkmod(src, sdkmod, extra)
+    build.build_sdkmod(src, sdkmod, catalog.license_files(info, REPO_ROOT))
     digest = hashlib.sha256(sdkmod.read_bytes()).hexdigest()
     published = published_sha256(info.id, version)
     if published is None:
