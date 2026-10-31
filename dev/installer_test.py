@@ -31,6 +31,7 @@ core.firewall.apply_rule = lambda port, ips, lan, run=None: (
 )
 core.firewall.remove_rule = lambda run=None: firewall_runs.append(run) or firewall_calls.append(("remove",)) or "ok"
 core.firewall.rule_summary = lambda: None  # no rule yet; tests switch it to "stubbed" once one exists
+core.firewall.rule_is_current = lambda spec: False  # never read the real firewall; one test says True
 core.is_admin = lambda: True  # never a real UAC prompt from tests (elevation is stubbed below)
 elevated_calls: list[list[str]] = []
 core._run_self_elevated = lambda args, log=print: elevated_calls.append(list(args))  # noqa: SLF001
@@ -145,6 +146,15 @@ def main() -> int:
         check(len(firewall_calls) == calls + 1 and firewall_runs[-1] is core.run_as_admin and len(elevated_calls) == n,
               f"not admin: firewall rule through netsh's own UAC prompt {firewall_runs[-1:]}")
         check(shared.UAC_HINT in logs, "not admin: the log names the prompt (Network Command Shell)")
+        # The rule in Windows already matches: a repair asks for nothing
+        asked: list[dict] = []
+        core.firewall.rule_is_current = lambda spec: asked.append(spec) is None
+        calls, hints = len(firewall_calls), logs.count(shared.UAC_HINT)
+        core.install(game, log)
+        check(len(firewall_calls) == calls and logs.count(shared.UAC_HINT) == hints and asked
+              and asked[-1]["port"] == 7777 and core.load_config(game).firewall_up_to_date(),
+              "not admin, rule already current: a repair asks for no admin and stays up to date")
+        core.firewall.rule_is_current = lambda spec: False
         cfg = core.load_config(game)
         cfg.firewall = False
         cfg.save(core.friends_file(game))

@@ -819,22 +819,23 @@ def apply_firewall(game_dir: Path, log=print) -> None:  # noqa: ANN001
         config.firewall_applied = config.firewall_signature()
         config.save(friends_file(game_dir))
         return
-    run = _firewall_runner(log)
     if not config.firewall:
         # Off: take away the rule we added before
-        firewall.remove_rule(run)
+        firewall.remove_rule(_firewall_runner(log))
         log("Firewall: removed the BL4 Direct rule (turned off).")
         config.firewall_applied = config.firewall_signature()
         config.save(friends_file(game_dir))
         return
     ips = list(dict.fromkeys(f.address for f in config.friends if shared.is_ipv4(f.address)))
-    firewall.apply_rule(config.host_port, ips, config.allow_lan, run)
+    allowed = ", ".join(["this PC", *(["your local network/VPN"] if config.allow_lan else []), *ips])
+    if firewall.rule_is_current(shared.firewall_rule(config.host_port, ips, config.allow_lan)):
+        # Windows has this exact rule already: a repair or an update asks for no admin
+        log(f"Firewall: already up to date (UDP {config.host_port} only accepts {allowed}).")
+    else:
+        firewall.apply_rule(config.host_port, ips, config.allow_lan, _firewall_runner(log))
+        log(f"Firewall: UDP {config.host_port} only accepts {allowed}")
     config.firewall_applied = config.firewall_signature()
     config.save(friends_file(game_dir))
-    log(
-        f"Firewall: UDP {config.host_port} only accepts "
-        + ", ".join(["this PC", *(["your local network/VPN"] if config.allow_lan else []), *ips]),
-    )
 
 
 def remove_firewall_rule(log=print) -> None:  # noqa: ANN001

@@ -47,6 +47,20 @@ def apply_rule(port: int, allowed_ips: Iterable[str], allow_lan: bool, run: Runn
     return _apply(shared.firewall_rule(port, allowed_ips, allow_lan), run)
 
 
+def rule_is_current(spec: dict) -> bool:
+    """
+    Whether Windows already has exactly this rule (no admin needed to read it): our one rule, by its
+    name, with this spec's description, which spells out the port, the local network choice and
+    every allowed IP the blocked ranges are made from. Then applying it again would ask for UAC
+    to change nothing. False when the firewall can't be read.
+    """
+    try:
+        rules = shared.find_rules()
+    except RuntimeError:
+        return False
+    return rules == [(spec["name"], spec["description"])]
+
+
 def remove_rule(run: Runner | None = None) -> str:
     """Deletes our firewall rule, if there is one. Needs admin: this app's, or `run`'s prompt."""
     return _apply({"group": RULE_GROUP, "port": 0}, run)
