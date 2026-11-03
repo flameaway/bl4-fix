@@ -35,6 +35,10 @@ from . import scene
 
 FOLDER: Path = SETTINGS_DIR / "minimap_icons"
 SNAPSHOT_DELAY_S = 1.0  # after the map opens: let it finish placing its icons and route
+# ... but it keeps placing some later: rift / world events were missing from five reads 1 s in
+# (548 icons, 2026-11-02 World_P) and there in one taken later (642 icons, two ico_world_events).
+# So while the map stays open its icons are read again this often (saved only when they changed).
+ICON_REREAD_S = 2.0
 # Every icon actor on the map is an OakMapViewerPOI (seen: BP_MapPOI_StandardIcon_C,
 # _StandardAreaIcon_C, _VaultTrackerAreaIcon_C, _PlayerIcon_C). Players are drawn live (markers.py).
 POI_CLASS = "OakMapViewerPOI"
@@ -251,6 +255,7 @@ class MapData:
     snapped = False  # read this opening already
     snap_pin: tuple[float, float, float] | None = None  # the pin when we last read (or None)
     resnap_at = 0.0  # read again at this time (the pin changed with the map open); 0: no
+    reread_at = 0.0  # next read of the open map's icons (ICON_REREAD_S)
     version = 0  # bumped when icons or routes change
     paths: list[WeakPointer] = []  # noqa: RUF012  # the open map's route actors
     route_sig: tuple[Any, ...] = ()  # what the route actors showed when last read (`_signature`)
@@ -379,13 +384,18 @@ class MapData:
         if routes is None:
             routes = cls.routes  # lines the game has just reset: keep what we read before
         yield
+        cls.reread_at = time.monotonic() + ICON_REREAD_S
+        route_pin = (pin[0], pin[1]) if pin is not None else None
+        if (not icons or icons == cls.icons) and routes == cls.routes and route_pin == cls.route_pin:
+            return  # the same as last read (the rereads while the map stays open, mostly)
         if icons:
             cls.icons = icons
         cls.routes = routes
-        cls.route_pin = (pin[0], pin[1]) if pin is not None else None
+        cls.route_pin = route_pin
         cls._save()
         cls.version += 1
-        scene.log(f"map data: {len(icons)} icons, {len(routes)} route(s)")
+        after = time.monotonic() - cls.opened_at if cls.opened_at else 0.0
+        scene.log(f"map data: {len(icons)} icons, {len(routes)} route(s), {after:.1f} s after the map opened")
 
     @classmethod
     def _routes_job(cls, paths: list[WeakPointer], pc: WeakPointer,
@@ -504,7 +514,7 @@ class MapData:
             cls.snap_pin = pin
             cls.resnap_at = now + RESNAP_DELAY_S
             cls.changed_at = now
-        elif cls.resnap_at and now >= cls.resnap_at:
+        elif (cls.resnap_at and now >= cls.resnap_at) or (cls.snapped and now >= cls.reread_at):
             cls.resnap_at = 0.0
             cls._start(cls._snapshot_job(WeakPointer(pc), pin))
             cls.poll_at = now + ROUTE_POLL_S

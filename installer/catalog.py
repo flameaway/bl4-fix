@@ -89,7 +89,7 @@ MODS: tuple[ModInfo, ...] = (
     ModInfo("bl4_uvh_teleport", "UVH Boss Teleport", "Hover a UVH boss challenge and press T to go there.", ui_dirs=("bl4uvhtp",), link=True),
     ModInfo("bl4_instant_travel", "Instant Fast Travel", "Fast travel on the same map without the portal."),
     ModInfo("bl4_unstuck", "Unstuck", "Frees a character stuck floating and puts it on the nearest respawn station."),
-    ModInfo("bl4_minimap", "Minimap", "A minimap with the ECHO map's art, fog, icons and route (N)."),
+    ModInfo("bl4_minimap", "Minimap", "A minimap with the ECHO map's art, fog, icons and route (N).", ui_dirs=("bl4minimap",), link=True),
     ModInfo("bl4_third_person", "Third Person", "H: over-the-shoulder camera with aiming."),
     ModInfo("bl4_sprint_toggle", "Sprint Toggle", "One press keeps you sprinting (after stops, shots, aiming), the next walks. Pick its key in the Mod Menu."),
     ModInfo("bl4_vehicles_anywhere", "Vehicles Anywhere", "Summon and drive where vehicles aren't allowed."),

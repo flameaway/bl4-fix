@@ -87,6 +87,20 @@ RETRY_GAPS_S = (15.0, 60.0, 180.0)  # refilms of a blurry tile per visit, this l
 GAMMA_CAPTURE = scene.TARGET_GAMMA
 GAMMA_LOADED = 2.2
 BLEND_OPAQUE = 0
+# Page mode (the minimap drawn in the HUD page, page.py). The page shows a PNG's bytes as they are,
+# where UMG sRGB-encodes a texture's values first, so the UMG tiles (TargetGamma 1/2.2) came out
+# much darker there (mean (11,22,14) vs ~(64,84,65) on screen). Page tiles are filmed with TargetGamma
+# 1 (the big map's own linear values, what the ECHO menu shows) into their own folder (PAGE_SUFFIX
+# on the fog key). They're written with the engine's async image writer (ImageWriteBlueprintLibrary
+# .ExportToDisk: ~0.1 ms on the game thread, the readback on the render thread, the PNG on a worker;
+# byte-exact with ExportRenderTarget, 2026-11-02), so a fresh tile reaches the page during play: a
+# preview after PREVIEW_AFTER captures (under fresh/), the final one after the last settle capture.
+GAMMA_PAGE = 1.0
+PAGE_SUFFIX = "_g1"
+PAGE_FILM_SLOTS = 16
+PREVIEW_AFTER = 2  # settle captures before the preview export
+EXPORT_CHECK_S = 0.15  # how often a written PNG is looked at until its size holds
+PNG_FORMAT = 0  # EDesiredImageFormat.PNG
 
 
 def _v2(x: float, y: float) -> Any:
@@ -272,6 +286,15 @@ class Tiles:
     char: str | None = None  # scene_character's last answer (CHAR_CHECK_S)
     char_at = 0.0
     char_world = ""  # the level `char` was read in
+    # Page mode (page_tick): the session's tiles are for the HUD page
+    page = False
+    page_rev = 0  # bumps whenever page_list() would answer differently
+    versions: dict[str, int] = {}  # tile name -> times written this session (the page's cache key)
+    fresh: dict[str, int] = {}  # tile name -> preview version, until its final PNG is there
+    # Async exports being written: name -> [path, next look, last size seen, final?]
+    pending: dict[str, list[Any]] = {}
+    writer: Any = None  # ImageWriteBlueprintLibrary's default object
+    write_options: Any = None
 
     # region Session
 
@@ -288,6 +311,9 @@ class Tiles:
         cls.drop()
         cls.session = session
         char, world, fog_key, north, tile_world = session
+        cls.page = fog_key.endswith(PAGE_SUFFIX)
+        cls.versions, cls.fresh, cls.pending = {}, {}, {}
+        cls.page_rev += 1
         cls.north, cls.world = north, tile_world
         size = "" if tile_world == TILE_WORLD else f"_t{round(tile_world / 100)}"
         cls.folder = FOLDER / f"{char}_{world}_{fog_key}_n{round(north)}{size}"
@@ -340,6 +366,9 @@ class Tiles:
         cls.tiles = {}
         cls.session = None
         cls.version += 1
+        cls.page = False
+        cls.versions, cls.fresh, cls.pending = {}, {}, {}
+        cls.page_rev += 1
 
     # endregion
     # region Fog digests
@@ -431,6 +460,7 @@ class Tiles:
         if stale:
             cls._write_index()
             cls.version += 1
+            cls.page_rev += 1
             scene.log(f"tiles: fog changed under {stale} tile(s)")
 
     # endregion
@@ -501,9 +531,11 @@ class Tiles:
         empty = next((s for s in mine if s.key is None), None)
         if empty is not None:
             return empty
-        if len(mine) < (FILM_SLOTS if kind == "film" else LOAD_SLOTS):
+        limit = (PAGE_FILM_SLOTS if cls.page else FILM_SLOTS) if kind == "film" else LOAD_SLOTS
+        if len(mine) < limit:
             size = TILE_PX
-            capture, target = scene.Scene.make_capture(pc, size, GAMMA_CAPTURE if kind == "film" else GAMMA_LOADED)
+            gamma = (GAMMA_PAGE if cls.page else GAMMA_CAPTURE) if kind == "film" else GAMMA_LOADED
+            capture, target = scene.Scene.make_capture(pc, size, gamma)
             slot = _Slot(capture, target, kind)
             cls.slots.append(slot)
             return slot
@@ -592,6 +624,7 @@ class Tiles:
         cls.index.get("sharp", {}).pop(name, None)
         cls._write_index()
         cls._queue_check(name)
+        cls.page_rev += 1
 
     # endregion
     # region Per frame
@@ -641,7 +674,10 @@ class Tiles:
         """While the game is paused (a menu is open): saves finished tiles, one at a time."""
         if cls.session is not None:
             cls._apply_checks()
-            cls._save_one(pc)
+            if cls.page and cls.writer is not False:
+                cls._check_pending(time.monotonic())  # page tiles are written as they're filmed
+            else:
+                cls._save_one(pc)
 
     @classmethod
     def tick(
@@ -768,6 +804,176 @@ class Tiles:
                                   _v2(1 - 2 * inset, 1 - 2 * inset), white, BLEND_OPAQUE, 0.0, _v2(0.5, 0.5))  # fmt: skip
         krl.EndDrawCanvasToRenderTarget(pc, ctx)
         return True
+
+    # endregion
+    # region Page mode
+
+    @classmethod
+    def page_tick(
+        cls, pc: UObject, x: float, y: float, half: float, north: float, *,
+        fog_on: bool, strength: float, paused: bool,
+    ) -> None:  # fmt: skip
+        """
+        Page mode, every frame (the minimap drawn in the HUD page): films the tiles a square of
+        `half` around the player touches that aren't on disk yet, writes them as PNGs (async) and
+        lets the page know (page_list). Nothing is loaded into the game: the page loads the PNGs.
+        Any range works (the page shows as many tiles as it needs).
+        """
+        world = scene.Scene.world_name
+        now = time.monotonic()
+        cls.idle = False
+        if world != cls.char_world or now >= cls.char_at:
+            cls.char, cls.char_at, cls.char_world = scene_character(pc), now + CHAR_CHECK_S, world
+        char = cls.char
+        tile_world = cls._tile_world(world)
+        if not world or char is None or not scene.Scene.in_viewer:
+            if cls.session is not None:
+                cls.drop()
+            return
+        fog_key = (f"fog{round(strength * 100)}" if fog_on else "nofog") + PAGE_SUFFIX
+        session = (char, world.lower(), fog_key, round(north, 1), tile_world)
+        if session != cls.session:
+            cls._open(session)
+        cls._check_fog(char, world.lower(), fog_on)
+        if cls.check_results:
+            cls._apply_checks()
+        if cls.pending:
+            cls._check_pending(now)
+        if paused or now < cls.next_action:
+            return
+        # Film again what's still sharpening; write a preview and the final picture on the way
+        for tile in cls.tiles.values():
+            if tile.settle and now >= tile.settle[0]:
+                tile.settle.pop(0)
+                cls._film(tile)
+                done = len(SETTLE_AT_S) - len(tile.settle)
+                if not tile.settle:
+                    cls._export(tile, final=True)
+                elif done == PREVIEW_AFTER:
+                    cls._export(tile, final=False)
+                cls.next_action = now + ACTION_GAP_S
+                return
+        if cls.worker is not None:
+            return  # the fog mask is being read: digests aren't known yet
+        if fog_on and scene.Scene.extra() is None and cls.mask_stamp is not None:
+            return  # there's a saved fog mask but fog.py hasn't put its plane up yet: tiles would lack it
+        wanted = cls._cover(x, y, half, north)
+        wanted_set = set(wanted)
+        cls.next_action = now + ACTION_GAP_S
+        for key in wanted:
+            tile = cls.tiles.get(key)
+            if tile is not None:
+                tile.slot.used = now
+                continue
+            name = f"{key[0]}_{key[1]}"
+            on_disk = name in cls.index["tiles"] and cls.index["tiles"][name] == cls.digest(key)
+            due = cls.low.get(name)
+            if on_disk and (due is None or now < due):
+                continue  # the page shows it from disk
+            if name in cls.pending:
+                continue  # being written
+            slot = cls._slot(pc, "film", wanted_set)
+            if slot is None:
+                return  # every film slot holds a tile that's still settling
+            if on_disk:  # a blurry one, due again (shown as it is meanwhile)
+                del cls.low[name]
+                cls.tries[name] = cls.tries.get(name, 0) + 1
+            tile = _Tile(key, slot, cls.digest(key))
+            slot.key = key
+            cls.tiles[key] = tile
+            cls._film(tile)
+            tile.settle = [now + d for d in SETTLE_AT_S]
+            return
+        cls.idle = not cls.tiles and not cls.pending
+
+    @classmethod
+    def _export(cls, tile: _Tile, *, final: bool) -> None:
+        """Starts writing a tile's picture (the engine's async writer: nothing waits for it)."""
+        target = tile.slot.target()
+        if target is None or cls.folder is None:
+            return
+        name = f"{tile.key[0]}_{tile.key[1]}"
+        folder = cls.folder if final else cls.folder / "fresh"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as ex:
+            scene.log(f"tiles: couldn't make {folder}: {ex!r}")
+            return
+        path = folder / f"{name}.png"
+        if cls.writer is False:
+            return
+        if cls.writer is None:
+            try:
+                cls.writer = unrealsdk.find_class("ImageWriteBlueprintLibrary").ClassDefaultObject
+            except ValueError:
+                cls.writer = False
+            if not cls.writer:
+                # (a game patch without the engine's async writer: tiles are saved while paused,
+                # like the UMG mode's, and reach the page then)
+                scene.log("tiles: no async image writer, page tiles are saved while paused")
+                return
+            options = unrealsdk.make_struct("ImageWriteOptions")
+            options.Format = PNG_FORMAT
+            options.bOverwriteFile = True
+            options.bAsync = True
+            cls.write_options = options
+        try:
+            path.unlink(missing_ok=True)  # (so a size that holds means this write is done)
+        except OSError:
+            pass
+        cls.writer.ExportToDisk(target, str(path), cls.write_options)
+        cls.pending[name] = [path, time.monotonic() + EXPORT_CHECK_S, -1, final, tile.digest]
+
+    @classmethod
+    def _check_pending(cls, now: float) -> None:
+        """A written PNG counts once its size held between two looks (the writer works on a worker)."""
+        for name, entry in list(cls.pending.items()):
+            path, at, last, final, digest = entry
+            if now < at:
+                continue
+            entry[1] = now + EXPORT_CHECK_S
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = -1
+            if size <= 0 or size != last:
+                entry[2] = size
+                if now - at > 10.0:  # never came: forget it (filmed again when wanted)
+                    del cls.pending[name]
+                continue
+            del cls.pending[name]
+            cls.versions[name] = cls.versions.get(name, 0) + 1
+            if final:
+                cls.index["tiles"][name] = digest
+                cls.index.get("sharp", {}).pop(name, None)
+                cls._write_index()
+                cls._queue_check(name)
+                cls.fresh.pop(name, None)
+                # The page shows it from disk now: the film slot is free
+                key = tuple(int(n) for n in name.split("_"))
+                tile = cls.tiles.get(key)
+                if tile is not None and not tile.settle:
+                    tile.slot.key = None
+                    del cls.tiles[key]
+                try:
+                    (path.parent / "fresh" / path.name).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            elif name not in cls.index["tiles"]:  # (a blurry tile filmed again: the old one shows till the new is done)
+                cls.fresh[name] = cls.versions[name]
+            cls.page_rev += 1
+
+    @classmethod
+    def page_list(cls) -> dict[str, Any]:
+        """What the page needs to draw this session's tiles: name -> "d<version>" (on disk) or
+        "f<version>" (a preview under fresh/)."""
+        names: dict[str, str] = {}
+        for name in cls.index.get("tiles", {}) if cls.session is not None else ():
+            names[name] = f"d{cls.versions.get(name, 0)}"
+        for name, version in cls.fresh.items():
+            if name not in names:
+                names[name] = f"f{version}"
+        return {"world": cls.world, "north": cls.north, "px": TILE_PX, "margin": MARGIN_PX, "tiles": names}
 
     # endregion
 
