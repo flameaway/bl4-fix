@@ -235,6 +235,8 @@ def act(action: dict[str, Any]) -> None:
             # Opening an item rolls one at once
             if S.shown and not roll.S.results.get(S.shown) and not roll.S.status.get(S.shown):
                 roll.request(S.shown, 1)
+            elif S.shown:
+                roll.ensure_picture(S.shown)  # its picture is the roll's, never the baked one
         case "hover":
             item = action.get("item")
             S.hover = item if isinstance(item, str) and item in data.dex()["items"] else None

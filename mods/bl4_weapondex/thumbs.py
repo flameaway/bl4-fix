@@ -81,8 +81,14 @@ PRERENDER_CVAR = "OakUI.Thumbnails.NumPreRenderItemThumbnails"
 PRERENDER = 12
 RETRIES = 2
 KEEP_BUFFERS = 64  # _keep
-SHOT_LOOK_S = 0.05  # a roll's picture: looked for often (cheap memory reads), read as soon as it's there
-SHOT_SETTLE_S = 0.1
+# A roll's picture is looked for every tick (a cheap memory read; ticks run every frame while one is
+# pending) and handed on as soon as it's there: the page shows the game's render target itself, live,
+# so nothing is read back and there's nothing to wait for (it was 0.05 s / 0.1 s: ~170 ms a picture)
+SHOT_LOOK_S = 0.0
+SHOT_SETTLE_S = 0.0
+# Not used for these: the bake's pace (_pace) while several are queued. Tried for the parts screen
+# (2026-11-03, game 25844, weapons with 8-12 parts): its pictures took 1.6-2.3 s against 0.9-1.0 s at
+# the game's own pace (most likely the 12 pre-render attempts an item, for pictures that ask for few).
 
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _k32.GetModuleHandleW.restype = ctypes.c_void_p

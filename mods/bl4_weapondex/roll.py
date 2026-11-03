@@ -162,7 +162,24 @@ def state(key: str | None) -> dict[str, Any] | None:
 
     picture = thumbs.follow(picture)
     path = picture["path"] if picture else None
-    return {"item": key, "status": S.status.get(key, ""), "rolls": shown, "picture": path}
+    # coming: a picture is on its way (the page waits for it instead of showing the baked one)
+    coming = path is None and (key in thumbs.Shots.pending or (S.status.get(key) == "rolling" and key not in S.no_picture))
+    return {"item": key, "status": S.status.get(key, ""), "rolls": shown, "picture": path, "coming": coming}
+
+
+def ensure_picture(key: str) -> None:
+    """
+    The item is shown: its latest roll gets a picture if it has none (rolled for a hover card, or
+    the manager dropped it, past ~100 pictures). Game thread.
+    """
+    from . import thumbs  # noqa: PLC0415 - it imports this module
+
+    S.no_picture.discard(key)
+    rolls = S.results.get(key)
+    if not rolls or key in thumbs.Shots.pending or S.status.get(key) == "rolling":
+        return
+    if thumbs.follow(S.pictures.get(key)) is None and thumbs.shoot(key, rolls[-1]["serial"]):
+        _changed()
 
 
 def drop_hover_requests(keep: str | None) -> None:
@@ -361,8 +378,11 @@ def tick() -> None:
         _fail(key, result)
         return
     S.latency = [*S.latency, round((time.perf_counter() - started) * 1000, 2)][-20:]
-    # Its inventory picture: the game renders it from the serial (thumbs.py)
-    if key not in S.no_picture:
+    # Its inventory picture: the game renders it from the serial (thumbs.py). Only the last roll of a
+    # burst ("Roll 10"): the page shows the latest one, and the manager draws one at a time, so the
+    # last picture waited behind nine nobody saw (~1.1 s for the 10th, measured 2026-11-03)
+    more = any(k == key and n > 1 for k, n in S.queue)
+    if key not in S.no_picture and not more:
         thumbs.shoot(key, result["serial"])
     rolls = S.results.setdefault(key, [])
     rolls.append(result)

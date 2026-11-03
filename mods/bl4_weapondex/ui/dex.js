@@ -442,16 +442,31 @@
     }
 
     // The latest roll's own picture (roll.py renders it like the inventory: the game's own render
-    // target), else the baked one; null with neither
+    // target). A found item waits for it (the game renders it in ~0.1-0.2 s) instead of showing the
+    // baked picture first: the baked one only for items not found yet (their silhouette), or when no
+    // roll picture is coming (none can be made here, no character). null: nothing to show (yet).
     function itemPictureFor(item, shown) {
-        var roll = shown && state && state.roll && state.roll.item === item.key ? state.roll.picture : null;
-        if (roll) return "url(TextureRenderTarget2D'" + roll + "')";
+        var roll = shown && state && state.roll && state.roll.item === item.key ? state.roll : null;
+        if (roll && roll.picture) return "url(TextureRenderTarget2D'" + roll.picture + "')";
+        if (rollPictureWait(item, shown)) return null;
         return dex.itemPictures && dex.itemPictures[item.key] ? itemPictureUrl(item.key, false) : null;
+    }
+    // Shown, and its roll's picture is on its way (or Python hasn't answered the click yet)
+    function rollPictureWait(item, shown) {
+        if (!shown || !state || !state.character) return false;
+        var roll = state.roll && state.roll.item === item.key ? state.roll : null;
+        return !roll || !!roll.coming;
     }
 
     // An item's picture (the inventory's own thumbnail render), dark until the item is found
     function itemPicture(item, shown) {
         var url = bare(item) ? null : itemPictureFor(item, shown);
+        if (!url && !bare(item) && rollPictureWait(item, shown)) {
+            // An empty frame (no "?"): the roll's picture is put in when it comes (patchRoll)
+            var wait = el("div", "bl4dex_item_picture");
+            wait.appendChild(el("div", "bl4dex_picture"));
+            return wait;
+        }
         var box = el("div", "bl4dex_item_picture" + (url ? "" : " bl4dex_no_picture"));
         if (url) {
             var img = el("div", "bl4dex_picture" + (shown ? "" : " bl4dex_silhouette"));
@@ -2882,7 +2897,9 @@
         ext.get(KEY, view.open, function (snap) {
             if (!alive()) return;
             if (snap && snap.state) onState(snap.state);
-            schedule(!view.open ? POLL_IDLE_MS : state && state.typing ? POLL_TYPING_MS : POLL_OPEN_MS);
+            // Quicker while typing, or while a picture is on its way (a roll's, or the parts screen's)
+            var soon = state && (state.typing || (state.roll && state.roll.coming) || (state.parts && state.parts.pictures === "waiting"));
+            schedule(!view.open ? POLL_IDLE_MS : soon ? POLL_TYPING_MS : POLL_OPEN_MS);
             if (done) done();
         });
     }
