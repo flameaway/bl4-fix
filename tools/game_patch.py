@@ -14,7 +14,9 @@ The runbook is docs/game-patch.md. What this knows:
 
 - GENERATORS: every tools/gen_*.py that turns game data into a file a mod ships, in run order
   (a tool comes after the ones whose output it reads), and what players get while its output is
-  stale. This is the one list of them; add a new generator here.
+  stale. This is the one list of them; add a new generator here. One (gen_booth_recipes) works
+  from a recording made in a running game: `check` compares the exe build in its output's header,
+  `regen` / `baseline` don't run it and print how to redo it.
 - tools/game_pins.json (the baseline): per generator, every game file it looked up in the paks with
   the SHA1 the pak index stores (null for a path that wasn't there, so a new NCS chunk shows up),
   recorded while it ran (pak.winning_entry is wrapped). Plus the build: Steam build id, exe size
@@ -64,6 +66,10 @@ class Gen:
     needs: tuple[str, ...] = ()  # generators whose output it reads: run them first
     oodle: bool = True  # takes --oodle
     dev: bool = False  # output isn't shipped
+    # Made from a recording in a running game, not from the paks: `regen` / `baseline` don't run it
+    # (they print this: how to redo it). `check` compares `output`'s header build with the exe's.
+    in_game: str = ""
+    output: str = ""  # repo-relative file whose first line is {"build": "<pe stamp>-<image size>", ...}
 
 
 # Run order. A tool's `needs` must come before it.
@@ -86,13 +92,20 @@ GENERATORS: tuple[Gen, ...] = (
         "Page changed: detailed cards step aside (their link script). Data changed: skill numbers / firmware / drop "
         "sources switch off one by one. encore.json (Big Encore travel) is NOT checked: stale spots are used."),
     Gen("gen_weapondex", ("bl4_weapondex",),
-        "dex.json changed: the dex says 'chances may be off', nothing is disabled. stats.json / rolls.json "
+        "dex.json changed: the dex says 'chances may be off', nothing is disabled. stats.json / rolls.json / partnames.json "
         "aren't pinned on their own (stats also reads progress_graph, uitooltipdata, skilltrees_data, Resident)."),
     Gen("gen_weapondex_missions", ("bl4_weapondex",),
         "NOT checked: save backfill may miss or wrongly credit bosses whose missions changed.",
         needs=("gen_weapondex",)),
     Gen("gen_weapondex_travel", ("bl4_weapondex",),
         "Pinned but NOT checked: Waypoint / Travel chips use stale spots.", needs=("gen_weapondex",)),
+    Gen("gen_booth_recipes", ("bl4_weapondex",),
+        "Exe changed (booth.jsonl is pinned to the exe build): Kairosdex's booth reads no recipes, so it makes no "
+        "new boss pictures; pictures already made stay.",
+        oodle=False, output="mods/bl4_weapondex/booth.jsonl",
+        in_game="record in game (dev machine, a character loaded: it spawns every boss 200 m above it): "
+                "python tools/bridge.py <id> -f dev/record_booth.py, wait for 'booth recipes: N recorded' in the "
+                "SDK log, then python tools/gen_booth_recipes.py .bridge/booth_recording/booth.json"),
     Gen("gen_reroll_parts", ("bl4_reroll",),
         "Data changed: every reroll is blocked ('Reroll needs an update for this game version')."),
     Gen("gen_reroll_legendaries", ("bl4_reroll",),
@@ -232,6 +245,16 @@ def stale_generators(game: Path, pins: dict) -> dict[str, dict[str, tuple[str | 
     return stale
 
 
+def recorded_build(gen: Gen) -> str | None:
+    """The exe build an in-game generator's output was recorded on (its header line), "<stamp>/<size>"."""
+    try:
+        with (REPO / gen.output).open(encoding="utf-8") as file:
+            build = json.loads(file.readline()).get("build")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return build.replace("-", "/") if isinstance(build, str) else None
+
+
 def with_dependents(names: set[str]) -> list[str]:
     """The given generators plus everything that reads their output, in run order."""
     chosen = set(names)
@@ -264,9 +287,20 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     print("\n== Generated data (inputs recorded in tools/game_pins.json)")
     stale = stale_generators(game, pins)
-    missing = [g.tool for g in GENERATORS if g.tool not in pins.get("generators", {})]
+    missing = [g.tool for g in GENERATORS if g.tool not in pins.get("generators", {}) and not g.in_game]
     for gen in GENERATORS:
-        if gen.tool in stale:
+        if gen.in_game:
+            # Pinned to the exe build in its own header, not to pak files
+            built = recorded_build(gen)
+            if built is not None and built == now.get("pe_stamp"):
+                print(f"  ok     {gen.tool}  (recorded in game on this exe)")
+                continue
+            problems += 1
+            what = f"recorded on exe {built}, this is {now.get('pe_stamp')}" if built else f"no build in {gen.output}"
+            print(f"  STALE  {gen.tool}  ({', '.join(gen.mods)}): {what}")
+            print(f"           players meanwhile: {gen.stale}")
+            print(f"           redo: {gen.in_game}")
+        elif gen.tool in stale:
             changed = stale[gen.tool]
             print(f"  STALE  {gen.tool}  ({', '.join(gen.mods)})")
             for path, (old, cur) in sorted(changed.items())[:8]:
@@ -383,9 +417,17 @@ def cmd_regen(args: argparse.Namespace) -> int:
         if not pins:
             raise SystemExit("no baseline: run `baseline` first, or `regen --all`")
         order = with_dependents(set(stale_generators(game, pins)))
+        exe = build_info(game).get("pe_stamp")
+        order += [g.tool for g in GENERATORS if g.in_game and recorded_build(g) != exe]
         if not order:
             print("nothing stale (check `python tools/game_patch.py check`)")
             return 0
+    # Ones recorded in game can't run here: say how to redo them
+    for name in [n for n in order if BY_NAME[n].in_game]:
+        order.remove(name)
+        print(f"-- {name}: not run here, it needs the game. To redo: {BY_NAME[name].in_game}")
+    if not order:
+        return 0
     oodle = find_oodle(args.oodle)
     recorded = {name: {"inputs": run_generator(BY_NAME[name], REPO, game, oodle)} for name in order}
     save_pins(game, recorded, replace_all=False)
@@ -413,7 +455,7 @@ def cmd_baseline(args: argparse.Namespace) -> int:
             shutil.copytree(REPO / rel, scratch / rel, symlinks=False,
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         started = time.time() - 2  # file times are coarse; anything written from here on is a generator's
-        recorded = {g.tool: {"inputs": run_generator(g, scratch, game, oodle)} for g in GENERATORS}
+        recorded = {g.tool: {"inputs": run_generator(g, scratch, game, oodle)} for g in GENERATORS if not g.in_game}
         print("\n== Regenerated vs the repo")
         differ = 0
         written = 0

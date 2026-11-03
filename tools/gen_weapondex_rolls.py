@@ -52,6 +52,12 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "mods" / "bl4_weapondex" / "rolls.json"
 DEX = REPO / "mods" / "bl4_weapondex" / "dex.json"
+# What each part is called, for the dex's parts screen (bl4_weapondex/breakdown.py):
+#   {table serial index: {part key (its serial index, or its text token lowercased): [slot, name, note, maker]}}
+# slot and name are made readable from the data's own names; note is the data's own description of
+# the part ("Damage mod", "ADS prof mod"), or ""; maker is the manufacturer that makes it (by the
+# words in its name or slot, else the item type its table belongs to), "" for a shared part.
+NAMES_OUT = REPO / "mods" / "bl4_weapondex" / "partnames.json"
 
 _REF = re.compile(r"inv'([^']+)'")
 _QUOTED = re.compile(r"'([^']*)'")
@@ -240,9 +246,88 @@ def build_rolls(entries: list[dict], item_keys: list[str]) -> dict[str, Any]:
         }
     for line in skipped:
         print("  skipped", line)
-    for entry in tables.values():
+    names_out: dict[str, dict[str, list[str]]] = {}
+    for owner, entry in tables.items():
+        if entry["ti"] is None:
+            continue
+        found = names_out.setdefault(str(entry["ti"]), {})
+        for pt, parts in entry["parts"].items():
+            for part, name in zip(parts, entry["names"][pt], strict=True):
+                note = inv.parts[owner][name]["value"].get("debugdisplaydescription")
+                found[str(part[0]).lower()] = [slot_label(pt), part_label(pt, inv.names.get((owner, name), name)),
+                                               note.strip() if isinstance(note, str) else "", part_maker(owner, pt, name)]  # fmt: skip
         del entry["names"]
-    return {"tags": list(tag_ids), "values": [json.loads(v) for v in values], "tables": tables, "types": types, "items": items}
+    return {"tags": list(tag_ids), "values": [json.loads(v) for v in values], "tables": tables, "types": types, "items": items,
+            "names": names_out}  # fmt: skip
+
+
+# region Readable part names
+
+SLOTS = {
+    "body": "Body", "body_acc": "Body Accessory", "body_ele": "Element", "body_bolt": "Bolt", "body_mag": "Body Magazine",
+    "barrel": "Barrel", "barrel_acc": "Barrel Accessory", "barrel_licensed": "Licensed Barrel",
+    "hyperion_secondary_acc": "Hyperion Shield", "tediore_acc": "Tediore Reload", "tediore_secondary_acc": "Tediore Reload",
+    "magazine": "Magazine", "magazine_acc": "Magazine Accessory", "magazine_borg": "Magazine", "magazine_ted_thrown": "Thrown Magazine",
+    "scope": "Scope", "scope_acc": "Scope Accessory", "grip": "Grip", "foregrip": "Foregrip / Underbarrel",
+    "underbarrel": "Underbarrel", "underbarrel_acc": "Underbarrel Accessory", "underbarrel_acc_vis": "Underbarrel Accessory",
+    "primary_ele": "Element", "secondary_ele": "Second Element", "secondary_ammo": "Secondary Ammo",
+    "pearl_elem": "Pearlescent Element", "pearl_stat": "Pearlescent Stat", "element": "Element",
+    "firmware": "Firmware", "class_mod_body": "Class Mod Body", "passive_points": "Skill", "action_skill_mod": "Action Skill",
+    "stat_group1": "Stat", "stat_group2": "Stat", "stat_group3": "Stat", "core_augment": "Core Augment",
+    "primary_augment": "Primary Augment", "secondary_augment": "Secondary Augment", "stat_augment": "Stat Augment",
+    "active_augment": "Active Augment", "payload": "Payload", "payload_augment": "Payload Augment", "unique": "Unique",
+    "augment_element_immunity": "Element Immunity", "augment_element_resist": "Element Resistance",
+    "augment_element_nova": "Element Nova", "augment_element_splat": "Element Splat", "endgame": "Endgame", "turret_weapon": "Turret Weapon",
+}  # fmt: skip
+# Words in part names, spelled out (manufacturers by their in-game names)
+WORDS = {
+    "ted": "Tediore", "jak": "Jakobs", "bor": "Ripper", "borg": "Ripper", "dad": "Daedalus", "mal": "Maliwan", "vla": "Vladof",
+    "tor": "Torgue", "ord": "Order", "hyp": "Hyperion", "cov": "CoV", "atl": "Atlas", "unv": "Universal",
+    "acc": "Accessory", "ele": "Element", "elem": "Element", "mag": "Magazine", "sec": "Secondary", "aug": "Augment",
+    "dmg": "Damage", "ps": "Pistol", "sg": "Shotgun", "sr": "Sniper", "ar": "Assault Rifle", "sm": "SMG", "smg": "SMG",
+    "hw": "Heavy", "ads": "ADS", "aoe": "AoE", "mirv": "MIRV", "om": "OM", "uni": "Unique", "leg": "Legendary",
+    "cor": "Corrosive", "rad": "Radiation", "jav": "Javelin", "asm": "ASM", "ex": "EX",
+    "statspecial": "", "stat": "", "stat2": "", "part": "", "pearl": "", "passive": "", "criticalhitchance": "Crit Chance",
+    "actionskill": "Action Skill", "assaultrifle": "Assault Rifle", "statuseffect": "Status Effect", "firerate": "Fire Rate",
+}  # fmt: skip
+
+
+# Manufacturers by the words the data uses for them (part names, slots, item type prefixes)
+MAKERS = {
+    "ted": "Tediore", "tediore": "Tediore", "jak": "Jakobs", "jakobs": "Jakobs", "bor": "Ripper", "borg": "Ripper",
+    "ripper": "Ripper", "dad": "Daedalus", "daedalus": "Daedalus", "mal": "Maliwan", "maliwan": "Maliwan",
+    "vla": "Vladof", "vladof": "Vladof", "tor": "Torgue", "torgue": "Torgue", "ord": "Order", "order": "Order",
+    "hyp": "Hyperion", "hyperion": "Hyperion", "cov": "CoV", "atl": "Atlas", "atlas": "Atlas",
+}  # fmt: skip
+
+
+def part_maker(owner: str, parttype: str, name: str) -> str:
+    """Who makes a part: a manufacturer named in it ("..._licensed_ted_mirv", "hyperion_secondary_acc"), else its table's type's."""
+    for word in [*name.lower().split("_"), *parttype.lower().split("_")]:
+        if word in MAKERS:
+            return MAKERS[word]
+    return MAKERS.get(owner.lower().partition("_")[0], "")
+
+
+def slot_label(parttype: str) -> str:
+    return SLOTS.get(parttype.lower(), parttype.replace("_", " ").title())
+
+
+def part_label(parttype: str, name: str) -> str:
+    """A part's name made readable: "part_barrel_licensed_ted_mirv" -> "Barrel Licensed Tediore MIRV"."""
+    words = []
+    name = re.sub(r"(?i)_aug_[do]_", "_aug_", name.split(".")[-1])  # d / o: defensive / offensive, say little on their own
+    for word in name.split("_"):
+        low = word.lower()
+        spelled = WORDS.get(low)
+        if spelled is None:
+            spelled = word.upper() if re.fullmatch(r"[a-z]\d+|\d+[a-z]|[a-z]", low) else word[:1].upper() + word[1:]
+        if spelled:
+            words.append(spelled)
+    return " ".join(words) or slot_label(parttype)
+
+
+# endregion
 
 
 def pack(rolls: dict[str, Any]) -> str:
@@ -279,6 +364,13 @@ def main() -> None:
     rolls = build_rolls(entries, keys)
     OUT.write_text(pack(rolls), encoding="utf-8")
     print(f"{len(rolls['items'])} items, {len(rolls['types'])} item types -> {OUT} ({OUT.stat().st_size // 1024} KB)")
+    write_names(rolls)
+
+
+def write_names(rolls: dict[str, Any]) -> None:
+    NAMES_OUT.write_text(json.dumps(rolls["names"], sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n", encoding="utf-8")
+    count = sum(len(t) for t in rolls["names"].values())
+    print(f"{count} part names -> {NAMES_OUT} ({NAMES_OUT.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":

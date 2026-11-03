@@ -24,9 +24,6 @@ class ModInfo:
     default: bool = True  # ticked on a first install (every mod is, by the user's choice, 2026-10-25)
     paks: tuple[str, ...] = ()
     ui_dirs: tuple[str, ...] = ()
-    # Loose pictures made on the dev machine (too big for the .sdkmod the in-game updater fetches):
-    # folders under uiresources that build.py zips into `<id>.assets.zip` and core unpacks
-    assets: tuple[str, ...] = ()
     # Runs page scripts through the BL4 UI Link (shared/uilink): LINK_PAK and LINK_UI_DIR are shared
     # by every such mod and only removed with the last of them
     link: bool = False
@@ -84,7 +81,7 @@ MODS: tuple[ModInfo, ...] = (
     ),
     ModInfo("bl4_builds", "Build Presets", "Five build slots in the inventory: gear, skills and specs.", ui_dirs=("bl4builds",), link=True),
     ModInfo("bl4_reroll", "Reroll", "Reroll class mod and enhancement stats, or whole legendaries and pearls, for Eridium.", ui_dirs=("bl4reroll",), link=True, agpl=True),
-    ModInfo("bl4_weapondex", "Kairosdex", "A dex of the bosses you've beaten and their legendaries (F8).", paks=(_pak(4248), _pak(4250)), ui_dirs=("bl4weapondex",), assets=("bl4weapondex/bosses", "bl4weapondex/items"), link=True, agpl=True),
+    ModInfo("bl4_weapondex", "Kairosdex", "A dex of the bosses you've beaten and their legendaries (F8).", paks=(_pak(4248), _pak(4250)), ui_dirs=("bl4weapondex",), link=True, agpl=True),
     ModInfo("bl4_damage_meter", "Carnage Meter", "Every player's damage and top damage sources (F9), and a pop-up when a boss dies.", paks=(_pak(4249),), ui_dirs=("bl4carnage",), link=True, agpl=True),
     ModInfo("bl4_uvh_teleport", "UVH Boss Teleport", "Hover a UVH boss challenge and press T to go there.", ui_dirs=("bl4uvhtp",), link=True),
     ModInfo("bl4_instant_travel", "Instant Fast Travel", "Fast travel on the same map without the portal."),

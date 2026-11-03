@@ -123,7 +123,7 @@ def model(key: str, item: dict[str, Any], roll: dict[str, Any], level: int | Non
     damage2 = ELEMENT_IDENTS.get(elements[1], "") if len(elements) > 1 else ""
     return {
         "visible": True, "mousepositioned": False, "abbreviated": False, "compare": False, "comparemode": False,
-        "name": item.get("name", ""), "rarityident": rarity, "rarityloc": item.get("rarity", ""),
+        "name": roll.get("name") or item.get("name", ""), "rarityident": rarity, "rarityloc": item.get("rarity", ""),
         "raritycolor": RARITY_COLORS.get(rarity, "rgba(255, 255, 255, 1.00)"), "showrarity": True,
         "manufacturer": MANUFACTURERS.get(maker, maker.lower()), "manufacturername": maker,
         "itemtype": types["itemtype"], "itembasetype": types["itembasetype"],

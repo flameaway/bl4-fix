@@ -255,6 +255,103 @@ class Loot:
                 item_names[f"{inv_key}.{comp}".lower()].update(names)
         return item_names
 
+    def item_naming(self, comp_filter: Callable[[str], bool] | None = None) -> dict[str, dict[str, Any]]:
+        """
+        How the game names each composition's rolls: {"<inv>.<comp>" lowercased: {"base": the name
+        every roll has, or None; "parts": [{"index": the part's serial index (in the item type's
+        table), "title" or "prefix": text, "priority": number, "fixed": every roll has it,
+        "noprefix": it turns prefixes off}]}}.
+
+        A part's InventoryNamingAspect lists title parts (the name: the highest priority among the
+        rolled parts wins: Convergence's barrel lists "Hellhound" at 1 and "Convergence" at 3) and
+        prefix parts ("Ancient" Alignment). item_names merged them all ("Convergence / Hellhound").
+        """
+        if comp_filter is None:
+            comp_filter = lambda comp: "05_legendary" in comp or "pearl" in comp  # noqa: E731
+        records = self.data.records("inv_name_part")
+
+        def name_part(ref: str) -> tuple[str, float] | None:
+            key = _quoted(ref)
+            rec = records.get(key.lower()) if key else None
+            if not rec or "partname" not in rec:
+                return None
+            title = (ncs_parse.loc_text(rec["partname"]) or "").strip()
+            try:
+                priority = float(rec.get("priority", 0))
+            except (TypeError, ValueError):
+                priority = 0.0
+            return (title, priority) if title else None
+
+        # Per item type: each part's naming entries and serial index; each composition's slots
+        naming: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+        comps: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+        for item in self.data.entries("inv"):
+            inv_key = item["key"].lower()
+            for dep in item.get("deps") or []:
+                value = dep.get("value")
+                if not isinstance(value, dict):
+                    continue
+                if dep.get("table") == "inv_comp":
+                    comps[inv_key].append((value.get("inv_comp", dep["key"]), value))
+                    continue
+                titles, prefixes, noprefix = [], [], False
+                for aspect in value.get("aspects") or []:
+                    if not isinstance(aspect, dict) or "InventoryNamingAspect" not in str(aspect.get("structtype", "")):
+                        continue
+                    titles += [p for r in aspect.get("titlepartlist") or [] if (p := name_part(r))]
+                    prefixes += [p for r in aspect.get("prefixpartlist") or [] if (p := name_part(r))]
+                    noprefix = noprefix or str(aspect.get("bdisableprefixes", "")).lower() == "true"
+                if not titles and not prefixes:
+                    continue
+                serial = value.get("serialindex") or {}
+                index = serial.get("index") if serial.get("_scope") == "Sub" else None
+                naming[inv_key][dep["key"].lower()] = {"titles": titles, "prefixes": prefixes, "noprefix": noprefix,
+                                                       "index": int(index) if index is not None else None}  # fmt: skip
+
+        out: dict[str, dict[str, Any]] = {}
+        for inv_key, inv_comps in comps.items():
+            for comp, value in inv_comps:
+                if not comp_filter(comp.lower()):
+                    continue
+                # Each slot's parts; a name every part of a slot that picks at least one carries is on
+                # every roll (Bismuth's five element payloads all say "Bismuth-Tipped Dagger")
+                listed_parts: list[str] = []
+                fixed_names: set[tuple[str, str]] = set()  # ("title" / "prefix", text)
+                rules = (value.get("parttypeselectionrules") or {}).get("pairs") or {}
+                for pair in rules.values():
+                    rule = pair.get("value") if isinstance(pair, dict) else None
+                    if not isinstance(rule, dict):
+                        continue
+                    listed = [p["part"].lower() for p in rule.get("parts") or [] if isinstance(p, dict) and p.get("part")]
+                    count = rule.get("partcount") or {}
+                    try:
+                        least = int(count.get("min", 1)) if count else 1
+                        most = int(count.get("max", 1)) if count else 1
+                    except (TypeError, ValueError):
+                        least, most = 1, 1
+                    listed_parts += [p for p in listed if p not in listed_parts]
+                    if not listed or least < 1 or most < 1:
+                        continue
+                    common: set[tuple[str, str]] | None = None
+                    for part in listed:
+                        found = naming[inv_key].get(part) or {"titles": [], "prefixes": []}
+                        has = {("title", t) for t, _ in found["titles"]} | {("prefix", t) for t, _ in found["prefixes"]}
+                        common = has if common is None else common & has
+                    fixed_names |= common or set()
+                entries = []
+                for part in listed_parts:
+                    found = naming[inv_key].get(part)
+                    if not found:
+                        continue
+                    for kind in ("title", "prefix"):
+                        for text, priority in found["titles" if kind == "title" else "prefixes"]:
+                            entries.append({"index": found["index"], kind: text, "priority": priority,
+                                            "fixed": (kind, text) in fixed_names, "noprefix": found["noprefix"]})  # fmt: skip
+                fixed_titles = [e for e in entries if e["fixed"] and "title" in e]
+                base = max(fixed_titles, key=lambda e: e["priority"])["title"] if fixed_titles else None
+                out[f"{inv_key}.{comp}".lower()] = {"base": base, "parts": entries}
+        return out
+
     def world_items(self) -> set[str]:
         """Items (lowercased "<inv>.<comp>") in the general legendary and pearl world pools."""
         out: set[str] = set()

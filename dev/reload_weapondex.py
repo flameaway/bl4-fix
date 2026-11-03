@@ -20,15 +20,21 @@ SUBMODULES = (
     "bl4_weapondex.serialgen",
     "bl4_weapondex.identity",
     "bl4_weapondex.roll",
+    "bl4_weapondex.breakdown",
     "bl4_weapondex.picture",
+    "bl4_weapondex.readback",
+    "bl4_weapondex.offload",
     "bl4_weapondex.thumbs",
+    "bl4_weapondex.collection",
     "bl4_weapondex.travel",
     "bl4_weapondex.celebrate_page",
     "bl4_weapondex.celebrate",
     "bl4_weapondex.pause_page",
-    "bl4_weapondex.fetch",
     "bl4_weapondex.screen",
+    "bl4_weapondex.booth",
     "bl4_weapondex.bake",
+    "bl4_weapondex.notice",
+    "bl4_weapondex.titlebake",
 )
 
 old = sys.modules.get("bl4_weapondex")

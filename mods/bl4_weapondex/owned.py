@@ -349,6 +349,12 @@ def _walk(state_address: int, start: str | None) -> Any:
                 serials.append(serial)
         first += SLOTS_PER_TICK
         yield
+    try:
+        from . import collection  # noqa: PLC0415 - imported here: hot reloads replace it
+
+        collection.from_backpack(serials, progress.character())
+    except Exception as ex:  # noqa: BLE001 - the obtained record still counts
+        logging.dev_warning(f"[Kairosdex] Collection from the backpack: {ex!r}")
     if start is None:
         add_serials(serials, progress.scope())
     elif serials:  # an empty backpack is more likely still loading: tried again in a second

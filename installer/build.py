@@ -4,13 +4,12 @@ Builds dist/BL4FixSetup.exe (the BL4 Fix setup app).
     python installer/build.py
 
 Steps: fetch + verify the pinned SDK release, pack every mod in catalog.py (mods/ and ported/) into
-.sdkmod files, zip the mods' pictures (catalog `assets`, e.g. Kairosdex's boss and item pictures,
-from assets/ in the repo: they're baked in game, tools/sync_pictures.py copies a new bake in),
-then bundle everything with PyInstaller (installed into installer/.venv on first run). The setup
-window's page (installer/ui/) uses the game's own menus, fonts and art, which aren't in git: when
-installer/ui/game/ is missing, tools/gen_setup_ui.py takes them out of the installed game's paks
-(in the venv, with pyooz for the Oodle compression; BL4_GAME_DIR overrides the game folder). So a
-clone plus an installed game is enough to build.
+.sdkmod files, then bundle everything with PyInstaller (installed into installer/.venv on first run). The setup
+window's page (installer/ui/) and the app's icon (installer/icon.ico) are all in git and all our
+own (art/ + tools/gen_setup_art.py, the Saira font under the OFL): no game files go into the exe.
+No pictures either: Kairosdex makes its boss and item pictures in the player's own game, at the
+title screen (bl4_weapondex/titlebake.py); nothing made from the game's files is shipped
+(2026-11-03, the user's choice: until then assets/ was zipped in and the mod downloaded it).
 Every .sdkmod carries the GPL-3.0 text (LICENSE), and LICENSE-AGPL for mods with AGPL-3.0 files
 (catalog.license_files).
 Last, the exe is signed with signtool when BL4FIX_SIGN_* environment variables configure a signer
@@ -21,7 +20,6 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
-import json
 import os
 import re
 import shutil
@@ -43,20 +41,17 @@ BUILD = HERE / "build"
 PAYLOAD = BUILD / "payload"
 CACHE = BUILD / "cache"
 VENV = HERE / ".venv"
-ICON = HERE / "ui" / "game" / "_setup"
-# The mods' pictures (catalog `assets`), laid out like uiresources/
-ASSETS = REPO / "assets"
-# The installed game: the setup window's UI files come out of its paks
-GAME_DIR = Path(os.environ.get("BL4_GAME_DIR", r"C:\Program Files (x86)\Steam\steamapps\common\Borderlands 4"))
+# The BL4 Fix mark (tools/gen_setup_art.py), for the exe, its windows and shortcut
+ICON = HERE / "icon.ico"
+ICON_PNG = HERE / "icon.png"
+# Left over from builds before 2026-11-02, when the page used the game's own UI files: never bundle it
+OLD_GAME_UI = HERE / "ui" / "game"
 
 SDK_URL = "https://github.com/bl-sdk/oak2-mod-manager/releases/download/v0.3/oak2-sdk.zip"
 SDK_SHA256 = "602675446abed184169fa158be3c8bc81777a71203581e4a248eca8a3d00b5c7"
 PYINSTALLER = "pyinstaller==6.11.1"
 # The setup window: an HTML page on Edge WebView2 (gui.py, Tkinter, is the fallback)
 PYWEBVIEW = "pywebview==5.4"
-# Only for tools/gen_setup_ui.py (the exe doesn't import them): Pillow + numpy for the icon and
-# Claptrap, pyooz (ooz, an open-source Oodle decoder, GPL-3.0) to read the game's paks
-SETUP_UI_TOOLS = ("pillow", "numpy", "pyooz==0.0.8")
 
 
 def fetch_sdk() -> Path:
@@ -149,62 +144,6 @@ def build_sdkmod(src: Path, out: Path, extra: dict[str, Path] | None = None) -> 
             zf.writestr(info, file_bytes(files[name]))
 
 
-def build_assets(info: catalog.ModInfo, out: Path) -> int:
-    """
-    Zips a mod's pictures from assets/ (made in game: Kairosdex's `dex bake all` / `dex bake
-    items`, copied in by tools/sync_pictures.py). Each folder and its small/ copies: index.json plus
-    the pictures it lists. Returns the picture count.
-    """
-    ui = ASSETS
-    count = 0
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as zf:  # PNGs don't compress further
-        for rel in info.assets:
-            for sub in (rel, f"{rel}/small"):
-                index_path = ui / sub / "index.json"
-                try:
-                    index = json.loads(index_path.read_text(encoding="utf-8"))
-                except (OSError, ValueError) as ex:
-                    raise SystemExit(f"{info.id}: no picture index at {index_path} ({ex})") from None
-                if not index:
-                    raise SystemExit(f"{info.id}: {index_path} lists no pictures")
-                if missing := [key for key in index if not (ui / sub / f"{key}.png").is_file()]:
-                    raise SystemExit(f"{info.id}: {len(missing)} pictures in {index_path} are missing, e.g. {missing[0]}")
-                for name in [*sorted(f"{key}.png" for key in index), "index.json"]:
-                    zinfo = zipfile.ZipInfo(f"{sub}/{name}", ZIP_DATE)
-                    zinfo.external_attr = 0o644 << 16
-                    zf.writestr(zinfo, (ui / sub / name).read_bytes())
-                count += len(index)
-    return count
-
-
-def check_picture_lists() -> None:
-    """
-    Each mod with pictures carries pictures.json (what assets/ holds), which it compares with the
-    game folder to download missing pictures from the release (Kairosdex fetch.py). A stale list
-    would fetch for nothing or miss new pictures.
-    """
-    sys.path.insert(0, str(REPO / "tools"))
-    import sync_pictures  # noqa: PLC0415
-
-    if stale := sync_pictures.stale_lists():
-        raise SystemExit(f"pictures.json doesn't match assets/ for {', '.join(stale)}: run tools/sync_pictures.py")
-
-
-def warn_unsynced_pictures() -> None:
-    """A bake in this machine's game folder that assets/ doesn't have yet (the dev forgot to sync)."""
-    sys.path.insert(0, str(REPO / "tools"))
-    import sync_pictures  # noqa: PLC0415
-
-    try:
-        changes = sync_pictures.sync(GAME_DIR, check=True)
-    except SystemExit as ex:
-        changes = [str(ex)]
-    if changes:
-        print(f"warning: the pictures in {GAME_DIR} differ from assets/ (run tools/sync_pictures.py):")
-        for line in changes:
-            print(f"  {line}")
-
-
 # PyInstaller's own bootloader (the stub that unpacks and starts the app) is one binary shared by
 # thousands of programs, malware too, so antivirus programs flag it on sight. One compiled here
 # (from PyInstaller's sources, with Visual Studio's C++ tools) is ours alone: far fewer false
@@ -277,24 +216,18 @@ def check_shared() -> None:
 def main() -> None:
     check_shared()
     version = check_versions()
+    # The whole ui/ folder goes into the exe: an old copy of the game's UI files in it would too
+    if OLD_GAME_UI.exists():
+        raise SystemExit(f"{OLD_GAME_UI} holds the game's UI files from an older build (the page no longer uses them): delete it")
     python = ensure_pyinstaller()
-    # The setup window's game UI files (fonts, menus, Claptrap), taken from this machine's install
-    if not all((ICON / name).is_file() for name in ("claptrap.png", "icon.ico", "icon.png")):
-        print(f"installer/ui/game/ is missing: taking the game's UI files from {GAME_DIR}")
-        subprocess.run([str(python), "-m", "pip", "install", "-q", *SETUP_UI_TOOLS], check=True)
-        subprocess.run([str(python), str(REPO / "tools" / "gen_setup_ui.py"), "--game", str(GAME_DIR)], check=True)
     shutil.rmtree(PAYLOAD, ignore_errors=True)
     PAYLOAD.mkdir(parents=True)
     shutil.copyfile(fetch_sdk(), PAYLOAD / "oak2-sdk.zip")
-    check_picture_lists()
     for info in catalog.MODS:
         src = REPO / info.source / info.id
         if not (src / "__init__.py").is_file():
             raise SystemExit(f"{src} isn't a mod folder")
         build_sdkmod(src, PAYLOAD / f"{info.id}.sdkmod", catalog.license_files(info, REPO))
-        if info.assets:
-            print(f"{info.id}: {build_assets(info, PAYLOAD / f'{info.id}.assets.zip')} pictures from assets/")
-    warn_unsynced_pictures()
     shutil.copyfile(MOD_SRC / "shared.py", PAYLOAD / "shared.py")
     # The installer moves the logo movies itself too (its Skip intro switch)
     shutil.copyfile(SKIP_INTRO_SRC / "movies.py", PAYLOAD / "movies.py")
@@ -312,10 +245,9 @@ def main() -> None:
             "--workpath", str(BUILD / "pyinstaller"),
             "--specpath", str(BUILD),
             "--add-data", f"{PAYLOAD};payload",
-            # The game's vault symbol (tools/gen_setup_ui.py), for the exe, its windows and shortcut
-            "--icon", str(ICON / "icon.ico"),
-            "--add-data", f"{ICON / 'icon.ico'};.",
-            "--add-data", f"{ICON / 'icon.png'};.",
+            "--icon", str(ICON),
+            "--add-data", f"{ICON};.",
+            "--add-data", f"{ICON_PNG};.",
             "--add-data", f"{HERE / 'ui'};ui",
             "--paths", str(HERE),
             "--paths", str(PAYLOAD),

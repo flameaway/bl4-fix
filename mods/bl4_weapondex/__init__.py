@@ -51,7 +51,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import bake, celebrate, data, frametick, owned, progress, savegame, screen, thumbs, tracker, uilink
+from . import bake, celebrate, data, frametick, owned, progress, savegame, screen, thumbs, titlebake, tracker, uilink
 
 __version__ = "0.2.0"
 __version_info__ = (0, 2, 0)
@@ -159,6 +159,17 @@ celebrate_option = BoolOption(
     on_change_while_enabled=lambda _, value: celebrate.sync(bool(value)),
 )
 
+title_pictures_option = BoolOption(
+    "Pictures at the title screen",
+    True,
+    description=(
+        "At the title screen, makes the picture of every boss, legendary and pearl that doesn't have one yet"
+        " (the first launch, new bosses and items), out of sight, without spawning anything: about a"
+        " minute when every picture is missing, once. Unbeaten bosses and items you"
+        " haven't had stay hidden in the dex as before. Off: those without a picture show none."
+    ),
+)
+
 unlock_option = BoolOption(
     "Unlock everything",
     False,
@@ -190,32 +201,79 @@ open_button = ButtonOption(
     on_press=lambda _: screen.request_open(),
 )
 
-bake_button = ButtonOption(
-    "Take boss pictures",
+RERUN_TEXT = "Make missing pictures now"
+
+
+def _rerun(_: ButtonOption) -> None:
+    log(titlebake.rerun())
+    _show_pictures()
+
+
+boss_count_row = ButtonOption(
+    "Boss pictures",
+    display_name="Boss pictures: counting...",
     description=(
-        "Takes the picture of every boss that doesn't have one yet (about 4 seconds each, done once:"
-        " the pictures are saved and every later game uses them). Each boss is spawned on the ground in"
-        " front of you, photographed and removed; meanwhile you can't be hurt and AI ignores you. Stand in"
-        " an open space, face it, and stay in gameplay with no menus open until it's done."
+        "How many of the dex's bosses have a picture in the game folder (a damaged file counts as"
+        " missing). Missing ones are made at the title screen. Press to count again."
     ),
-    on_press=lambda _: _bake_command(["all"]),
+    on_press=lambda _: titlebake.recount(GAME_DIR),
 )
 
-items_button = ButtonOption(
-    "Take item pictures",
+item_count_row = ButtonOption(
+    "Item pictures",
+    display_name="Item pictures: counting...",
     description=(
-        "Takes the inventory picture of every legendary that doesn't have one yet (about 4 seconds each,"
-        " done once). The game rolls each item out of sight, renders it the way the inventory does, and the"
-        " drop is removed. Host only."
+        "How many of the dex's legendaries and pearls have a picture in the game folder (a damaged file"
+        " counts as missing). Missing ones are made at the title screen. Press to count again."
     ),
-    on_press=lambda _: _bake_command(["items"]),
+    on_press=lambda _: titlebake.recount(GAME_DIR),
+)
+
+rerun_button = ButtonOption(
+    "Make missing pictures now",
+    display_name=RERUN_TEXT,
+    description=(
+        "Runs \"Pictures at the title screen\" again: makes every boss and item picture that's missing"
+        " (even with that option off), and tries again bosses skipped after a crash. At the title"
+        " screen it starts within a few seconds; in game, the next time you're at the title screen."
+        " Nothing is spawned and nothing shows but a short notice."
+    ),
+    on_press=_rerun,
 )
 
 dev_options = NestedOption(
     "Dev options",
-    [unlock_option, forget_button, bake_button, items_button],
-    description="Testing tools: unlock the whole dex, clear this character's progress, take the boss and item pictures.",
+    [boss_count_row, item_count_row, rerun_button, unlock_option, forget_button],
+    description=(
+        "Testing tools: how many boss and item pictures there are, make the missing ones, unlock the"
+        " whole dex, clear this character's progress."
+    ),
 )
+
+
+class Shown:
+    counts = -1  # titlebake.S.counts_version on the rows
+    status = ""
+
+
+def _count_text(kind: str, have: int, of: int, skipped: int = 0) -> str:
+    text = f"{kind} pictures: {have} of {of}"
+    if have < of:
+        text += f" ({of - have} missing" + (f", {skipped} skipped after a crash" if skipped else "") + ")"
+    return text
+
+
+def _show_pictures() -> None:
+    """The dev rows follow the counts and the run (the Mod Menu picks a new name up by itself)."""
+    counts = titlebake.S.counts
+    if counts is not None and titlebake.S.counts_version != Shown.counts:
+        Shown.counts = titlebake.S.counts_version
+        boss_count_row.display_name = _count_text("Boss", *counts["bosses"], counts["skipped"])
+        item_count_row.display_name = _count_text("Item", *counts["items"])
+    status = titlebake.status()
+    if status != Shown.status:
+        Shown.status = status
+        rerun_button.display_name = f"{RERUN_TEXT} ({status})" if status else RERUN_TEXT
 
 screen.S.unlocked = lambda: bool(unlock_option.value)
 screen.S.obtained = lambda: bool(obtained_option.value)
@@ -385,6 +443,8 @@ def _all(now: float) -> None:
     savegame.tick(screen._changed)  # noqa: SLF001
     celebrate.tick()
     bake.tick()
+    titlebake.tick(GAME_DIR, bool(title_pictures_option.value))
+    _show_pictures()
     if S.pending_open and now > S.pending_open:
         S.pending_open = 0.0
         screen.request_open()
@@ -396,11 +456,13 @@ def _enable() -> None:
     celebrate.setup(GAME_DIR, lambda: bool(celebrate_option.value))
     celebrate.sync(bool(celebrate_option.value))
     S.registered = screen.register(GAME_DIR)
+    titlebake.recount(GAME_DIR)  # the dev options' counts (a worker; files opened once a session)
 
 
 def _disable() -> None:
     if bake.running():
         bake.stop("stopped (mod disabled)")
+    titlebake.forget()
     thumbs.stop("stopped (mod disabled)")
     screen.unregister()
     tracker.forget()
@@ -410,6 +472,11 @@ def _disable() -> None:
 
 
 # endregion
+
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
 
 mod = build_mod(
     options=[
@@ -421,6 +488,7 @@ mod = build_mod(
         reset_char_button,
         list_hover_option,
         celebrate_option,
+        title_pictures_option,
         dev_options,
     ],
     keybinds=[],

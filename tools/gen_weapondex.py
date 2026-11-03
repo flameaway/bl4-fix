@@ -253,6 +253,7 @@ def build_dex(load: Loader) -> dict[str, Any]:
     # region Items
 
     names = loot.item_names(lambda comp: comp.startswith(("comp_05", "comp_06")))
+    naming = loot.item_naming(lambda comp: comp.startswith(("comp_05", "comp_06")))
     world = loot.world_items()
     rewarded: set[str] = set()
     for entry in loot.data.entries("rewards"):
@@ -309,6 +310,20 @@ def build_dex(load: Loader) -> dict[str, Any]:
         if inv.endswith("turret_gadget"):
             return None  # the one legendary turret (Anchor) isn't something players get
         out: dict[str, Any] = {"name": " / ".join(sorted(names[item]))}
+        # The game names a roll by its parts' naming entries (the highest-priority title, and a
+        # prefix unless a part turns them off): the name every roll has, and the parts that change it
+        found = naming.get(item) or {}
+        entries = found.get("parts") or []
+        titles = [e for e in entries if "title" in e]
+        if titles:
+            base = found.get("base") or max(titles, key=lambda e: e["priority"])["title"]
+            out["name"] = base
+            top = max((e["priority"] for e in titles if e["fixed"]), default=None)
+            # Only what can change it: a title that can outrank the base, a prefix
+            changing = [e for e in entries if not e["fixed"] and e["index"] is not None
+                        and ("prefix" in e or top is None or e["priority"] >= top)]  # fmt: skip
+            if changing:
+                out["naming"] = [{k: v for k, v in e.items() if k != "fixed"} for e in entries if e["index"] is not None]
         if inv.startswith("classmod_"):
             cls = inv.removeprefix("classmod_").replace("_", "")
             out["type"] = "Class Mod"
@@ -1338,6 +1353,7 @@ def main() -> None:
     rolls = gen_weapondex_rolls.build_rolls(data.entries("inv"), list(dex["items"]))
     gen_weapondex_rolls.OUT.write_text(gen_weapondex_rolls.pack(rolls), encoding="utf-8")
     print(f"{len(rolls['items'])} items' roll rules -> {gen_weapondex_rolls.OUT}")
+    gen_weapondex_rolls.write_names(rolls)
 
 
 if __name__ == "__main__":

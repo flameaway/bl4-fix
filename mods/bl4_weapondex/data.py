@@ -98,3 +98,28 @@ def data_current(game_dir: Path) -> bool:
         _data_thread = threading.Thread(target=_check_data, args=(game_dir,), name="bl4_weapondex.data", daemon=True)
         _data_thread.start()
     return True if _data_ok is None else _data_ok
+
+
+def roll_name(item: dict[str, Any], parts: list[tuple[int, int | str]]) -> str:
+    """
+    The name the game gives one roll of `item`, from its parts (dex.json "naming", made by
+    tools/gen_weapondex.py): the highest-priority title among them (a tie goes to the one that isn't
+    the base name: "Superconducting Plasma Coil"), after the highest-priority prefix unless a part
+    turns prefixes off. Without naming data: the item's name.
+    """
+    base = item.get("name", "")
+    entries = item.get("naming")
+    if not entries:
+        return base
+    table = item.get("ti")
+    rolled = {index for t, index in parts if t == table and isinstance(index, int)}
+    here = [e for e in entries if e.get("index") in rolled]
+    titles = [e for e in here if "title" in e]
+    if not titles:
+        return base
+    title = max(titles, key=lambda e: (e["priority"], e["title"] != base))["title"]
+    prefixes = [e for e in here if "prefix" in e]
+    if prefixes and not any(e.get("noprefix") for e in here):
+        return f"{max(prefixes, key=lambda e: e['priority'])['prefix']} {title}"
+    return title
+

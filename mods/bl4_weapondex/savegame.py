@@ -55,6 +55,8 @@ SCAN_ALIGN = 16
 _LIST_ITEM = re.compile(r"^\s*- ([\w.]+)\s*$", re.MULTILINE)
 _KEY_LINE = re.compile(r"^( *)(\w+): *(.*?)\s*$")
 _CHAR_GUID = re.compile(r"^\s*char_guid:\s*'?([0-9A-Fa-f]{32})'?\s*$", re.MULTILINE)
+_CHAR_NAME = re.compile(r"^\s*char_name:\s*'?(.*?)'?\s*$", re.MULTILINE)
+_CHAR_CLASS = re.compile(r"^\s*class:\s*'?(Char_\w+)'?\s*$", re.MULTILINE)
 
 
 class S:
@@ -112,6 +114,8 @@ def _read(folder: Path, stamp: Any) -> None:
         shared = _decrypt(key, profile)
         found = _unlockables_beaten(shared)
         held = owned.from_save_text(shared)  # the shared bank
+        bank = list(held)
+        named: list[tuple[str, str, str, list[str], float]] = []  # the Collection's (collection.py)
         by_char: dict[str, frozenset[str]] = {}
         carried: list[tuple[str, list[str], float]] = []
         for path in folder.glob("*.sav"):
@@ -126,10 +130,18 @@ def _read(folder: Path, stamp: Any) -> None:
                     char = guid.group(1).lower()
                     by_char[char] = frozenset(missions)
                     carried.append((char, serials, saved_at))
+                    name, cls = _CHAR_NAME.search(text), _CHAR_CLASS.search(text)
+                    named.append((char, name.group(1) if name else "", cls.group(1) if cls else "", serials, saved_at))
         if owned.rebuild(held):
             S.changed = True
         if owned.add_serials(held):
             S.changed = True
+        try:
+            from . import collection  # noqa: PLC0415 - imported here: hot reloads replace it
+
+            collection.from_saves(named, bank, (folder / "profile.sav").stat().st_mtime)
+        except Exception as ex:  # noqa: BLE001 - the rest of the read still counts
+            logging.error(f"[Kairosdex] Collection from the saves: {ex!r}")
         for char, serials, saved_at in carried:
             if owned.add_from_save(char, serials, saved_at):
                 S.changed = True

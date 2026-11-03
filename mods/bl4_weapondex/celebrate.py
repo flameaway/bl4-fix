@@ -5,7 +5,8 @@ the first time on this account, or a legendary or pearl is obtained for the firs
 "Per-character Kairosdex" on: the first time for the character being played).
 
 - Bosses: __init__.beaten() asks first_kill() before it records the win, then calls boss().
-- Items: the backpack is checked twice a second for items that weren't in it before. One raw read
+- Items: the backpack is checked twice a second for items that weren't in it before (with
+  Celebrations off too: the Collection records each new legendary's serial and pickup time). One raw read
   of every slot's item handle (the slot layout is learned once per world from the reflected
   fields, and checked against them), so a check costs a few hundredths of a millisecond. A new
   handle's serial says which item it is; a dex item never obtained before (owned.py) is recorded
@@ -216,14 +217,16 @@ def test(kind: str, name: str = "") -> str:
 
 
 def tick() -> None:
-    if S.game_dir is None or not S.enabled():
+    # The backpack check runs with Celebrations off too: the Collection (collection.py) takes the
+    # time each legendary was picked up from it
+    if S.game_dir is None:
         S.handles = None
         return
     now = time.monotonic()
     if now < S.next_check:
         return
     S.next_check = now + CHECK_S
-    if celebrate_page.FROM_SOURCE and celebrate_page.page_current and now - S.published_at >= PUBLISH_S:
+    if S.enabled() and celebrate_page.FROM_SOURCE and celebrate_page.page_current and now - S.published_at >= PUBLISH_S:
         S.published_at = now
         _publish_dev()
     try:
@@ -323,6 +326,12 @@ def _new_item(slot: Any, handle: int) -> None:
     serial = owned.serial_of(item_)
     if not serial:
         return
+    try:
+        from . import collection  # noqa: PLC0415 - imported here: hot reloads replace it
+
+        collection.from_pickup(serial, progress.character())
+    except Exception as ex:  # noqa: BLE001 - the banner still shows
+        logging.dev_warning(f"[Kairosdex] Collection pickup: {ex!r}")
     # Per character: new to this character's record (none while it hasn't started)
     for key in owned.add_serials([serial], progress.scope()):
         logging.info(f"[Kairosdex] First time: {(data.dex()['items'].get(key) or {}).get('name', key)}")

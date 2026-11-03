@@ -16,6 +16,9 @@ step aside when it changed:
 - **Generated data** with a runtime check switches its feature off or warns: Item Cards'
   numbers/firmware/drops, Reroll (all rerolls blocked), Instant Fast Travel (normal portal),
   Kairosdex ("chances may be off"), Carnage Meter (plain item names).
+- **Kairosdex's booth recipes** (`booth.jsonl`, the bosses it rebuilds for pictures without
+  spawning them) are pinned to the exe build: on any other exe the booth reads none and makes no
+  new boss pictures. Pictures already made stay.
 - **Native code**: every finder checks its bytes and turns that part off on a mismatch:
   - ECHO Anywhere, Instant Tabs (per site), Reroll (sell + mail fallback), Build Presets, Crisp
     Numbers, BL4 Direct's arrival fix, Minimap (falls back to the ECHO map copy), Carnage Meter,
@@ -68,6 +71,17 @@ step aside when it changed:
    - It records their new inputs in `tools/game_pins.json` and lists the mods whose files
      changed.
 
+   One generator can't run offline: `gen_booth_recipes` (Kairosdex's `booth.jsonl`) is made from
+   a recording in a running game. `check` marks it stale whenever the exe changed, and `regen`
+   prints how to redo it instead of running it. After step 4, on the dev machine only (it spawns
+   every boss 200 m above your character, so not in a game someone else is using):
+
+       python tools/bridge.py <id> -f dev/record_booth.py
+       (wait for "booth recipes: N recorded" in the SDK log)
+       python tools/gen_booth_recipes.py .bridge/booth_recording/booth.json
+
+   Then look at a few booth pictures made from the new file before shipping it.
+
    A generator that fails means an anchor or a record it expects is gone: fix that generator
    (the page generators all fail loudly on a missing anchor). Then read `git diff` on the
    outputs. A changed page or NCS record usually needs a look at the code that uses it, not
@@ -105,7 +119,7 @@ step aside when it changed:
 | Item Cards | `item_card.html` (pin; link script) + skills/firmware/drops/encore NCS; `ui_script_backpack` / `ui_script_hud_skills` hooks | check; live (page + data, hooks) | `regen gen_item_cards`; JS anchors listed in `tools/gen_item_cards.py` |
 | Easy Respec | `menu_skills.html` (pin; link script); `ui_script_skills:RemovePoint` | check; live hooks | `regen gen_respec_page` |
 | Instant Tabs | 2 pages (pins; link script); 6 code patch sites (byte patterns, cached per build in `settings/bl4_instant_tabs_sites.json`) | check; live "code patches: not found X" | `regen gen_instant_tabs_pages`; patterns in `mods/bl4_instant_tabs/patch.py` docstring |
-| Kairosdex | `celebratory_notifications.html` (pin; link script), the UI Link's debug.js (4251, shared); dex/stats/rolls/missions/travel data; identity RVAs (shared with Reroll), save key offset (rescans itself), picture bake RVAs (dev) | check; live (identity functions, dex.json) | `regen gen_weapondex` (+ dependents); RVAs: `mods/bl4_weapondex/identity.py` |
+| Kairosdex | `celebratory_notifications.html` (pin; link script), the UI Link's debug.js (4251, shared); dex/stats/rolls/missions/travel data; identity RVAs (shared with Reroll), save key offset (rescans itself), picture bake RVAs (dev); `booth.jsonl` (pinned to the exe build) | check; live (identity functions, dex.json, booth recipes) | `regen gen_weapondex` (+ dependents); RVAs: `mods/bl4_weapondex/identity.py`; booth: record again (step 3) |
 | Carnage Meter | `loot_feed.html` (pin; link script); `items.json`; damage delegate (reflection, self-checked) | check; live "damage delegate"; screen says "Can't count damage on this game version" | `regen gen_carnage_popup gen_damage_meter`; delegate: `native.py` |
 | Reroll | `parts.json`, `legendaries.json`; 7 RVAs pinned by prologue bytes | check; live (swap, data); "Reroll needs an update" | `regen gen_reroll_parts gen_reroll_legendaries`; RVAs: `native.py` "The swap" |
 | Build Presets | equip call (anchor pattern + reflected layout check); `trees.json` | live "native equip" | `mods/bl4_builds/native.py`; `regen gen_builds_trees` |

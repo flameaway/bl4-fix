@@ -43,6 +43,8 @@ class S:
     pictures: dict[str, dict[str, Any]] = {}  # noqa: RUF012 - item key -> its latest roll's picture (thumbs.tick_shots)
     last_values: dict[str, float] = {}  # noqa: RUF012
     history: list[tuple[str, str, dict[str, float], list[tuple[int, int]]]] = []  # noqa: RUF012 - (key, serial, values, owners)
+    # serial -> its parts as rolled ([(table, index)], the composition first), for the parts screen (breakdown.py)
+    rolled: dict[str, list[tuple[int, int | str]]] = {}  # noqa: RUF012
     rng = random.Random()
 
 
@@ -73,13 +75,15 @@ class Game(stats.Game):
         return None if value == self.MISSING or not math.isfinite(value) else value
 
     def constant(self, name: str) -> float | None:
-        if name not in Game.constants:
-            Game.constants[name] = self.attr(name)
-        return Game.constants[name]
+        constants = type(self).constants  # Detached keeps its own
+        if name not in constants:
+            constants[name] = self.attr(name)
+        return constants[name]
 
     def cell(self, table: str, row: str, column: str) -> float:
         key = (table, row, column)
-        if key not in Game.cells:
+        cells = type(self).cells
+        if key not in cells:
             value = 0.0
             try:
                 from unrealsdk.unreal import FGbxDefPtr  # noqa: PLC0415
@@ -94,15 +98,27 @@ class Game(stats.Game):
                 value = float(struct.unpack("<f", raw)[0]) if bits & 0x7F800000 else float(struct.unpack("<i", raw)[0])
             except Exception as ex:  # noqa: BLE001
                 logging.dev_warning(f"[Kairosdex] table cell {key}: {ex!r}")
-            Game.cells[key] = value
-        return Game.cells[key]
+            cells[key] = value
+        return cells[key]
 
     def known(self, spec: dict[str, Any]) -> bool:
-        return (not spec.get("a") or spec["a"] in Game.constants) and (not spec.get("t") or tuple(spec["t"]) in Game.cells)
+        cls = type(self)
+        return (not spec.get("a") or spec["a"] in cls.constants) and (not spec.get("t") or tuple(spec["t"]) in cls.cells)
 
     def value(self, spec: dict[str, Any]) -> float:
         """A weight / gate / chance from rolls.json (serialgen.Resolve)."""
         return serialgen.product(spec, self.constant, self.cell)
+
+
+class Detached(Game):
+    """
+    A roll with no character (thumbs.py at the title screen): attributes read on another object
+    (the controller), in caches of its own, so nothing read that way reaches the player's rolls.
+    """
+
+    cells: dict[tuple[str, str, str], float] = {}  # noqa: RUF012
+    constants: dict[str, float | None] = {}  # noqa: RUF012
+    prepared: dict[tuple[str, int], serialgen.Prepared] = {}  # noqa: RUF012
 
 
 def _changed() -> None:
@@ -200,21 +216,27 @@ def _result(key: str, item: dict[str, Any], ident: int, values: dict[str, float]
         # Lines its type and parts add to the card (perks, licensed parts, augments)
         "parts": stats.part_lines(inv, owners, values, mods, game),
     }
+    # Its name by its parts, as the game names it ("Upgraded Finnity XXX-L" with its Hyperion grip)
+    result["name"] = data.roll_name(item, parts)
     # The game's own item card for it (card.py; the page shows it in the game's card widget)
     result["card"] = card.model(key, item, result, level, (level_fills(key) or {}).get("fills"))
     return result, owners
 
 
-def new_serial(key: str, pc: Any) -> tuple[str, list[tuple[int, int]]] | None:
+def new_serial(key: str, pc: Any, *, context: Any = None,
+               level: int | None = None) -> tuple[str, list[tuple[int, int]]] | None:  # fmt: skip
     """
     A fresh serial of an item at the player's level (thumbs.py's bake uses this too), or None to
     call again next tick. An item's first roll takes three ticks so none is long: its weights and
     gates looked up from the game (LOOKUP_BUDGET_S at a time), its parts prepared, then the roll.
-    Game thread.
+    `context` / `level`: with no character (thumbs at the title screen), the object the game's
+    attributes are read on and the level to roll at. Game thread.
     """
-    game = Game(pc.Pawn)
-    level = max(1, int(game.attr("pawn_experience_level") or 1))
-    prepared = Game.prepared.get((key, level))
+    game = Detached(context) if context is not None else Game(pc.Pawn)
+    prepared_all = type(game).prepared
+    if level is None:
+        level = max(1, int(game.attr("pawn_experience_level") or 1))
+    prepared = prepared_all.get((key, level))
     if prepared is not None:
         return serialgen.roll(prepared, level, S.rng)
     start = time.perf_counter()
@@ -226,9 +248,9 @@ def new_serial(key: str, pc: Any) -> tuple[str, list[tuple[int, int]]] | None:
             game.value(spec)
             looked = True
     if not looked:
-        Game.prepared[(key, level)] = serialgen.Prepared(key, level, game.value)
-        while len(Game.prepared) > KEEP_ITEMS:
-            Game.prepared.pop(next(iter(Game.prepared)))
+        prepared_all[(key, level)] = serialgen.Prepared(key, level, game.value)
+        while len(prepared_all) > KEEP_ITEMS:
+            prepared_all.pop(next(iter(prepared_all)))
     return None
 
 
@@ -269,6 +291,9 @@ def roll_now(key: str, pc: Any) -> dict[str, Any] | str | None:
     finally:
         ident.destroy()
     S.history = [*S.history, (key, serial, S.last_values, owners)][-10:]
+    S.rolled[serial] = list(parts)
+    while len(S.rolled) > KEEP_ITEMS * 2:
+        S.rolled.pop(next(iter(S.rolled)))
     result["serial"] = serial
     return result
 
@@ -297,6 +322,16 @@ def tick() -> None:
 
     if thumbs.Shots.pending:
         for key, picture in thumbs.tick_shots():
+            if key.startswith("own:"):  # a Collection entry's picture (collection.PICTURE_PREFIX)
+                from . import collection  # noqa: PLC0415 - it imports this module
+
+                collection.picture_done(key, picture)
+                continue
+            if key.startswith("part:"):  # a part's own picture for the parts screen (breakdown.PICTURE_PREFIX)
+                from . import breakdown  # noqa: PLC0415 - it imports this module
+
+                breakdown.picture_done(key, picture)
+                continue
             S.pictures[key] = picture
             _changed()
     if not S.queue:

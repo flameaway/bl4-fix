@@ -12,15 +12,40 @@ So for each item:
   uses (`RequestThumbnail(manager, out ThumbnailID, const FString& serial, const FIntPoint& size)`,
   found from the cards' callers), pinned to this build and checked before use;
 - when its render target turns up, we wait out the manager's pre-render frames, read it straight
-  back (RGBA, 0..255 floats with alpha) and a worker thread writes the PNG.
+  back (RGBA, 0..255 floats with alpha) and the PNG is written on an interpreter of its own
+  (offload.py; our writer thread when there's none).
 
-Runs one step at a time from the mod's tick. Dev/bake only.
+Several items are in flight at once (IN_FLIGHT): the manager loads their assets side by side, so a
+picture costs ~0.2 s instead of ~0.9 s one at a time (1.5-4.5 s with the old 4 Hz polling; measured
+2026-11-02). The manager renders one item at a time, one attempt every OakUI.Thumbnails.RenderInterval
+(0.0667 s here) with 5 pre-render attempts an item (NumPreRenderItemThumbnails), and forces the
+capture after 0.2 s on an item when busy (~3 attempts = ~240 ms an item: what we measured). During a
+bake (_pace) the pace is 0, an attempt every frame, and there are PRERENDER (12) attempts an item:
+0.17 s an item. The pace alone (5 attempts in ~5 frames, 0.09 s an item) left textures half streamed
+in: the same 48 serials rendered again (others in between pushed them out of the manager) came out
+~10% less sharp than at the game's pace, fine patterns blurred and decals missing, worst with cold
+textures (a game just launched); with 12 attempts as sharp as at the game's pace (8: nearly; 16: no
+sharper). The median over different rolls hid it (2026-11-03). Several passes a frame
+(OakUI.Thumbnails.MaxConsecutiveRenders 4) was 2.7x faster and as sharp in a warm game, but on a
+fresh launch ~10% blurrier at the median (the worst items lost a third), and worse still with
+PrestreamTextures on the thumbnail mesh or r.Streaming.FullyLoadUsedTextures beside it: textures
+need real time to come in from disk, and only the item being drawn streams (the manager has one
+mesh component in its own world and swaps each item into it). Not used; same items rendered cold,
+then warm, compared per item (2026-11-03). The game's values are put back when
+the bake ends or stops (RE of the manager's tick 0x868D10, 2026-11-03). A fully transparent read
+(nothing drawn yet: 2 of ~1,600 at slower paces) is read again, never saved. Works without a
+character too (titlebake.py, at the title screen): the roll reads the game's attributes on the
+controller, at NO_CHARACTER_LEVEL, in caches of its own (roll.Detached).
+
+Runs from the mod's tick, a few small steps a frame. A picture is read back as 8-bit colour
+(ReadRenderTarget through readback.py, ~2 ms: the SDK's call was ~1.3 ms + ~13 ms letting go of its
+array; the float read ReadRenderTargetRaw took 26-34 ms), one a tick.
+The roll pictures (Shots: roll.py, breakdown.py) are separate and untouched by the bake.
 """
 
 from __future__ import annotations
 
 import ctypes
-import json
 import queue
 import struct
 import threading
@@ -33,7 +58,7 @@ from mods_base import ENGINE, get_pc
 from unrealsdk import logging
 from unrealsdk.unreal import WeakPointer
 
-from . import picture, roll, serialgen, stats
+from . import offload, picture, readback, roll, serialgen, stats
 
 # The manager's request, pinned to the build of 2026-10-22 (RVAs and the bytes there)
 REQUEST_RVA = 0x11BD35E
@@ -45,9 +70,15 @@ SIZE_RVA = 0xCBE4638
 MANAGER_VTABLE_RVA = 0xB7FCB60
 WIDTH, HEIGHT = 512, 256
 WRITER_IDLE_S = 5.0  # how often an idle writer checks whether a hot reload replaced it
-RENDER_WAIT_S = 15.0
-LOOK_EVERY_S = 0.25  # how often to look in the manager's map for ours (memory reads)
-SETTLE_S = 0.6  # after the render target appears: the manager's pre-render frames and the capture
+RENDER_WAIT_S = 15.0  # from the request (with IN_FLIGHT queued, up to ~4.4 s was seen)
+IN_FLIGHT = 8  # items asked for at once (24 items: 4.6 s, 0.19 s each; one at a time 0.88 s each)
+SETTLE_S = 0.1  # after the render target appears (was 0.6; 0.1 checked against the shipped pictures)
+NO_CHARACTER_LEVEL = 50  # the level items are rolled at with no character (title screen)
+INTERVAL_CVAR = "OakUI.Thumbnails.RenderInterval"  # the manager's pace: 0 during a bake (see above)
+# Its attempts an item before the capture: 12 during a bake (the game's 5 at an attempt a frame left
+# textures half streamed in; see above)
+PRERENDER_CVAR = "OakUI.Thumbnails.NumPreRenderItemThumbnails"
+PRERENDER = 12
 RETRIES = 2
 KEEP_BUFFERS = 64  # _keep
 SHOT_LOOK_S = 0.05  # a roll's picture: looked for often (cheap memory reads), read as soon as it's there
@@ -62,23 +93,28 @@ _REQUEST_TYPE = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void
 class S:
     active = False  # from start() until _finish()
     todo: list[str] = []  # noqa: RUF012 - item keys still to do
-    key: str | None = None
-    stage = ""
-    since = 0.0
-    looked = 0.0
-    tries = 0
-    target: WeakPointer | None = None
-    seen_at = 0.0
+    rolling: str | None = None  # the item being rolled (its first roll takes a few ticks)
+    flight: dict[str, Flight] = {}  # noqa: RUF012 - item key -> asked for, not read back yet
+    tries: dict[str, int] = {}  # noqa: RUF012
+    world: WeakPointer = WeakPointer()  # the bake stops when the map changes
     out_dir: Path | None = None
     done: list[str] = []  # noqa: RUF012
     failed: dict[str, str] = {}  # noqa: RUF012
-    serial = ""
     request: Any = None
     manager: WeakPointer | None = None
     writer: threading.Thread | None = None
     pending: queue.Queue = queue.Queue()
     on_finish: Any = None
+    interval: float | None = None  # the game's INTERVAL_CVAR, while a bake has it at 0
+    prerender: int | None = None  # the game's PRERENDER_CVAR, while a bake has it at PRERENDER
     leaked: list[Any] = []  # noqa: RUF012 - out buffers the game filled, kept a while (tiny; capped by _keep)
+
+
+class Flight:
+    def __init__(self, serial: str, now: float) -> None:
+        self.serial, self.requested = serial, now
+        self.address = 0  # its render target, once the manager has one
+        self.found = 0.0
 
 
 def log(msg: str) -> None:
@@ -90,7 +126,8 @@ def pictures_dir(game_dir: Path) -> Path:
 
 
 def baked(game_dir: Path) -> list[str]:
-    return [p.stem for p in pictures_dir(game_dir).glob("*.png")]
+    """Item keys that have a whole picture (picture.whole_pngs: a damaged file counts as missing)."""
+    return picture.whole_pngs(pictures_dir(game_dir))
 
 
 def running() -> bool:
@@ -215,53 +252,95 @@ def _target_at(address: int) -> Any:
     return target if target is not None and target._get_address() == address else None  # noqa: SLF001
 
 
-def start(game_dir: Path, keys: list[str], on_finish: Any = None) -> str:
+def start(game_dir: Path, keys: list[str], on_finish: Any = None, out_dir: Path | None = None) -> str:
     if running():
         return "Already taking item pictures."
     pc = get_pc()
-    if pc is None or pc.Pawn is None:
+    viewport = ENGINE.GameViewport
+    world = viewport.World if viewport is not None else None
+    if pc is None or world is None:
         return "Load into the game first."
     why = _resolve()
     if why:
         return f"Can't take item pictures: {why}."
     if not stats.resolve_defs(pc):
         return "Can't take item pictures: item stats can't be read in this game version."
-    S.out_dir = pictures_dir(game_dir)
+    S.out_dir = out_dir or pictures_dir(game_dir)
     S.out_dir.mkdir(parents=True, exist_ok=True)
-    S.todo, S.done, S.failed, S.on_finish = list(keys), [], {}, on_finish
+    S.todo, S.done, S.failed, S.tries, S.on_finish = list(keys), [], {}, {}, on_finish
+    S.rolling, S.flight = None, {}
+    S.world = WeakPointer(world)
     S.active = True
-    S.key, S.stage = None, ""
-    _start_writer()
-    return f"Taking {len(keys)} item pictures (about {len(keys) * 4 // 60 + 1} min)."
+    _pace(fast=True)
+    if not offload.available():
+        _start_writer()
+    return f"Taking {len(keys)} item pictures (about {max(1, round(len(keys) * 0.2))} s)."
 
 
 def stop(reason: str = "stopped") -> None:
     if not running():
         return
     S.todo.clear()
-    S.key = None
+    S.rolling = None
+    S.flight.clear()
     _finish(reason)
 
 
 def _finish(reason: str) -> None:
     S.active = False
+    _pace(fast=False)
     summary = f"Item pictures {reason}: {len(S.done)} taken"
     if S.failed:
         summary += f", {len(S.failed)} failed (" + ", ".join(f"{k}: {v}" for k, v in list(S.failed.items())[:5]) + ")"
     log(summary)
     if S.out_dir:
-        S.pending.put(("index", S.out_dir, None))
+        if offload.available():
+            offload.dirty(S.out_dir)
+        else:
+            S.pending.put(("index", S.out_dir, None))
     if S.on_finish:
         S.on_finish(summary)
 
 
-def _fail(why: str) -> None:
-    if S.tries < RETRIES and why != "no roll rules for it":
-        S.tries += 1
-        S.stage = "drop"
+def _pace(*, fast: bool) -> None:
+    """
+    During a bake the manager renders an attempt every frame, PRERENDER of them an item; the game's
+    own pace otherwise. A console write marks a variable as set by the console (later lower-priority
+    writes, e.g. a hotfix arriving mid-session, would be ignored); the game's values themselves are
+    put back.
+    """
+    try:
+        ksl = unrealsdk.find_class("KismetSystemLibrary").ClassDefaultObject
+        if fast:
+            if S.interval is None:
+                S.interval = float(ksl.GetConsoleVariableFloatValue(INTERVAL_CVAR))
+                if S.interval > 0:
+                    ksl.ExecuteConsoleCommand(None, f"{INTERVAL_CVAR} 0", None)
+            if S.prerender is None:
+                S.prerender = int(ksl.GetConsoleVariableIntValue(PRERENDER_CVAR))
+                if S.prerender < PRERENDER:
+                    ksl.ExecuteConsoleCommand(None, f"{PRERENDER_CVAR} {PRERENDER}", None)
+            return
+        if S.interval is not None:
+            if S.interval > 0:
+                ksl.ExecuteConsoleCommand(None, f"{INTERVAL_CVAR} {S.interval:.9g}", None)
+            S.interval = None
+        if S.prerender is not None:
+            if S.prerender < PRERENDER:
+                ksl.ExecuteConsoleCommand(None, f"{PRERENDER_CVAR} {S.prerender}", None)
+            S.prerender = None
+    except Exception as ex:  # noqa: BLE001 - only the pace; the bake works without it
+        logging.error(f"[Kairosdex] thumbnail pace: {ex!r}")
+
+
+def _fail(key: str, why: str) -> None:
+    S.flight.pop(key, None)
+    tries = S.tries.get(key, 0)
+    if tries < RETRIES and why != "no roll rules for it":
+        S.tries[key] = tries + 1
+        S.todo.append(key)  # again later, with a new roll
         return
-    S.failed[S.key or "?"] = why
-    S.key = None
+    S.failed[key] = why
 
 
 def tick() -> None:
@@ -269,67 +348,141 @@ def tick() -> None:
     if not running():
         return
     pc = get_pc(possibly_loading=True)
-    if pc is None or pc.Pawn is None:
-        stop("stopped (left the game)")
+    viewport = ENGINE.GameViewport
+    world = viewport.World if viewport is not None else None
+    if pc is None or world is None or world != S.world():
+        stop("stopped (the map changed)")
         return
     now = time.monotonic()
-    if S.key is None:
-        if not S.todo:
-            _finish("done")
-            return
-        S.key, S.stage, S.tries = S.todo.pop(0), "drop", 0
+    _roll_next(pc, now)
+    if S.flight:
+        _look(now)
+        _read_settled(now)
+    if not S.todo and S.rolling is None and not S.flight:
+        _finish("done")
+
+
+def _roll_next(pc: Any, now: float) -> None:
+    """Rolls the next item and asks for its picture, while fewer than IN_FLIGHT are out."""
+    if len(S.flight) >= IN_FLIGHT or (S.rolling is None and not S.todo):
+        return
+    if S.rolling is None:
+        S.rolling = S.todo.pop(0)
+    key = S.rolling
     try:
-        _step(pc, now)
-    except Exception as ex:  # noqa: BLE001
-        logging.error(f"[Kairosdex] item picture {S.key}: {ex!r}")
-        S.failed[S.key or "?"] = repr(ex)
-        S.key = None
-
-
-def _step(pc: Any, now: float) -> None:
-    key = S.key
-    assert key is not None
-    if S.stage == "drop":
         if not serialgen.has(key):
-            _fail("no roll rules for it")
+            S.rolling = None
+            _fail(key, "no roll rules for it")
             return
-        rolled = roll.new_serial(key, pc)
+        if pc.Pawn is not None:
+            rolled = roll.new_serial(key, pc)
+        else:  # the title screen
+            rolled = roll.new_serial(key, pc, context=pc, level=NO_CHARACTER_LEVEL)
         if rolled is None:
             return  # its weights are still being looked up
-        S.serial = rolled[0]
-        if not _request(S.serial):
-            _fail("the thumbnail manager is gone")
+        S.rolling = None
+        if not _request(rolled[0]):
+            _fail(key, "the thumbnail manager is gone")
             return
-        S.stage, S.since, S.looked, S.target = "render", now, now, None
+        S.flight[key] = Flight(rolled[0], now)
+    except Exception as ex:  # noqa: BLE001 - one bad item mustn't stop the rest
+        logging.error(f"[Kairosdex] item picture {key}: {ex!r}")
+        S.rolling = None
+        _fail(key, repr(ex))
+
+
+def _look(now: float) -> None:
+    """One pass over the manager's map for every picture still being made."""
+    waiting = {f.serial: key for key, f in S.flight.items() if not f.address}
+    if not waiting:
         return
-    if S.stage == "render":
-        if now - S.looked < LOOK_EVERY_S:
-            return
-        S.looked = now
-        # The manager's own map says which render target is this serial's (renders can finish out of
-        # order: watching for "the newest render target" put pictures under the wrong items)
-        address = _rendered(S.serial)
-        target = _target_at(address) if address else None
-        if target is None:
-            if now - S.since > RENDER_WAIT_S:
-                _fail("no picture was rendered")
-            return
-        S.target, S.seen_at, S.stage = WeakPointer(target), now, "settle"
+    for serial, address in _rendered_all(list(waiting)).items():
+        flight = S.flight[waiting[serial]]
+        flight.address, flight.found = address, now
+    for key, flight in list(S.flight.items()):
+        if not flight.address and now - flight.requested > RENDER_WAIT_S:
+            _fail(key, "no picture was rendered")
+
+
+def _read_settled(now: float) -> None:
+    """Reads back one settled picture (each read is ~15 ms of the game thread: one a tick)."""
+    ready = [(key, f) for key, f in S.flight.items() if f.address and now - f.found >= SETTLE_S][:1]
+    if not ready:
         return
-    if S.stage == "settle":
-        if now - S.seen_at < SETTLE_S:
-            return
-        target = S.target() if S.target else None
-        if target is None or _rendered(S.serial) != target._get_address():  # noqa: SLF001
-            _fail("the picture was dropped before it could be read")
-            return
-        raw = _read_picture(target)
-        if raw is None:
-            _fail("couldn't read the picture back")
-            return
-        S.pending.put(("png", S.out_dir / f"{key}.png", raw))
+    current = _rendered_all([f.serial for _, f in ready])
+    for key, flight in ready:
+        address = current.get(flight.serial)
+        if address != flight.address:
+            if address:
+                flight.address, flight.found = address, now  # rendered again elsewhere: settle again
+            else:
+                _fail(key, "the picture was dropped before it could be read")
+            continue
+        target = _target_at(address)
+        bgra = _read_bgra(target) if target is not None else None
+        if bgra is None:
+            _fail(key, "couldn't read the picture back")
+            continue
+        if not bgra[3::4].strip(b"\0"):
+            # Nothing drawn in it yet (fully transparent): 2 of ~1,600 pictures, at slower paces
+            # (2026-11-03). Look again after another settle
+            if now - flight.requested < RENDER_WAIT_S:
+                flight.found = now
+            else:
+                _fail(key, "the picture stayed empty")
+            continue
+        del S.flight[key]
+        assert S.out_dir is not None
+        _save(S.out_dir / f"{key}.png", bgra)
         S.done.append(key)
-        S.key = None
+
+
+def _save(png: Path, bgra: bytes) -> None:
+    """To an interpreter of its own (offload.py), else to our writer thread."""
+    if offload.available():
+        offload.submit("item", png.stem, png, WIDTH, HEIGHT, bgra)
+    else:
+        _start_writer()
+        S.pending.put(("bgra", png, bgra))
+
+
+def _read_bgra(target: Any) -> bytes | None:
+    """
+    The picture as 8-bit BGRA (ReadRenderTarget's FColor). The thumbnails are RGBA16f holding 0..255
+    whole numbers: byte-identical to ReadRenderTargetRaw rounded (every pixel of 6 pictures,
+    2026-11-02), and nothing left to convert. Through readback's kept block: the SDK's call took
+    ~15 ms, 13 of them letting go of its array.
+    """
+    return readback.colors(ENGINE.GameViewport.World, target, WIDTH * HEIGHT)
+
+
+def _rendered_all(serials: list[str]) -> dict[str, int]:
+    """{serial: its render target's address} for these serials: one pass over the manager's map."""
+    manager = S.manager() if S.manager else None
+    if manager is None:
+        return {}
+    head = stats._read(manager._get_address() + RENDERED, 16)  # noqa: SLF001
+    if head is None:
+        return {}
+    array, count = struct.unpack_from("<QI", head)
+    if not 0 < count <= MAX_ELEMENTS:
+        return {}
+    raw = stats._read(array, count * ELEMENT_SIZE)  # noqa: SLF001
+    if raw is None:
+        return {}
+    want = {(s + "\0").encode("utf-16-le"): s for s in serials}
+    lengths = {len(w) // 2 for w in want}
+    size = struct.pack("<ii", WIDTH, HEIGHT)
+    found: dict[str, int] = {}
+    for at in range(0, len(raw), ELEMENT_SIZE):
+        text, length = struct.unpack_from("<Qi", raw, at)
+        if length not in lengths:  # free slots and other serials' lengths: no read
+            continue
+        serial = want.get(stats._read(text, length * 2) or b"")  # noqa: SLF001
+        target, = struct.unpack_from("<Q", raw, at + ELEMENT_TARGET)
+        if serial is not None and raw[at + 0x10 : at + 0x18] == size and target:
+            found[serial] = target
+    return found
 
 
 def _read_picture(target: Any) -> bytes | None:
@@ -441,6 +594,7 @@ def follow(picture: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def _write_all(pending: queue.Queue) -> None:
+    dirty: set[Path] = set()  # folders whose index.json is behind
     while True:
         try:
             kind, path, raw = pending.get(timeout=WRITER_IDLE_S)
@@ -450,37 +604,37 @@ def _write_all(pending: queue.Queue) -> None:
             continue
         try:
             if kind == "index":
-                _write_index(path)
-                continue
-            rgba = _to_bytes(raw)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            picture.write_png(path, WIDTH, HEIGHT, rgba)
-            picture.write_small(path, WIDTH, HEIGHT, rgba)  # the copy the page's thumbnails use
-            _write_index(path.parent)
+                dirty.add(path)
+            else:
+                rgba = _to_rgba(raw)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                picture.write_png(path, WIDTH, HEIGHT, rgba)
+                # The copy the page's thumbnails use
+                w, h, small = picture.shrink(WIDTH, HEIGHT, rgba)
+                small_png = picture.small_path(path)
+                small_png.parent.mkdir(parents=True, exist_ok=True)
+                picture.write_png(small_png, w, h, small)
+                dirty.add(path.parent)
+            if pending.empty():
+                # The indexes list every picture (a folder scan): once the queue is drained, not per picture
+                for folder in dirty:
+                    _write_index(folder)
+                    picture.write_small_index(folder)
+                dirty.clear()
         except Exception as ex:  # noqa: BLE001
             logging.error(f"[Kairosdex] couldn't save {path.name}: {ex!r}")
 
 
-def _to_bytes(raw: bytes) -> bytes:
-    """
-    ReadRenderTargetRaw's float RGBA (0..255) as 8-bit RGBA. A row at a time, letting go of the GIL
-    after each: converting a whole picture at once (~85 ms of Python) made every hook of every mod
-    on the game thread wait for it, 5-60 ms per call (measured 2026-10-24). The pause must really
-    sleep: sleep(0) hands the GIL over and takes it straight back, and at Python's default 5 ms
-    switch interval that starved the game thread (~95 ms a turn, offline).
-    """
-    floats = memoryview(raw).cast("f")
-    out = bytearray(len(floats))
-    row = 4 * WIDTH
-    for start in range(0, len(floats), row):
-        out[start : start + row] = bytes(max(0, min(255, round(v))) for v in floats[start : start + row])
-        time.sleep(0.001)
-    return bytes(out)
+def _to_rgba(bgra: bytes) -> bytes:
+    """FColor order (B, G, R, A) as RGBA: four C-level slice copies, ~0.6 ms a picture."""
+    rgba = bytearray(len(bgra))
+    rgba[0::4] = bgra[2::4]
+    rgba[1::4] = bgra[1::4]
+    rgba[2::4] = bgra[0::4]
+    rgba[3::4] = bgra[3::4]
+    return bytes(rgba)
 
 
 def _write_index(folder: Path) -> None:
     """items/index.json for the page: {item key: version (the file's date)}."""
-    index = {p.stem: int(p.stat().st_mtime) for p in sorted(folder.glob("*.png"))}
-    tmp = folder / f"index.{threading.get_ident()}.tmp"
-    tmp.write_text(json.dumps(index), encoding="utf-8")
-    tmp.replace(folder / "index.json")
+    picture.write_index(folder)

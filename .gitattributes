@@ -1,5 +1,3 @@
-# The mods' pictures (tools/sync_pictures.py): stored byte for byte, no line-ending conversion
-assets/** -text
 # Shared packages (tools/sync_shared.py): every mod's copy must be byte for byte the same (the UI
 # link's pak is identical whichever mod writes it)
 shared/** -text

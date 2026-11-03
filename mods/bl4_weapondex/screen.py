@@ -24,6 +24,7 @@ outcome goes back in the state's "trip" (the page closes the menus once the play
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -36,7 +37,7 @@ import unrealsdk
 from mods_base import SETTINGS_DIR, get_pc
 from unrealsdk import logging
 
-from . import data, fetch, health, owned, pause_page, picture, progress, roll, savegame, thumbs, travel, uilink
+from . import breakdown, collection, data, health, owned, pause_page, picture, progress, roll, savegame, thumbs, travel, uilink
 
 KEY = "weapondex"
 VIEW_FILE = SETTINGS_DIR / "weapondex_view.json"
@@ -68,6 +69,7 @@ class S:
     published_at = 0.0
     published: dict[str, tuple[int, int]] = {}  # noqa: RUF012 - file -> (size, mtime) last copied
     packed = False  # running from a packed .sdkmod (learned at register): publish() has nothing to do
+    script_url = SCRIPT_URL  # dev: the current dex_dev_<hash>.js (_dev_script)
     open_request: dict[str, Any] = {"id": 0, "own": False, "boss": None}  # noqa: RUF012
     open_requested_at = -1e9
     open_pending = False  # until the page acknowledges it (do: "opened")
@@ -168,6 +170,8 @@ def state() -> dict[str, Any]:
         "fills": roll.level_fills(_shown_item()),
         # The item the mouse is over in the list (its card shows beside it)
         "hover": roll.hover_state(S.hover),
+        # The parts screen (breakdown.py): what each part of the shown roll does
+        "parts": breakdown.state(),
         # Legendaries the player has had (owned.py): the "Obtained items only" option shows only these
         "obtained": S.obtained(),
         "spoiler_free": S.spoiler_free(),
@@ -178,6 +182,9 @@ def state() -> dict[str, Any]:
         "list_hover": S.list_hover(),
         # The drop chances shown are at this UVH level
         "uvh": _uvh(),
+        # The Collection tab (collection.py): the list's version (the page reads collection.json when
+        # it changes), the character played, and the shown entry's card and picture
+        "collection": collection.state(),
         "trip": S.trip,
     }
 
@@ -202,6 +209,22 @@ def act(action: dict[str, Any]) -> None:
         case "roll":
             if isinstance(action.get("item"), str):
                 roll.request(action["item"], int(action.get("count") or 1))
+        case "parts":
+            # The parts screen opened (or its item's roll changed): break the latest roll down, or
+            # with "own", that Collection entry's exact item
+            own = action.get("own")
+            if isinstance(own, str):
+                serial = collection.serial_of(own)
+                key = collection.key_of(own)
+                if serial and key in data.dex()["items"]:
+                    breakdown.request(key, serial, own)
+            elif isinstance(action.get("item"), str) and action["item"] in data.dex()["items"]:
+                breakdown.request(action["item"])
+        case "parts_close":
+            breakdown.close()
+        case "part_slot":
+            at = action.get("at")
+            breakdown.open_slot(at if isinstance(at, int) else None)
         case "roll_clear":
             if isinstance(action.get("item"), str):
                 roll.clear(action["item"])
@@ -219,6 +242,14 @@ def act(action: dict[str, Any]) -> None:
             # Rolled once on its first hover (no picture), the same roll shown on later hovers
             if S.hover and not roll.S.results.get(S.hover) and not roll.S.status.get(S.hover):
                 roll.request(S.hover, 1, picture=False)
+        case "inspect":
+            # A Collection entry the details show: its card (and picture) made on demand
+            entry = action.get("id")
+            collection.show(entry if isinstance(entry, str) else None)
+        case "copy_serial":
+            entry = action.get("id")
+            if isinstance(entry, str) and collection.copy(entry):
+                say("Serial copied to the clipboard.")
         case "waypoint" | "travel":
             if isinstance(action.get("boss"), str):
                 S.trip_request = {"do": action["do"], "boss": action["boss"]}
@@ -276,10 +307,40 @@ def register(game_dir: Path) -> bool:
     """Starts the screen's side: the page script goes to the link."""
     S.game_dir = game_dir
     publish(force=True)
+    collection.setup(game_dir)
     _start_small_backfill(game_dir)
     _retire_standalone(game_dir)
-    uilink.register(KEY, SCRIPT_URL, state, act, views=(uilink.MENUS,), mod="Kairosdex")
+    uilink.register(KEY, S.script_url, state, act, views=(uilink.MENUS,), mod="Kairosdex")
     return True
+
+
+DEV_SCRIPT = "dex_dev_"  # dex_dev_<hash>.js: the dev copy of dex.js (_dev_script)
+
+
+def _dev_script(content: bytes) -> None:
+    """
+    Dev (running from the source folder): dex.js also goes out as dex_dev_<its hash>.js, and that's
+    the address registered. The link's release copy (a game whose link owner is an installed mod)
+    fetches a script once per address, so an edited dex.js under the same name never ran; a new
+    name per edit does. Older dev copies are deleted. Installed (packed) copies keep dex.js.
+    """
+    if S.game_dir is None:
+        return
+    name = f"{DEV_SCRIPT}{hashlib.sha1(content).hexdigest()[:10]}.js"  # noqa: S324 - a file name
+    folder = S.game_dir / UI_DIR
+    target = folder / name
+    if not target.is_file():
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_bytes(content)
+        tmp.replace(target)
+    for old in folder.glob(f"{DEV_SCRIPT}*.js"):
+        if old.name != name:
+            old.unlink(missing_ok=True)
+    url = f"coui://uiresources/bl4weapondex/{name}"
+    if url != S.script_url:
+        S.script_url = url
+        if KEY in uilink._hub().extensions:  # noqa: SLF001 - registered already: the new address goes out
+            uilink.register(KEY, url, state, act, views=(uilink.MENUS,), mod="Kairosdex")
 
 
 def _retire_standalone(game_dir: Path) -> None:
@@ -308,19 +369,14 @@ SMALL_THREAD = "weapondex-small"
 
 def _start_small_backfill(game_dir: Path) -> None:
     """
-    Once, on a worker: the release's pictures if the game folder lacks any (fetch.restore: the
-    setup app is the only install that brings them), then small copies of pictures taken before
-    they existed (picture.backfill). One thread, so the backfill's small/index.json rewrite can't
-    race the restore's.
+    Once, on a worker: small copies of pictures taken before they existed (picture.backfill). Until
+    2026-11-03 it first downloaded the release's pictures when the game folder lacked any; nothing
+    is shipped or downloaded now (titlebake.py makes every picture in game).
     """
     if any(t.name == SMALL_THREAD for t in threading.enumerate()):
         return  # still running from before a hot reload
 
     def run() -> None:
-        try:
-            fetch.restore(game_dir, SETTINGS_DIR, lambda text: logging.info(f"[Kairosdex] {text}"))
-        except Exception as ex:  # noqa: BLE001 - offline, or no release: the dex works without pictures
-            logging.warning(f"[Kairosdex] couldn't get the missing pictures: {ex!r}")
         try:
             made = picture.backfill([game_dir / UI_DIR / "bosses", game_dir / UI_DIR / "items"])
             if made:
@@ -336,6 +392,8 @@ def unregister() -> None:
     S.trip_request = None
     travel.cancel()
     roll.stop()
+    breakdown.close()
+    collection.forget_cards()
     thumbs.stop("stopped (mod disabled)")
     uilink.unregister(KEY)
     uilink.stop()
@@ -366,6 +424,8 @@ def publish(*, force: bool = False) -> None:
                     continue
                 S.published[name] = stamp
             content = source.read_bytes()
+            if from_source and name == "dex.js":
+                _dev_script(content)
             target = S.game_dir / UI_DIR / name
             try:
                 if target.read_bytes() == content:
@@ -591,8 +651,8 @@ def busy() -> bool:
     """
     return bool(
         S.typing is not None or _Trace.watching is not None or S.trip_request is not None
-        or travel.S.trip is not None or travel.S.hop is not None or roll.S.queue
-        or thumbs.Shots.pending or thumbs.S.active or owned.S.walk is not None
+        or travel.S.trip is not None or travel.S.hop is not None or roll.S.queue or breakdown.busy()
+        or thumbs.Shots.pending or thumbs.S.active or owned.S.walk is not None or collection.busy()
     )  # fmt: skip
 
 
@@ -605,6 +665,10 @@ def tick() -> None:
     _tick_trips()
     roll.S.on_change = _changed
     roll.tick()
+    breakdown.S.on_change = _changed
+    breakdown.tick()
+    collection.S.on_change = _changed
+    collection.tick()
     thumbs.tick()
     owned.tick()
     if S.waiting_until and time.monotonic() > S.waiting_until:

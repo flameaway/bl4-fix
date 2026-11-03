@@ -140,6 +140,26 @@ def _bl4_patch_status() -> None:
         return ok_if(sys.modules["bl4_weapondex.data"]._data_ok, "dex.json current", "dex says 'chances may be off'")
 
     probe("bl4_weapondex", "dex.json", dex_data)
+
+    def dex_booth(m):  # noqa: ANN001, ANN202
+        import importlib
+        import json
+        from importlib import resources
+
+        try:
+            booth = importlib.import_module("bl4_weapondex.booth")
+        except ImportError:
+            return "ok", "this copy has no booth (older Kairosdex)"
+        try:
+            with resources.files("bl4_weapondex").joinpath(booth.RECIPES_FILE).open(encoding="utf-8") as file:
+                built = json.loads(file.readline()).get("build")  # the header line only
+        except (OSError, ValueError, AttributeError):
+            return "OFF", f"no readable {booth.RECIPES_FILE} in this copy"
+        here = booth.game_build()
+        return ok_if(built == here, f"booth.jsonl current ({here})",
+                     f"booth.jsonl is for {built}, this is {here}: no new boss pictures (record again)")
+
+    probe("bl4_weapondex", "booth recipes", dex_booth)
     probe("bl4_instant_travel", "stations.json",
           lambda m: ok_if(sys.modules["bl4_instant_travel.stations"]._current, "current", "portal used instead"))
 

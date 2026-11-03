@@ -12,7 +12,6 @@ import json
 import shutil
 import sys
 import tempfile
-import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -248,28 +247,16 @@ def main() -> int:
         core.install(game, log, mods=set(catalog.BY_ID))
         check(core.installed_mods(game) == set(catalog.BY_ID), f"mods: all {len(catalog.MODS)} install")
 
-        # --- Weapondex pictures come with the mod ---
-        with zipfile.ZipFile(core.payload_assets("bl4_weapondex")) as zf:
-            bundled = {f: json.loads(zf.read(f"{f}/index.json"))
-                       for f in ("bl4weapondex/bosses", "bl4weapondex/items", "bl4weapondex/bosses/small", "bl4weapondex/items/small")}
-        for folder, index in bundled.items():
-            got_index = json.loads((ui / folder / "index.json").read_text())
-            pngs = {p.stem for p in (ui / folder).glob("*.png")}
-            check(got_index == index and pngs == set(index), f"pictures: {folder} has all {len(index)} pictures + index")
-        boss = next(iter(bundled["bl4weapondex/bosses"]))
-        small_png, full_png = ui / "bl4weapondex/bosses/small" / f"{boss}.png", ui / "bl4weapondex/bosses" / f"{boss}.png"
-        check(small_png.stat().st_mtime >= full_png.stat().st_mtime, "pictures: small copy not older than its picture")
-        # A picture the player took later (newer version) and one we don't ship survive a repair
-        boss_index = ui / "bl4weapondex/bosses/index.json"
-        mine = json.loads(boss_index.read_text())
-        mine[boss] = 9_999_999_999
-        mine["my-own-boss"] = 5
-        boss_index.write_text(json.dumps(mine))
+        # --- Kairosdex pictures: none shipped (made in game); the player's own survive a repair ---
+        boss_dir = ui / "bl4weapondex/bosses"
+        check(not boss_dir.exists() or not list(boss_dir.glob("*.png")), "pictures: none installed (made in game)")
+        boss_dir.mkdir(parents=True, exist_ok=True)
+        full_png = boss_dir / "some-boss.png"
         full_png.write_bytes(b"my picture")
+        (boss_dir / "index.json").write_text(json.dumps({"some-boss": 5}))
         core.install(game, log)
-        after = json.loads(boss_index.read_text())
-        check(full_png.read_bytes() == b"my picture" and after[boss] == 9_999_999_999 and after.get("my-own-boss") == 5,
-              "pictures: repair keeps the player's newer and extra pictures")
+        check(full_png.read_bytes() == b"my picture" and json.loads((boss_dir / "index.json").read_text()) == {"some-boss": 5},
+              "pictures: repair keeps the pictures the player's game made")
         core.install(game, log, mods=set(catalog.BY_ID) - {"bl4_weapondex"})
         check(not (ui / "bl4weapondex").exists(), "pictures: unticking Weapondex removes them")
         core.install(game, log, mods=set(catalog.DEFAULTS))

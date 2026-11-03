@@ -1237,3 +1237,1172 @@
 }
 
 /* endregion */
+
+/* Collection: an entry's serial (its exact roll) under its details; long, so it wraps anywhere */
+.bl4dex_root .bl4dex_serial {
+    font-family: Industry-Normal;
+    font-size: 1.5rem;
+    color: #c9d3d5;
+    word-break: break-all;
+    margin: 0 0 0.4rem 0;
+}
+
+/* region Parts screen (click an item's picture). One screen, no scrolling: the parts on the left,
+   the gun and the picked part in the middle, the game's card on the right. The game's own art:
+   manufacturer logos, the item card's comparison backings and arrows, element backings, stat and
+   skill icons. */
+
+.bl4dex_item_picture_parts {
+    cursor: pointer;
+}
+
+.bl4dex_item_picture_parts:hover {
+    border-color: rgba(0, 198, 255, 0.9);
+}
+
+.bl4dex_parts_hint {
+    position: absolute;
+    right: 0.8rem;
+    bottom: 0.8rem;
+    display: flex;
+    flex-direction: row;
+    padding: 0.4rem 1.2rem;
+    background-color: rgba(3, 16, 25, 0.85);
+    border: 0.12rem solid rgba(0, 198, 255, 0.6);
+}
+
+.bl4dex_root .bl4dex_parts_hint_text {
+    font-family: Industry-DemiBold;
+    font-size: 1.5rem;
+    letter-spacing: 0.2rem;
+    color: #00c6ff;
+}
+
+.bl4dex_item_picture_parts:hover .bl4dex_parts_hint {
+    background-color: rgba(0, 60, 85, 0.9);
+    border-color: #00c6ff;
+}
+
+.bl4dex_parts {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: rgba(2, 12, 19, 0.98);
+    z-index: 10;
+}
+
+/* Back | PARTS 13 in this roll | filters | legend | Roll another */
+.bl4dex_parts_bar {
+    flex: 0 0 6.4rem;
+    height: 6.4rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 0.4rem;
+    border-bottom: 0.3rem solid rgba(0, 198, 255, 0.6);
+}
+
+.bl4dex_parts_back.list_btn {
+    width: 20rem;
+    flex: 0 0 20rem;
+    margin-right: 2.4rem;
+}
+
+.bl4dex_parts_title {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    margin-right: 3rem;
+}
+
+.bl4dex_root .bl4dex_parts_title_text {
+    font-family: Industry-DemiBold;
+    font-size: 3.2rem;
+    letter-spacing: 0.4rem;
+    color: #e4d9ce;
+    margin-right: 1.4rem;
+}
+
+.bl4dex_root .bl4dex_parts_title_count {
+    font-family: Industry-Normal;
+    font-size: 1.7rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_parts_filters {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_parts_legend {
+    flex: 1 1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    margin-right: 2rem;
+}
+
+.bl4dex_root .bl4dex_parts_legend_text {
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #a0aeb1;
+    margin: 0 1.6rem 0 0.4rem;
+}
+
+/* The three columns fill what's left of the frame */
+.bl4dex_parts_body {
+    flex: 1 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    padding-top: 1.2rem;
+}
+
+/* Left: the parts, one fixed-height row each; scrolls when they don't all fit */
+.bl4dex_parts_left {
+    flex: 1 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding-right: 1.2rem;
+    overflow-y: scroll;
+}
+
+.bl4dex_parts_row {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: 15rem;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    margin-bottom: 0.8rem;
+}
+
+.bl4dex_root .bl4dex_parts_foot {
+    flex: 0 0 auto;
+    font-family: Industry-Normal;
+    font-size: 1.5rem;
+    color: #6d7c80;
+}
+
+/* A part, one row of the stack: picture | slot, name, maker | what it does | better / worse.
+   Rows share the column's height (a long list gets thinner rows) */
+.bl4dex_part {
+    flex: 0 0 8.5rem;
+    height: 8.5rem;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    margin-bottom: 0.6rem;
+    background-color: rgba(6, 26, 38, 0.9);
+    border: 0.15rem solid rgba(63, 118, 157, 0.5);
+    border-left: 0.4rem solid #ff8c28;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.bl4dex_part:hover {
+    border-color: rgba(0, 198, 255, 0.8);
+    border-left-color: #ff8c28;
+    background-color: rgba(8, 40, 58, 0.95);
+}
+
+.bl4dex_part_core,
+.bl4dex_part_core:hover {
+    border-left-color: #00c6ff;
+}
+
+.bl4dex_part_quiet,
+.bl4dex_part_quiet:hover {
+    border-left-color: rgba(160, 174, 177, 0.45);
+}
+
+.bl4dex_part_quiet .bl4dex_part_picture {
+    opacity: 0.65;
+}
+
+.bl4dex_part_picked,
+.bl4dex_part_picked:hover {
+    border-color: #00c6ff;
+    background-color: rgba(0, 60, 85, 0.9);
+}
+
+.bl4dex_part_blank,
+.bl4dex_part_blank:hover {
+    background-color: transparent;
+    border-color: transparent;
+    cursor: default;
+}
+
+.bl4dex_part_picture {
+    position: relative;
+    flex: 0 0 16rem;
+    width: 16rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background-image: radial-gradient(circle at 50% 55%, rgba(0, 120, 160, 0.32), rgba(0, 20, 32, 0.95) 72%);
+}
+
+.bl4dex_part_picture_icon {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.bl4dex_part_picture_icon p,
+.bl4dex_part_picture_icon span {
+    font-size: 5rem;
+}
+
+.bl4dex_root .bl4dex_part_picture_none {
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: rgba(160, 174, 177, 0.35);
+}
+
+.bl4dex_part_maker_mark {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    width: 3.2rem;
+    height: 2.6rem;
+    background-size: contain;
+    background-position: left top;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_part_info {
+    flex: 1 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0.4rem 1rem;
+    overflow: hidden;
+}
+
+.bl4dex_part_who {
+    flex: 0 0 26rem;
+    width: 26rem;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.bl4dex_part_tally {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-left: 0.8rem;
+}
+
+.bl4dex_part_top {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_root .bl4dex_part_slot_text {
+    flex: 1 1;
+    font-family: Industry-DemiBold;
+    font-size: 1.25rem;
+    letter-spacing: 0.15rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_root .bl4dex_part_name {
+    font-family: Industry-DemiBold;
+    font-size: 1.9rem;
+    color: #e4d9ce;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4dex_part_maker {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 0.1rem;
+}
+
+.bl4dex_part_maker_icon {
+    flex: 0 0 1.8rem;
+    width: 1.8rem;
+    height: 1.8rem;
+    margin-right: 0.5rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_root .bl4dex_part_maker_text {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #c9d3d5;
+}
+
+.bl4dex_root .bl4dex_part_maker_none {
+    color: #6d7c80;
+}
+
+/* What it does, short, as chips that wrap (cut off at the tile's bottom; in full in the middle) */
+/* Its effects: lines down, then a second column beside them when there are more */
+.bl4dex_part_chips {
+    flex: 1 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    justify-content: center;
+    padding-left: 1rem;
+    border-left: 0.12rem solid rgba(63, 118, 157, 0.35);
+    overflow: hidden;
+}
+
+.bl4dex_part_chips .bl4dex_part_line {
+    width: 26rem;
+    margin-right: 1rem;
+}
+
+/* One line per effect: arrow, then the text, cut off at the tile's edge */
+.bl4dex_part_line {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 1.9rem;
+    margin-bottom: 0.1rem;
+    overflow: hidden;
+}
+
+.bl4dex_part_line .bl4dex_part_arrow {
+    flex: 0 0 1.4rem;
+    width: 1.4rem;
+    height: 1rem;
+    margin: 0 0.5rem 0 0;
+}
+
+.bl4dex_root .bl4dex_part_line_text,
+.bl4dex_root .bl4dex_part_line_text p {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4dex_part_line_text {
+    flex: 1 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+}
+
+.bl4dex_root .bl4dex_part_line.bl4dex_part_good .bl4dex_part_line_text,
+.bl4dex_root .bl4dex_part_line.bl4dex_part_good .bl4dex_part_line_text p {
+    color: #3ee08f;
+}
+
+.bl4dex_root .bl4dex_part_line.bl4dex_part_bad .bl4dex_part_line_text,
+.bl4dex_root .bl4dex_part_line.bl4dex_part_bad .bl4dex_part_line_text p {
+    color: #ff6b82;
+}
+
+.bl4dex_part_count {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-left: 0.6rem;
+}
+
+.bl4dex_root .bl4dex_part_count_text {
+    font-family: Industry-DemiBold;
+    font-size: 1.6rem;
+    margin-left: 0.2rem;
+}
+
+.bl4dex_root .bl4dex_part_good .bl4dex_part_count_text {
+    color: #3ee08f;
+}
+
+.bl4dex_root .bl4dex_part_bad .bl4dex_part_count_text {
+    color: #ff4d6a;
+}
+
+.bl4dex_root .bl4dex_part_tag {
+    color: #00c6ff;
+    border-color: rgba(0, 198, 255, 0.6);
+    font-size: 1.2rem;
+    padding: 0.1rem 0.6rem;
+}
+
+/* Middle: the gun, then the picked part in full */
+.bl4dex_parts_gun {
+    flex: 0 0 52rem;
+    width: 52rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 0 1.6rem;
+    border-left: 0.15rem solid rgba(63, 118, 157, 0.45);
+    border-right: 0.15rem solid rgba(63, 118, 157, 0.45);
+    overflow: hidden;
+}
+
+.bl4dex_parts .bl4dex_parts_gun_picture {
+    flex: 0 0 19rem;
+    width: 100%;
+    height: 19rem;
+    margin: 0;
+}
+
+.bl4dex_parts_gun_head {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    margin-top: 1rem;
+}
+
+.bl4dex_parts_gun_line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_parts_gun_logotype {
+    flex: 0 0 15rem;
+    width: 15rem;
+    height: 4.4rem;
+    margin-right: 1.4rem;
+    background-size: contain;
+    background-position: left center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_parts_gun_names {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4dex_root .bl4dex_parts_gun_name {
+    flex: 1 1;
+    font-family: Industry-DemiBold;
+    font-size: 3.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4dex_root .bl4dex_parts_gun_kind {
+    font-family: Industry-DemiBold;
+    font-size: 1.9rem;
+    letter-spacing: 0.15rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_root .bl4dex_parts_gun_facts {
+    font-family: Industry-Normal;
+    font-size: 1.7rem;
+    color: #a0aeb1;
+    margin-top: 0.2rem;
+}
+
+.bl4dex_parts_detail {
+    flex: 0 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-top: 1.2rem;
+    background-color: rgba(6, 26, 38, 0.9);
+    border: 0.15rem solid rgba(63, 118, 157, 0.5);
+    border-top: 0.3rem solid #00c6ff;
+    overflow: hidden;
+}
+
+.bl4dex_parts_detail_head {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0.8rem 1.4rem;
+    border-bottom: 0.12rem solid rgba(63, 118, 157, 0.45);
+}
+
+.bl4dex_root .bl4dex_parts_detail_name {
+    font-family: Industry-DemiBold;
+    font-size: 2.4rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_parts_detail_mark {
+    flex: 0 0 5.6rem;
+    width: 5.6rem;
+    height: 4.6rem;
+    background-size: contain;
+    background-position: right center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_part_titles {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4dex_part_body {
+    flex: 1 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.6rem 1.4rem 1rem 1.4rem;
+    overflow: hidden;
+}
+
+.bl4dex_part_body > * {
+    flex: 0 0 auto;
+}
+
+.bl4dex_root .bl4dex_part_note {
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #a0aeb1;
+    margin: 0.3rem 0;
+}
+
+.bl4dex_root .bl4dex_part_data {
+    font-family: Industry-Normal;
+    font-size: 1.4rem;
+    color: #6d7c80;
+    margin-top: 0.5rem;
+}
+
+/* Right: the game's card for this roll (shrunk to fit by dex.js) */
+.bl4dex_parts_card {
+    flex: 0 0 56rem;
+    width: 56rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-left: 1.6rem;
+    overflow: hidden;
+}
+
+.bl4dex_parts_card .bl4dex_game_card {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    margin: 0;
+}
+
+/* The card's better / worse arrow (green up, red down) */
+.bl4dex_part_arrow {
+    flex: 0 0 2rem;
+    width: 2rem;
+    height: 1.4rem;
+    margin-left: 0.6rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_part_worse {
+    transform: scaleY(-1);
+}
+
+/* A stat row, over the card's comparison backing (green / red gradient) */
+.bl4dex_part_stat {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 4.2rem;
+    padding: 0.2rem 0.8rem;
+    margin: 0.15rem 0;
+}
+
+.bl4dex_part_stat_text {
+    position: relative;
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4dex_part_stat_backing {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    border-image-slice: 49% 49% 49% 49% fill;
+    border-image-width: 1.8rem 1rem 1.8rem 1rem;
+    opacity: 0.55;
+}
+
+.bl4dex_part_stat_icon {
+    position: relative;
+    flex: 0 0 2.6rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    margin-right: 1rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_root .bl4dex_part_stat_label {
+    font-family: Industry-Medium;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_part_stat_values {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+}
+
+.bl4dex_root .bl4dex_part_stat_from {
+    font-family: Industry-Normal;
+    font-size: 1.7rem;
+    color: #8a9a9e;
+}
+
+.bl4dex_root .bl4dex_part_stat_sep {
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #6d7c80;
+    margin: 0 0.7rem;
+}
+
+.bl4dex_root .bl4dex_part_stat_to {
+    font-family: Industry-DemiBold;
+    font-size: 1.9rem;
+    color: #ffffff;
+}
+
+.bl4dex_root .bl4dex_part_stat_pct {
+    position: relative;
+    flex: 0 0 7.4rem;
+    width: 7.4rem;
+    text-align: right;
+    font-family: Industry-DemiBold;
+    font-size: 1.7rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_root .bl4dex_part_good .bl4dex_part_stat_pct {
+    color: #3ee08f;
+}
+
+.bl4dex_root .bl4dex_part_bad .bl4dex_part_stat_pct {
+    color: #ff4d6a;
+}
+
+/* The element it gives: the card's element backing */
+.bl4dex_part_element {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 3.4rem;
+    margin: 0.3rem 0;
+}
+
+.bl4dex_part_element_backing {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-size: 100% 100%;
+    opacity: 0.8;
+}
+
+.bl4dex_root .bl4dex_part_element_text {
+    position: relative;
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #ffffff;
+    margin-left: 1rem;
+}
+
+/* A class mod skill part: the skill's own icon, points, name */
+.bl4dex_part_skill {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 0.3rem 0;
+}
+
+.bl4dex_part_skill_icon {
+    flex: 0 0 3.6rem;
+    width: 3.6rem;
+    height: 3.6rem;
+    margin-right: 1rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_root .bl4dex_part_skill_points {
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #3ee08f;
+    margin-right: 0.8rem;
+}
+
+.bl4dex_root .bl4dex_part_skill_name {
+    flex: 1 1;
+    font-family: Industry-Medium;
+    font-size: 1.9rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_part_skill_red .bl4dex_part_skill_icon {
+    border-left: 0.3rem solid #ff5a3c;
+}
+
+.bl4dex_part_skill_green .bl4dex_part_skill_icon {
+    border-left: 0.3rem solid #3ee08f;
+}
+
+.bl4dex_part_skill_blue .bl4dex_part_skill_icon {
+    border-left: 0.3rem solid #00c6ff;
+}
+
+/* A card text the part brings, takes away or changes */
+.bl4dex_part_perk {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    margin: 0.5rem 0;
+}
+
+.bl4dex_part_perk_icon {
+    flex: 0 0 2.6rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    margin: 0.3rem 0.8rem 0 0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_part_perk_icon .bl4dex_part_arrow {
+    margin-left: 0;
+}
+
+.bl4dex_part_perk_texts {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.bl4dex_root .bl4dex_part_perk_what {
+    font-family: Industry-DemiBold;
+    font-size: 1.3rem;
+    letter-spacing: 0.2rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_root .bl4dex_part_good .bl4dex_part_perk_what {
+    color: #3ee08f;
+}
+
+.bl4dex_root .bl4dex_part_bad .bl4dex_part_perk_what {
+    color: #ff4d6a;
+}
+
+.bl4dex_part_bad .bl4dex_part_perk_text {
+    opacity: 0.75;
+}
+
+.bl4dex_root .bl4dex_part_perk_text {
+    margin: 0.1rem 0 0 0;
+    font-size: 1.8rem;
+}
+
+.bl4dex_root .bl4dex_empty.bl4dex_bad {
+    color: #ff7a5c;
+}
+
+/* endregion */
+
+/* The level, big, beside the rarity and type */
+.bl4dex_parts_level {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    padding: 0.2rem 1.2rem;
+    border: 0.15rem solid rgba(255, 187, 0, 0.6);
+    background-color: rgba(255, 187, 0, 0.1);
+}
+
+.bl4dex_root .bl4dex_parts_level_word {
+    font-family: Industry-DemiBold;
+    font-size: 1.6rem;
+    letter-spacing: 0.2rem;
+    color: #ffbb00;
+    margin-right: 0.8rem;
+}
+
+.bl4dex_root .bl4dex_parts_level_value {
+    font-family: Industry-DemiBold;
+    font-size: 3.6rem;
+    color: #ffffff;
+}
+
+/* Tally: better / worse counts over the chance a roll has this part */
+.bl4dex_part_tally {
+    flex: 0 0 10rem;
+    width: 10rem;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.bl4dex_part_counts {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+/* Value over "per roll", right-aligned, never squeezed (it was cut off at the tile's edge) */
+.bl4dex_part_chance {
+    flex: 0 0 auto;
+    min-width: 8rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-top: 0.3rem;
+}
+
+.bl4dex_root .bl4dex_part_chance_value {
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #ffbb00;
+    white-space: nowrap;
+}
+
+.bl4dex_root .bl4dex_part_chance_wait {
+    color: #6d7c80;
+}
+
+.bl4dex_root .bl4dex_part_chance_word {
+    font-family: Industry-Normal;
+    font-size: 1.3rem;
+    color: #a0aeb1;
+    white-space: nowrap;
+}
+
+/* A part's picture opens every part its slot can roll */
+.bl4dex_part_picture_open:hover {
+    background-image: radial-gradient(circle at 50% 55%, rgba(0, 170, 220, 0.45), rgba(0, 20, 32, 0.95) 72%);
+}
+
+.bl4dex_part_picture_more {
+    position: absolute;
+    right: 0.5rem;
+    bottom: 0.4rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    opacity: 0.8;
+}
+
+.bl4dex_root .bl4dex_part_picture_more_text,
+.bl4dex_root .bl4dex_part_group_toggle_text {
+    font-family: Industry-DemiBold;
+    font-size: 1.1rem;
+    letter-spacing: 0.15rem;
+    color: #00c6ff;
+}
+
+/* A small triangle (CSS borders: the game's font has no arrow glyphs) */
+.bl4dex_caret {
+    flex: 0 0 auto;
+    width: 0;
+    height: 0;
+    margin-left: 0.5rem;
+    border-left: 0.45rem solid transparent;
+    border-right: 0.45rem solid transparent;
+}
+
+.bl4dex_caret_down {
+    border-top: 0.55rem solid #00c6ff;
+}
+
+.bl4dex_caret_up {
+    border-bottom: 0.55rem solid #00c6ff;
+}
+
+.bl4dex_part_picture_open:hover .bl4dex_part_picture_more {
+    opacity: 1;
+}
+
+/* A slot's every part */
+.bl4dex_slot_head {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 0.8rem;
+}
+
+.bl4dex_slot_titles {
+    flex: 1 1;
+    display: flex;
+    flex-direction: column;
+    margin-left: 1.4rem;
+}
+
+.bl4dex_root .bl4dex_slot_title {
+    font-family: Industry-DemiBold;
+    font-size: 1.9rem;
+    letter-spacing: 0.2rem;
+    color: #00c6ff;
+}
+
+.bl4dex_root .bl4dex_slot_sub {
+    font-family: Industry-Normal;
+    font-size: 1.5rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_slot_list {
+    flex: 1 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Many parts: two columns */
+.bl4dex_slot_list_two {
+    flex-wrap: wrap;
+    align-content: flex-start;
+}
+
+.bl4dex_slot_part {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: 8rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    padding-right: 1rem;
+    background-color: rgba(6, 26, 38, 0.9);
+    border: 0.15rem solid rgba(63, 118, 157, 0.5);
+    border-left: 0.4rem solid rgba(160, 174, 177, 0.45);
+    overflow: hidden;
+}
+
+.bl4dex_slot_list_two .bl4dex_slot_part {
+    flex: 0 0 auto;
+    width: 49%;
+    height: 7rem;
+    margin-right: 1%;
+}
+
+.bl4dex_slot_rolled {
+    border-color: #ffbb00;
+    border-left-color: #ffbb00;
+    background-color: rgba(60, 44, 0, 0.5);
+}
+
+.bl4dex_slot_part .bl4dex_part_picture {
+    flex: 0 0 13rem;
+    width: 13rem;
+    height: 100%;
+}
+
+.bl4dex_slot_part .bl4dex_part_who {
+    flex: 1 1;
+    width: auto;
+    padding-left: 1rem;
+}
+
+.bl4dex_root .bl4dex_slot_rolled .bl4dex_part_slot_text {
+    color: #ffbb00;
+}
+
+/* A part's drop-down (its slot's other parts, under it). While one is open the column scrolls and
+   its tiles keep their height instead of sharing the column's */
+
+.bl4dex_part_open,
+.bl4dex_part_open:hover {
+    border-color: #00c6ff;
+}
+
+.bl4dex_slot_drop {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    margin: -0.4rem 0 0.8rem 0;
+    padding: 0.8rem 0.8rem 0.4rem 1.6rem;
+    background-color: rgba(0, 20, 32, 0.95);
+    border: 0.15rem solid #00c6ff;
+    border-top: 0.1rem solid rgba(0, 198, 255, 0.35);
+}
+
+.bl4dex_slot_drop .bl4dex_slot_head {
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: 0.6rem;
+}
+
+.bl4dex_slot_drop .bl4dex_slot_part {
+    flex: 0 0 7.5rem;
+    height: 7.5rem;
+    max-height: 7.5rem;
+    align-items: stretch;
+}
+
+.bl4dex_slot_drop .bl4dex_slot_part .bl4dex_part_picture {
+    flex: 0 0 12rem;
+    width: 12rem;
+    height: auto;
+}
+
+.bl4dex_slot_drop .bl4dex_slot_part .bl4dex_part_who {
+    flex: 0 0 22rem;
+    width: 22rem;
+    padding-left: 1rem;
+}
+
+.bl4dex_slot_drop .bl4dex_slot_part .bl4dex_part_chance {
+    align-self: center;
+    margin-top: 0;
+    margin-left: 0.6rem;
+}
+
+.bl4dex_root .bl4dex_part_chance_always {
+    color: #a0aeb1;
+}
+
+/* A slot that rolls several parts: its parts in one frame under a header ("ROLLS 1 TO 2") */
+.bl4dex_part_group {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0.6rem;
+    border: 0.15rem solid rgba(255, 187, 0, 0.45);
+    background-color: rgba(40, 30, 0, 0.25);
+}
+
+.bl4dex_part_group_open {
+    border-color: #00c6ff;
+}
+
+.bl4dex_part_group_head {
+    flex: 0 0 2.6rem;
+    height: 2.6rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 0.8rem;
+    cursor: pointer;
+}
+
+.bl4dex_part_group_head:hover {
+    background-color: rgba(0, 120, 160, 0.25);
+}
+
+.bl4dex_root .bl4dex_part_group_slot {
+    font-family: Industry-DemiBold;
+    font-size: 1.35rem;
+    letter-spacing: 0.15rem;
+    color: #e4d9ce;
+}
+
+.bl4dex_root .bl4dex_part_group_picks {
+    font-family: Industry-DemiBold;
+    font-size: 1.35rem;
+    letter-spacing: 0.15rem;
+    color: #ffbb00;
+    margin-left: 1.2rem;
+    padding: 0 0.6rem;
+    border: 0.12rem solid rgba(255, 187, 0, 0.6);
+}
+
+.bl4dex_root .bl4dex_part_group_count {
+    flex: 1 1;
+    font-family: Industry-Normal;
+    font-size: 1.3rem;
+    letter-spacing: 0.1rem;
+    color: #a0aeb1;
+    margin-left: 1.2rem;
+}
+
+.bl4dex_part_group_toggle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_part_group_tiles {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    padding: 0 0.4rem;
+}
+
+.bl4dex_part_group_tiles .bl4dex_part {
+    margin-bottom: 0.4rem;
+}
+
+
+/* "FIXED PARTS": the heading between the random parts and the ones every roll has */
+.bl4dex_parts_section {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    margin: 0.4rem 0 0.6rem 0;
+    padding-bottom: 0.3rem;
+    border-bottom: 0.12rem solid rgba(160, 174, 177, 0.35);
+}
+
+.bl4dex_root .bl4dex_parts_section_text {
+    font-family: Industry-DemiBold;
+    font-size: 1.35rem;
+    letter-spacing: 0.2rem;
+    color: #a0aeb1;
+}
+
+.bl4dex_root .bl4dex_parts_section_sub {
+    font-family: Industry-Normal;
+    font-size: 1.3rem;
+    color: #6d7c80;
+    margin-left: 1rem;
+}

@@ -67,14 +67,23 @@
 
     // What the screen shows: tab, picks, filters, sorts, and each tab's list scroll. It outlives this
     // script (dex) and is mirrored to Python (saveView), so it also outlives the page itself.
-    var KEPT = ["tab", "boss", "item", "region", "kind", "type", "maker", "onlyBoss", "onlyItem", "sortBoss", "sortItem", "scroll"];
+    var KEPT = ["tab", "boss", "item", "region", "kind", "type", "maker", "onlyBoss", "onlyItem", "sortBoss", "sortItem", "scroll",
+                "coll", "sortOwn", "ownAll", "ownType", "partsFilter"];  // prettier-ignore
     var freshView = !dex.view;
     var view = dex.view || (dex.view = {
         open: false, own: false, tab: "bosses", boss: null, item: null,
         region: "", kind: "", type: "", maker: "", onlyBoss: false, onlyItem: false, sortBoss: "no", sortItem: "type",
-        scroll: { bosses: 0, items: 0 }
+        coll: null, sortOwn: "new", ownAll: false, ownType: "", partsFilter: "all",
+        scroll: { bosses: 0, items: 0, collection: 0 }
     });  // prettier-ignore
     if (!view.scroll) view.scroll = { bosses: 0, items: 0 };  // a view from before scrolls were kept
+    if (view.sortOwn === undefined) {
+        // A view from before the Collection tab
+        view.coll = null;
+        view.sortOwn = "new";
+        view.ownAll = false;
+        view.ownType = "";
+    }
     if (view.only !== undefined) {
         view.onlyBoss = view.onlyItem = !!view.only;
         delete view.only;
@@ -91,6 +100,15 @@
     var ITEM_SORTS = [
         ["type", "Type"], ["name", "Name"], ["maker", "Manufacturer"], ["rarity", "Rarity"], ["chance", "Best chance"]
     ];  // prettier-ignore
+    var OWN_SORTS = [
+        ["new", "Newest"], ["old", "Oldest"], ["name", "Name"], ["type", "Type"], ["level", "Level"]
+    ];  // prettier-ignore
+    function sortsOf(tab) {
+        return tab === "bosses" ? BOSS_SORTS : tab === "items" ? ITEM_SORTS : OWN_SORTS;
+    }
+    function sortFieldOf(tab) {
+        return tab === "bosses" ? "sortBoss" : tab === "items" ? "sortItem" : "sortOwn";
+    }
 
     function index(raw) {
         var d = { bosses: raw.bosses, items: [], itemByKey: {}, bossById: {}, regions: raw.regions,
@@ -263,7 +281,7 @@
     function bossList() {
         var words = terms();
         var list = data.bosses.filter(function (b) {
-            return bossFiltered(b) && (!words.length || matches(bossHaystack(b), words));
+            return bossFiltered(b) && (!words.length || matches(hayOf("b", b.id, function () { return bossHaystack(b); }), words));
         });
         var by = view.sortBoss;
         list.sort(function (a, b) {
@@ -279,7 +297,7 @@
     function itemList() {
         var words = terms();
         var list = data.items.filter(function (item) {
-            return itemFiltered(item) && (!words.length || matches(itemHaystack(item), words));
+            return itemFiltered(item) && (!words.length || matches(hayOf("i", item.key, function () { return itemHaystack(item); }), words));
         });
         var by = view.sortItem;
         // Spoiler free: a hidden item has no type or rarity to sort by (its place would give them away)
@@ -299,6 +317,88 @@
         });
         return list;
     }
+
+    // region Collection data (bl4_weapondex/collection.py)
+    // Every legendary and pearl had, by its exact serial: Python writes the list to collection.json
+    // (no serials in it) and bumps state.collection.v; the shown entry's card and picture come in
+    // state.collection.shown, made when the entry is clicked.
+
+    var BANK = "bank";
+    function loadCollection() {
+        var now = Date.now();
+        if (dex.collLoading || now - (dex.collTried || 0) < 700) return;
+        dex.collLoading = true;
+        dex.collTried = now;
+        ns.get(BASE + "collection.json", function (text) {
+            dex.collLoading = false;
+            if (!alive() || !text || !data) return;
+            var raw = null;
+            try {
+                raw = JSON.parse(text);
+            } catch (err) {}
+            // Not the copy the state names yet (Python writes it a moment later): the next poll past
+            // the 700 ms gap asks again, as long as the versions differ
+            if (!raw || !raw.items || text === dex.collText) return;
+            dex.collText = text;
+            var items = [];
+            raw.items.forEach(function (r) {
+                var item = data.itemByKey[r[1]];
+                if (item) items.push({ id: r[0], key: r[1], char: r[2], t: r[3] || 0, level: r[4] || 1, src: r[5] || "", item: item });
+            });
+            dex.coll = { v: raw.v, chars: raw.chars || {}, items: items, byId: {} };
+            items.forEach(function (e) {
+                dex.coll.byId[e.id] = e;
+            });
+            if (view.open) render();
+        });
+    }
+    function collState() {
+        return (state && state.collection) || { v: 0, char: null, shown: null };
+    }
+    function charName(c) {
+        if (c === BANK) return "Bank";
+        return (dex.coll && dex.coll.chars[c]) || (c ? "Another character" : "Unknown");
+    }
+    // This character's entries, or every character's (and the bank's) with "All characters"
+    function inScope(e) {
+        return view.ownAll || (!!e.char && e.char === collState().char);
+    }
+    function ownTypeLine(item) {
+        var parts = [item.type];
+        if (item["class"]) parts.push(item["class"] + (item.hero ? " (" + item.hero + ")" : ""));
+        if (item.maker) parts.push(item.maker);
+        if (item.rarity === "Pearlescent") parts.push("Pearlescent");
+        return parts.join("  |  ");
+    }
+    function ownHaystack(e) {
+        var item = e.item;
+        return [item.name, item.type, item["class"], item.hero, item.maker, item.rarity, charName(e.char), "level " + e.level]
+            .map(norm).join("|");
+    }
+    function collectionList() {
+        if (!dex.coll) return [];
+        var words = terms();
+        var list = dex.coll.items.filter(function (e) {
+            return inScope(e) && (!view.ownType || e.item.type === view.ownType) && (!words.length || matches(hayOf("o", e.id, function () { return ownHaystack(e); }), words));
+        });
+        var by = view.sortOwn;
+        list.sort(function (a, b) {
+            if (by === "old") return a.t - b.t || cmp(a.item.name, b.item.name);
+            if (by === "name") return cmp(a.item.name, b.item.name) || b.level - a.level;
+            if (by === "type") return a.item.typeRank - b.item.typeRank || cmp(a.item.name, b.item.name);
+            if (by === "level") return b.level - a.level || cmp(a.item.name, b.item.name);
+            return b.t - a.t || cmp(a.item.name, b.item.name);
+        });
+        return list;
+    }
+    function acquired(e) {
+        if (e.src === "pickup") return "Picked up " + day(e.t) + " " + clock(e.t);
+        if (e.src === "backpack") return "Found in the backpack " + day(e.t);
+        if (e.src === "save") return "Had by " + day(e.t) + " (from the game's save)";
+        return "Had before Kairosdex started collecting";
+    }
+
+    // endregion
 
     function cmp(a, b) {
         a = String(a).toLowerCase();
@@ -409,6 +509,11 @@
 
     function pad(no) {
         return "#" + ("00" + no).slice(-3);
+    }
+
+    function clock(ts) {
+        var d = new Date(ts * 1000);
+        return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
     }
 
     function day(ts) {
@@ -633,6 +738,11 @@
         footer.appendChild(ui.hint);
         frame.appendChild(footer);
 
+        // The parts screen (renderParts), over the whole frame
+        ui.parts = el("div", "bl4dex_parts bl4dex_hidden");
+        onClick(ui.parts, function () {});  // not through to the dex or the pause menu
+        frame.appendChild(ui.parts);
+
         ui.toast = el("p", "bl4dex_toast bl4dex_hidden");
         frame.appendChild(ui.toast);
         root.appendChild(frame);
@@ -661,6 +771,7 @@
     }
 
     function hide() {
+        if (dex.partsFor) closeParts();
         view.open = false;
         if (ui.root) ui.root.classList.add("bl4dex_hidden");
         if (state && state.typing) send({ do: "type", on: false });
@@ -677,14 +788,14 @@
     }
 
     function cycleSort() {
-        var sorts = view.tab === "bosses" ? BOSS_SORTS : ITEM_SORTS;
-        var field = view.tab === "bosses" ? "sortBoss" : "sortItem";
+        var sorts = sortsOf(view.tab);
+        var field = sortFieldOf(view.tab);
         var i = 0;
         while (i < sorts.length && sorts[i][0] !== view[field]) i++;
         view[field] = sorts[(i + 1) % sorts.length][0];
         view.scroll[view.tab] = 0;
         saveView();
-        render();
+        render("list");
     }
 
     // A tab switch keeps each tab's scroll; other changes (filters) start the list at the top
@@ -693,7 +804,7 @@
         for (var k in changes) if (Object.prototype.hasOwnProperty.call(changes, k)) view[k] = changes[k];
         if (!switching) view.scroll[view.tab] = 0;
         saveView();
-        render();
+        render(switching ? undefined : "list");
     }
 
     // Go to one boss or item (a drop or "dropped by" row): its tab, picked and scrolled into view.
@@ -728,14 +839,17 @@
     }
     var reveal = null;  // an entry renderList scrolls into view
 
-    function render() {
+    // part "list": only the list's filters changed (a search letter, a filter, a sort): the header
+    // stays, and the details are redrawn only if the entry they show changed
+    function render(part) {
         if (!ui.root || !view.open || !data || !state) return;
         try {
-            renderHeader();
+            if (part !== "list") renderHeader();
             renderBar();
             renderFilters();
             renderList();
-            renderDetails();
+            if (part !== "list" || ui.detailsFor !== view.tab + "|" + current[view.tab]) renderDetails();
+            renderParts();
         } catch (err) {
             log("render failed: " + err + " " + (err && err.stack));
         }
@@ -747,9 +861,11 @@
         }).length;
         var itemsShown = data.items.filter(itemShown).length;
         ui.progress.innerHTML = "";
-        [["BOSSES", bossesBeaten, data.bosses.length], ["ITEMS", itemsShown, data.items.length]].forEach(function (p) {
+        var stats = [["BOSSES", bossesBeaten, data.bosses.length], ["ITEMS", itemsShown, data.items.length]];
+        if (dex.coll) stats.push(["COLLECTED", dex.coll.items.length, null]);
+        stats.forEach(function (p) {
             var box = el("div", "bl4dex_stat");
-            box.appendChild(el("p", "bl4dex_stat_value", p[1] + " / " + p[2]));
+            box.appendChild(el("p", "bl4dex_stat_value", p[2] === null ? String(p[1]) : p[1] + " / " + p[2]));
             box.appendChild(el("p", "bl4dex_stat_label", p[0]));
             ui.progress.appendChild(box);
         });
@@ -761,22 +877,26 @@
     }
 
     function renderBar() {
-        ui.tabs.innerHTML = "";
-        [["bosses", "Bosses"], ["items", "Items"]].forEach(function (t) {
-            var tab = button(t[1], function () {
-                if (view.tab !== t[0]) setView({ tab: t[0] });
-            }, "bl4dex_tab");
-            if (view.tab === t[0]) tab.classList.add("bl4dex_active");
-            ui.tabs.appendChild(tab);
-        });
+        if (!ui.tabButtons || !ui.tabButtons.bosses.parentNode) {
+            ui.tabs.innerHTML = "";
+            ui.tabButtons = {};
+            [["bosses", "Bosses"], ["items", "Items"], ["collection", "Collection"]].forEach(function (t) {
+                var tab = button(t[1], function () {
+                    if (view.tab !== t[0]) setView({ tab: t[0] });
+                }, "bl4dex_tab");
+                ui.tabButtons[t[0]] = tab;
+                ui.tabs.appendChild(tab);
+            });
+        }
+        for (var t in ui.tabButtons) if (Object.prototype.hasOwnProperty.call(ui.tabButtons, t)) ui.tabButtons[t].classList.toggle("bl4dex_active", view.tab === t);
         var typing = !!state.typing;
         var text = state.search || "";
         ui.search.classList.toggle("bl4dex_typing", typing);
         ui.searchText.classList.toggle("bl4dex_placeholder", !text && !typing);
         ui.searchText.textContent = text ? text + (typing ? "_" : "") : typing ? "_" : "Click to type a boss, area or item";
         ui.searchClear.classList.toggle("bl4dex_hidden", !text);
-        var sorts = view.tab === "bosses" ? BOSS_SORTS : ITEM_SORTS;
-        var current = view.tab === "bosses" ? view.sortBoss : view.sortItem;
+        var sorts = sortsOf(view.tab);
+        var current = view[sortFieldOf(view.tab)];
         var label = sorts[0][1];
         sorts.forEach(function (s) {
             if (s[0] === current) label = s[1];
@@ -784,7 +904,9 @@
         ui.sortText.textContent = "Sort: " + label;
         ui.hint.textContent = typing
             ? "Typing: Enter or Esc to stop, Delete clears."
-            : "Click the search box to type. Click a drop to see the item, a boss to see its drops.";
+            : view.tab === "collection"
+                ? "Every legendary and pearl you've had, as it rolled. Click one for its card."
+                : "Click the search box to type. Click a drop to see the item, a boss to see its drops.";
     }
 
     function chipRow(label, values, current, field) {
@@ -806,6 +928,10 @@
     }
 
     function renderFilters() {
+        // The chips only change with the tab and the filters themselves
+        var sig = JSON.stringify([view.tab, view.region, view.kind, view.onlyBoss, view.type, view.maker, view.onlyItem, view.ownType, view.ownAll]);
+        if (sig === ui.filtersSig && ui.filters.firstChild) return;
+        ui.filtersSig = sig;
         ui.filters.innerHTML = "";
         if (view.tab === "bosses") {
             ui.filters.appendChild(chipRow("REGION", data.regions, view.region, "region"));
@@ -814,6 +940,17 @@
                 setView({ onlyBoss: !view.onlyBoss });
             }, "bl4dex_toggle"));
             ui.filters.appendChild(row);
+        } else if (view.tab === "collection") {
+            ui.filters.appendChild(chipRow("TYPE", data.types, view.ownType, "ownType"));
+            var owner = el("div", "bl4dex_chip_row");
+            owner.appendChild(el("p", "bl4dex_row_label", "OWNER"));
+            owner.appendChild(chip("This character", !view.ownAll, function () {
+                if (view.ownAll) setView({ ownAll: false });
+            }));
+            owner.appendChild(chip("All characters", view.ownAll, function () {
+                if (!view.ownAll) setView({ ownAll: true });
+            }));
+            ui.filters.appendChild(owner);
         } else {
             ui.filters.appendChild(chipRow("TYPE", data.types, view.type, "type"));
             var row2 = chipRow("MAKER", data.makers, view.maker, "maker");
@@ -826,22 +963,113 @@
 
     // The entry the details show: the pick, or while a search or filter hides it, the first one
     // left (the pick itself is kept, and comes back with the filter off)
-    var current = { bosses: null, items: null };
+    var current = { bosses: null, items: null, collection: null };
+
+    // What a list row shows besides its own data: rows made under the same key are kept and reused
+    // (a click, a search letter or a filter used to make every row again: up to 318 items with their
+    // mini pictures, a few thousand elements, on every change)
+    var picturesRev = 0;
+    var listStamp = 0;  // marks the rows a rebuild wants (never restarts, unlike the kept rows)
+    function rowsKey() {
+        var c = dex.coll;
+        return JSON.stringify([state.defeated, state.unlock, state.obtained, state.owned_v, state.spoiler_free, picturesRev,
+                               c ? c.v : null, view.ownAll]);  // prettier-ignore
+    }
+    var rows = { key: null, nodes: {}, hay: {}, tab: null, ids: null };
+    function keptRows() {
+        var key = rowsKey();
+        if (rows.key !== key) rows = { key: key, nodes: {}, hay: {}, tab: null, ids: null };
+        return rows;
+    }
+    // A search haystack, kept with the rows (it changes with the same things)
+    function hayOf(kind, id, make) {
+        var hay = keptRows().hay;
+        var k = kind + "|" + id;
+        return hay[k] !== undefined ? hay[k] : (hay[k] = make());
+    }
+
+    function markSelected(tab) {
+        if (ui.selected) ui.selected.classList.remove("bl4dex_selected");
+        var node = (ui.entries && ui.entries[current[tab]]) || null;
+        if (node) node.classList.add("bl4dex_selected");
+        ui.selected = node;
+    }
+
+    // A click on a row: only the highlight and the details change, the list stays as it is
+    function pick(tab, id) {
+        view[tab === "bosses" ? "boss" : tab === "items" ? "item" : "coll"] = id;
+        saveView();
+        if (view.tab !== tab || !ui.entries || !ui.entries[id]) {
+            render();
+            return;
+        }
+        current[tab] = id;
+        markSelected(tab);
+        try {
+            renderDetails();
+            renderParts();
+        } catch (err) {
+            log("render failed: " + err + " " + (err && err.stack));
+        }
+    }
 
     function renderList() {
         rebuilding = true;
-        ui.list.innerHTML = "";
-        ui.entries = {};
-        var list = view.tab === "bosses" ? bossList() : itemList();
-        if (!list.length) {
-            ui.list.appendChild(el("p", "bl4dex_empty", terms().length ? "Nothing matches that search." : "Nothing here yet."));
-        }
+        var tab = view.tab;
+        var list = tab === "bosses" ? bossList() : tab === "items" ? itemList() : collectionList();
+        var kept = keptRows();
         var ids = list.map(function (x) {
-            return view.tab === "bosses" ? x.id : x.key;
+            return tab === "items" ? x.key : x.id;
         });
-        var picked = view[view.tab === "bosses" ? "boss" : "item"];
-        current[view.tab] = ids.indexOf(picked) >= 0 ? picked : ids.length ? ids[0] : null;
-        list.forEach(view.tab === "bosses" ? addBossEntry : addItemEntry);
+        var picked = view[tab === "bosses" ? "boss" : tab === "items" ? "item" : "coll"];
+        current[tab] = ids.indexOf(picked) >= 0 ? picked : ids.length ? ids[0] : null;
+        var joined = ids.join("\n");
+        if (list.length && kept.tab === tab && kept.ids === joined && ui.list.firstChild) {
+            // The same rows in the same order: nothing to redo but the highlight
+            markSelected(tab);
+            var same = reveal !== null ? ui.entries[reveal] || null : null;
+            if (!same) reveal = null;
+            placeList(view.scroll[view.tab] || 0, same);
+            return;
+        }
+        ui.entries = {};  // (ui.selected stays: markSelected takes its highlight off)
+        kept.tab = tab;
+        kept.ids = joined;
+        var make = tab === "bosses" ? addBossEntry : tab === "items" ? addItemEntry : addOwnEntry;
+        var want = [];
+        var stamp = ++listStamp;
+        for (var i = 0; i < list.length; i++) {
+            var id = ids[i];
+            var node = kept.nodes[tab + "|" + id] || (kept.nodes[tab + "|" + id] = make(list[i]));
+            node.bl4dexStamp = stamp;
+            ui.entries[id] = node;
+            want.push(node);
+        }
+        // Move as little as possible: take out the rows that go (a search letter keeps the order
+        // of the rest), then put each wanted row in its place; rows already there stay put
+        var child = ui.list.firstChild;
+        while (child) {
+            var nextChild = child.nextSibling;
+            if (child.bl4dexStamp !== stamp) ui.list.removeChild(child);
+            child = nextChild;
+        }
+        var at = ui.list.firstChild;
+        for (i = 0; i < want.length; i++) {
+            if (at === want[i]) at = at.nextSibling;
+            else ui.list.insertBefore(want[i], at);
+        }
+        if (!list.length) {
+            var empty = terms().length ? "Nothing matches that search." : "Nothing here yet.";
+            if (tab === "collection" && !terms().length) {
+                empty = !dex.coll
+                    ? "Reading your collection..."
+                    : view.ownAll
+                        ? "Nothing collected yet: every legendary and pearl you get shows here, with its exact roll."
+                        : "Nothing collected on this character yet. All characters shows every character's and the bank's.";
+            }
+            ui.list.appendChild(el("p", "bl4dex_empty", empty));
+        }
+        markSelected(tab);
         // A jump stays pending until a scroll to it finishes (a refresh may rebuild the list first)
         var target = reveal !== null ? ui.entries[reveal] || null : null;
         if (!target) reveal = null;
@@ -885,8 +1113,7 @@
 
     function addBossEntry(b) {
         var shown = bossShown(b);
-        var e = el("div", "bl4dex_entry bl4dex_boss_entry" + (shown ? "" : " bl4dex_locked") + (current.bosses === b.id ? " bl4dex_selected" : ""));
-        ui.entries[b.id] = e;
+        var e = el("div", "bl4dex_entry bl4dex_boss_entry" + (shown ? "" : " bl4dex_locked"));
         e.appendChild(portrait(b, "bl4dex_thumb", true));
         e.appendChild(el("p", "bl4dex_no", pad(b.no)));
         var main = el("div", "bl4dex_entry_main");
@@ -898,18 +1125,14 @@
         if (b.kind) side.appendChild(el("p", "bl4dex_tag", b.kind));
         e.appendChild(side);
         onClick(e, function () {
-            view.boss = b.id;
-            saveView();
-            render();
+            pick("bosses", b.id);
         });
-        ui.list.appendChild(e);
+        return e;
     }
 
     function addItemEntry(item) {
         var shown = itemShown(item);
-        var cls = "bl4dex_entry bl4dex_item_entry" + (shown ? "" : " bl4dex_locked") + (current.items === item.key ? " bl4dex_selected" : "");
-        var e = el("div", cls);
-        ui.entries[item.key] = e;
+        var e = el("div", "bl4dex_entry bl4dex_item_entry" + (shown ? "" : " bl4dex_locked"));
         e.appendChild(el("div", "bl4dex_rarity_bar bl4dex_rarity_" + rarityOf(item)));
         var main = el("div", "bl4dex_entry_main");
         var nameRow = el("div", "bl4dex_entry_name_row");
@@ -924,12 +1147,38 @@
         miniBosses(side, item);
         e.appendChild(side);
         onClick(e, function () {
-            view.item = item.key;
-            saveView();
-            render();
+            pick("items", item.key);
         });
         hoverCard(e, item, true);
-        ui.list.appendChild(e);
+        return e;
+    }
+
+    // A Collection entry: its name and small picture, level and type, and whose it is / when it came
+    function addOwnEntry(e) {
+        var item = e.item;
+        var rarity = item.rarity.toLowerCase();
+        var row = el("div", "bl4dex_entry bl4dex_item_entry");
+        row.appendChild(el("div", "bl4dex_rarity_bar bl4dex_rarity_" + rarity));
+        var main = el("div", "bl4dex_entry_main");
+        var nameRow = el("div", "bl4dex_entry_name_row");
+        nameRow.appendChild(el("p", "bl4dex_entry_name bl4dex_name_" + rarity, item.name));
+        var url = itemPictureUrl(item.key, true);
+        if (url) {
+            var pic = el("div", "bl4dex_mini_item");
+            pic.style.backgroundImage = url;
+            nameRow.appendChild(pic);
+        }
+        main.appendChild(nameRow);
+        main.appendChild(el("p", "bl4dex_entry_sub", "Level " + e.level + "  |  " + ownTypeLine(item)));
+        row.appendChild(main);
+        var side = el("div", "bl4dex_entry_side");
+        if (view.ownAll) side.appendChild(el("p", "bl4dex_tag", charName(e.char)));
+        side.appendChild(el("p", "bl4dex_tag", e.t ? day(e.t) : "Before"));
+        row.appendChild(side);
+        onClick(row, function () {
+            pick("collection", e.id);
+        });
+        return row;
     }
 
     // The item's own small picture, right of its name (a silhouette until found; Spoiler free: "?")
@@ -1063,8 +1312,13 @@
         var scroll = showing === ui.detailsFor ? ui.details.scrollTop : 0;
         ui.detailsFor = showing;
         ui.rollView = null;
+        ui.ownView = null;
         ui.details.innerHTML = "";
-        if (view.tab === "bosses") {
+        if (view.tab === "collection") {
+            var e = current.collection && dex.coll && dex.coll.byId[current.collection];
+            if (e) ownDetails(e);
+            else ui.details.appendChild(el("p", "bl4dex_empty", "Pick an item to see its exact roll."));
+        } else if (view.tab === "bosses") {
             var b = current.bosses && data.bossById[current.bosses];
             if (b) bossDetails(b);
             else ui.details.appendChild(el("p", "bl4dex_empty", "Pick a boss to see where it is and what it drops."));
@@ -1074,6 +1328,89 @@
             else ui.details.appendChild(el("p", "bl4dex_empty", "Pick an item to see who drops it."));
         }
         ui.details.scrollTop = scroll;
+    }
+
+    // A Collection entry: its own picture (the game renders this exact serial; the item's baked picture
+    // until then), whose it is and when it came, its serial, and the game's card for it on the right
+    function ownPicture(e, info) {
+        if (info && info.picture) return "url(TextureRenderTarget2D'" + info.picture + "')";
+        return dex.itemPictures && dex.itemPictures[e.key] ? itemPictureUrl(e.key, false) : null;
+    }
+    function shownInfo(id) {
+        var shown = collState().shown;
+        return shown && shown.id === id ? shown : null;
+    }
+    function ownDetails(e) {
+        var item = e.item;
+        var info = shownInfo(e.id);
+        // Python makes the card (and picture) of the entry shown; asked again if it lost track (a reload)
+        if (dex.inspecting !== e.id || !info) {
+            dex.inspecting = e.id;
+            send({ do: "inspect", id: e.id });
+        }
+        var cols = columns("item");
+        var d = cols.left;
+        var url = ownPicture(e, info);
+        var box = el("div", "bl4dex_item_picture bl4dex_item_picture_parts" + (url ? "" : " bl4dex_no_picture"));
+        var img = el("div", "bl4dex_picture");
+        if (url) img.style.backgroundImage = url;
+        box.appendChild(img);
+        // Clicking it opens the parts screen of this exact item (what each of its parts does)
+        var partsHint = el("div", "bl4dex_parts_hint");
+        partsHint.appendChild(el("p", "bl4dex_parts_hint_text", "PARTS"));
+        box.appendChild(partsHint);
+        onClick(box, function () {
+            openParts(item.key, e.id);
+        });
+        d.appendChild(box);
+        ui.ownView = { id: e.id, img: img, box: box, url: url, card: JSON.stringify((info && info.card) || null),
+                       status: info ? info.status : null };  // prettier-ignore
+        var names = el("div", "bl4dex_item_names");
+        var rarity = item.rarity.toLowerCase();
+        names.appendChild(el("p", "bl4dex_detail_no", item.rarity.toUpperCase() + "   LEVEL " + e.level));
+        names.appendChild(el("p", "bl4dex_detail_title bl4dex_name_" + rarity, item.name));
+        names.appendChild(el("p", "bl4dex_detail_meta", ownTypeLine(item)));
+        var whose = e.char === BANK ? "In the shared bank when Kairosdex started" : charName(e.char);
+        names.appendChild(el("p", "bl4dex_detail_status bl4dex_good", whose));
+        names.appendChild(el("p", "bl4dex_detail_note", acquired(e)));
+        d.appendChild(names);
+        d.appendChild(el("p", "bl4dex_section", "SERIAL"));
+        d.appendChild(el("p", "bl4dex_serial", (info && info.serial) || "..."));
+        var buttons = el("div", "bl4dex_dropper_buttons");
+        buttons.appendChild(chip("Copy serial", false, function () {
+            send({ do: "copy_serial", id: e.id });
+        }));
+        buttons.appendChild(chip("Open in Items", false, function () {
+            goTo("items", item.key);
+        }));
+        d.appendChild(buttons);
+
+        var right = cols.right;
+        right.appendChild(el("p", "bl4dex_section bl4dex_section_top", "THIS ROLL"));
+        if (info && info.card) {
+            gameCard(right, info.card);
+        } else if (info && info.status && info.status !== "reading") {
+            right.appendChild(el("p", "bl4dex_detail_note bl4dex_bad", info.status));
+        } else {
+            right.appendChild(el("p", "bl4dex_detail_note", "Reading its stats..."));
+        }
+    }
+
+    // The shown entry's picture arrived (or moved): swap it in place. Its card or status changed: false
+    // (the caller redraws; the card arrives once per entry)
+    function patchOwn() {
+        var rv = ui.ownView;
+        if (!rv || view.tab !== "collection" || current.collection !== rv.id || !rv.img.parentNode) return false;
+        var e = dex.coll && dex.coll.byId[rv.id];
+        var info = shownInfo(rv.id);
+        if (!e || JSON.stringify((info && info.card) || null) !== rv.card || (info ? info.status : null) !== rv.status) return false;
+        var url = ownPicture(e, info);
+        if (url !== rv.url) {
+            rv.url = url;
+            rv.img.style.backgroundImage = url || "";
+            rv.box.classList.toggle("bl4dex_no_picture", !url);
+        }
+        return true;
     }
 
     // Two columns in the details pane (the boss or item on the left, its drops or card on the right)
@@ -1576,9 +1913,19 @@
         var cols = columns("item");
         var d = cols.left;
         var right = cols.right;
-        // The picture above the name block; the item card to their right
+        // The picture above the name block; the item card to their right. Clicking the picture opens
+        // the parts screen (what each part of the roll does)
         var picture = itemPicture(item, shown);
         d.appendChild(picture);
+        if (shown) {
+            picture.classList.add("bl4dex_item_picture_parts");
+            var partsHint = el("div", "bl4dex_parts_hint");
+            partsHint.appendChild(el("p", "bl4dex_parts_hint_text", "PARTS"));
+            picture.appendChild(partsHint);
+            onClick(picture, function () {
+                openParts(item.key);
+            });
+        }
         // What a roll changes in place (patchRoll); rollSection adds the card's parts
         var rv = { key: item.key, img: null, imgUrl: null, effects: [] };
         if (shown) {
@@ -1736,6 +2083,771 @@
     }
 
     // endregion
+    // region Parts
+
+    // The parts screen (click an item's picture): the gun itself on the left (its picture, maker,
+    // full name, the game's own card for this roll), and every part of the roll on the right, each
+    // as its own tile: the game's render of that part alone, its slot, name and manufacturer, and
+    // what it does to the item. Python measures it (bl4_weapondex/breakdown.py: the roll without that
+    // one part, read by the game). Drawn with the game's own art: manufacturer logos, the item
+    // card's better / worse arrows and backings, element backings, stat and skill icons, its markup.
+    var CARD_ART = "coui://uiresources/item_card/assets/UI_Art_Assets/";
+    var MAKER_ART = "coui://uiresources/_shared/assets/ui_art_manufacturer_logos/";
+    var ICON_LEGENDARY = "coui://uiresources/_shared/assets/ico_ui_art_discovery/ico_misc_legendaries.png";
+    var PARTS_CARD = 2;  // the parts screen's own game card widget (0 is the details pane's, 1 the hover card)
+
+    function makerArt(maker, kind) {
+        // kind: "logomark_small", "logomark", "logotype"
+        return maker ? "url(" + MAKER_ART + "ui_art_manu_" + kind + "_" + maker.toLowerCase() + ".png)" : null;
+    }
+
+    // `own`: a Collection entry's id (its exact item), else the item's latest roll
+    function openParts(key, own) {
+        dex.partsFor = key;
+        dex.partsOwn = own || null;
+        dex.partsSig = null;
+        send(own ? { do: "parts", item: key, own: own } : { do: "parts", item: key });
+        renderParts();
+    }
+
+    function closeParts() {
+        if (!dex.partsFor) return;
+        dex.partsFor = null;
+        dex.partsOwn = null;
+        dex.partsSig = null;
+        dex.partsClosedAt = Date.now();
+        send({ do: "parts_close" });
+        renderParts();
+    }
+
+    function partsState() {
+        var p = state && state.parts;
+        return p && p.item === dex.partsFor && (p.own || null) === (dex.partsOwn || null) ? p : null;
+    }
+
+    // A part with nothing to show on the card (looks, handling, zoom)
+    function partQuiet(part) {
+        return !part.core && !part.stats.length && !part.added.length && !part.removed.length && !(part.changed || []).length &&
+            !part.skills.length && !(part.elements || []).length && !(part.variants || []).length;
+    }
+
+    // One screen, no scrolling: the parts stacked on the left, the gun in the middle with the picked
+    // part's full details under it, the game's card on the right. Its three columns stay put between
+    // redraws: the card is built once per roll (not on a click or when a part's picture comes in),
+    // and a click only moves the highlight and redraws the details.
+    function renderParts() {
+        if (!ui.parts) return;
+        var item = dex.partsFor && data && data.itemByKey[dex.partsFor];
+        var own = dex.partsOwn;
+        // Only over the item's own details, or its Collection entry's (another tab or item closes it)
+        var over = own ? view.tab === "collection" && current.collection === own
+                       : view.tab === "items" && !!item && current.items === item.key && itemShown(item);  // prettier-ignore
+        if (!item || !view.open || !over) {
+            if (dex.partsFor) closeParts();
+            ui.parts.classList.add("bl4dex_hidden");
+            ui.parts.innerHTML = "";
+            ui.partsBuilt = null;
+            return;
+        }
+        var p = partsState();
+        var latest, rolling, picture;
+        if (own) {
+            // The entry's own card (and picture), as its details show them
+            var info = shownInfo(own);
+            latest = info && info.card ? { serial: info.serial, card: info.card, elements: info.elements || [] } : null;
+            rolling = false;
+            picture = info && info.picture;
+        } else {
+            var rolls = rollsOf(item).rolls;
+            latest = rolls.length ? rolls[rolls.length - 1] : null;
+            rolling = !!(state.roll && state.roll.item === item.key && state.roll.status === "rolling");
+            picture = state.roll && state.roll.picture;
+        }
+        var sig = JSON.stringify([p, own, latest && latest.serial, !!(latest && latest.card), rolling, picture, view.partsFilter]);
+        if (sig === dex.partsSig && ui.parts.firstChild) return;
+        dex.partsSig = sig;
+        ui.parts.classList.remove("bl4dex_hidden");
+        // The frame: bar, then the three columns (made once per item)
+        if (!ui.partsBuilt || ui.partsBuilt.item !== item.key || ui.partsBuilt.own !== own || !ui.partsBuilt.bar.parentNode) {
+            ui.parts.innerHTML = "";
+            var built = { item: item.key, own: own, bar: el("div", "bl4dex_parts_bar"), left: el("div", "bl4dex_parts_left"),
+                          gun: el("div", "bl4dex_parts_gun"), card: el("div", "bl4dex_parts_card"), cardFor: null };  // prettier-ignore
+            var body = el("div", "bl4dex_parts_body");
+            body.appendChild(built.left);
+            body.appendChild(built.gun);
+            body.appendChild(built.card);
+            ui.parts.appendChild(built.bar);
+            ui.parts.appendChild(body);
+            ui.partsBuilt = built;
+        }
+        var b = ui.partsBuilt;
+        b.p = p;
+        b.item = item.key;
+        // Each piece redraws only when its own data changed: Python sends the parts in as it reads
+        // them (and their pictures, and the chances), and a full redraw on each made it all flicker
+        var barSig = JSON.stringify([p ? p.count || p.parts.length : 0, own, rolling, view.partsFilter]);
+        if (b.barSig !== barSig) {
+            var fresh = partsBar(item, p, rolling, own);
+            b.bar.parentNode.replaceChild(fresh, b.bar);
+            b.bar = fresh;
+            b.barSig = barSig;
+        }
+        b.parts = p ? p.parts : [];
+        var picked = pickedPart(b);
+        fillPartsColumn(b.left, item, p, picked, rolling, latest);
+        fillGunColumn(b, item, latest, picked, own);
+        // The card: only when the roll changed
+        var cardKey = latest && latest.card ? latest.serial : rolling ? "rolling" : "";
+        if (b.cardFor !== cardKey) {
+            b.cardFor = cardKey;
+            b.card.innerHTML = "";
+            if (latest && latest.card) fitCard(b.card, gameCard(b.card, latest.card, PARTS_CARD));
+            else if (rolling) b.card.appendChild(el("p", "bl4dex_empty", "Rolling one at your level..."));
+        }
+    }
+
+    // The picked part: kept by position while it's in this roll, else the first that does something
+    function pickedPart(b) {
+        var parts = b.parts || [];
+        var picked = null;
+        if (dex.partPick && b.p && dex.partPick.serial === b.p.serial) picked = parts[dex.partPick.at] || null;
+        return picked || parts.filter(function (x) { return !partQuiet(x); })[0] || parts[0] || null;
+    }
+
+    // A click on a part: the highlight moves, the details redraw; nothing else changes
+    function pickPart(at) {
+        var b = ui.partsBuilt;
+        if (!b || !b.p) return;
+        dex.partPick = { serial: b.p.serial, at: at };
+        var picked = pickedPart(b);
+        var tiles = b.left.querySelectorAll(".bl4dex_part");
+        for (var i = 0; i < tiles.length; i++) {
+            tiles[i].classList.toggle("bl4dex_part_picked", tiles[i].bl4dexAt === at);
+        }
+        if (b.detail) {
+            b.detail.innerHTML = "";
+            if (picked) partDetail(b.detail, picked, data.itemByKey[b.item]);
+            b.detailSig = detailSig(picked);
+        }
+    }
+
+    // What the picked part's details show (its picture isn't among it)
+    function detailSig(part) {
+        return JSON.stringify(part || null, function (k, v) {
+            return k === "picture" ? undefined : v;
+        });
+    }
+
+    // Puts `nodes` in `col` in order, moving the ones already there instead of making them again
+    function syncChildren(col, nodes) {
+        for (var i = 0; i < nodes.length; i++) {
+            var at = col.childNodes[i];
+            if (at === nodes[i]) continue;
+            if (at) col.insertBefore(nodes[i], at);
+            else col.appendChild(nodes[i]);
+        }
+        while (col.childNodes.length > nodes.length) col.removeChild(col.lastChild);
+    }
+
+    // The parts, stacked: one row each, all the same height in either filter (sharing the
+    // column's height squeezed "All parts"); the column scrolls when they don't fit. A tile is made again only
+    // when its part changed (its picture or chance came in), so the rest stay still as parts arrive
+    function fillPartsColumn(col, item, p, picked, rolling, latest) {
+        var keep = col.scrollTop;
+        var cache = col.bl4dexCache || {};
+        var next = {};
+        var nodes = [];
+        function put(key, sig, make, into) {
+            var had = cache[key];
+            var node = had && had.sig === sig ? had.node : make();
+            next[key] = { sig: sig, node: node };
+            (into || nodes).push(node);
+            return node;
+        }
+        if (!p || (p.status === "working" && !p.parts.length)) {
+            var wait = !dex.partsOwn && (rolling || !latest) ? "Rolling one at your level..." : "Taking it apart...";
+            put("wait", wait, function () { return el("p", "bl4dex_empty", wait); });
+        } else {
+            if (p.status && p.status !== "working") {
+                put("status", p.status, function () { return el("p", "bl4dex_empty bl4dex_bad", p.status); });
+            }
+            var parts = p.parts;
+            var random = view.partsFilter === "random";
+            var shown = parts.filter(function (part) {
+                return !random || !partFixed(part);
+            });
+            // The open drop-down (its slot's other parts) goes under its part, or its group
+            var open = p.slot && p.slot.at ? p.slot.at - 1 : -1;
+            var openSlot = open >= 0 && parts[open] ? parts[open].slot_n : null;
+            // A slot that can pick more than one part: its parts in one group, under a header
+            // saying how many it rolls ("ROLLS 1 TO 2"), one drop-down for the group
+            var groups = {};
+            shown.forEach(function (part) {
+                if (multiSlot(part)) (groups[part.slot_n] = groups[part.slot_n] || []).push(part);
+            });
+            // In order: the groups, then the other random parts, then the fixed ones (every roll has
+            // them) under their own heading, so the random ones never have fixed ones between them
+            function rank(part) {
+                return multiSlot(part) ? 0 : partFixed(part) ? 2 : 1;
+            }
+            shown = shown.map(function (part, i) { return { part: part, i: i }; })
+                .sort(function (a, b) { return rank(a.part) - rank(b.part) || a.i - b.i; })
+                .map(function (x) { return x.part; });
+            var fixedHead = false;
+            var placed = {};
+            function tileOf(part, into) {
+                var at = parts.indexOf(part);
+                var grouped = multiSlot(part);
+                var isOpen = grouped ? part.slot_n === openSlot : at === open;
+                var waiting = p.pictures === "waiting" && !part.picture;
+                var sig = JSON.stringify([p.serial, part, waiting, part.chance == null ? p.chances === "done" : 0, isOpen, grouped]);
+                var tile = put("part" + at, sig, function () { return partTile(part, item, p, at, isOpen, grouped); }, into);
+                tile.classList.toggle("bl4dex_part_picked", part === picked);
+            }
+            function dropdown(key) {
+                var slotSig = JSON.stringify([p.serial, p.slot, p.chances, p.rolls]);
+                put(key, slotSig, function () { return slotDropdown(item, p); });
+            }
+            shown.forEach(function (part) {
+                if (rank(part) === 2 && !fixedHead && shown.length > 1 && rank(shown[0]) !== 2) {
+                    fixedHead = true;
+                    put("fixedHead", "", function () {
+                        var head = el("div", "bl4dex_parts_section");
+                        head.appendChild(el("p", "bl4dex_parts_section_text", "FIXED PARTS"));
+                        head.appendChild(el("p", "bl4dex_parts_section_sub", "every roll of this item has these"));
+                        return head;
+                    });
+                }
+                if (!multiSlot(part)) {
+                    tileOf(part);
+                    if (parts.indexOf(part) === open) dropdown("slot" + open);
+                    return;
+                }
+                if (placed[part.slot_n]) return;
+                placed[part.slot_n] = true;
+                var members = groups[part.slot_n];
+                var first = parts.indexOf(members[0]);
+                var isOpen = part.slot_n === openSlot;
+                var gsig = JSON.stringify([p.serial, part.slot, part.picks, members.length, isOpen]);
+                var group = put("group" + part.slot_n, gsig, function () {
+                    return partGroup(part, members.length, isOpen, first);
+                });
+                var inner = [];
+                members.forEach(function (m) {
+                    tileOf(m, inner);
+                });
+                syncChildren(group.bl4dexTiles, inner);
+                if (isOpen) dropdown("slot" + first);
+            });
+            var hidden = parts.length - shown.length;
+            if (hidden || p.status === "working") {
+                var foot = p.status === "working" ? "Reading the rest of the parts..." :
+                    hidden + (hidden === 1 ? " fixed part" : " fixed parts") + " hidden (every roll of this item has " + (hidden === 1 ? "it" : "them") + ").";
+                put("foot", foot, function () { return el("p", "bl4dex_parts_foot", foot); });
+            }
+            col.classList.toggle("bl4dex_parts_left_open", open >= 0);
+        }
+        col.bl4dexCache = next;
+        syncChildren(col, nodes);
+        col.scrollTop = keep;
+    }
+
+    // A part whose slot can pick more than one (shown in a group with the others it rolled)
+    function multiSlot(part) {
+        return part.slot_n !== null && part.slot_n !== undefined && !!part.picks && part.picks[1] > 1;
+    }
+
+    // A group's frame: "BODY ACCESSORY  |  ROLLS 1 TO 2  |  2 IN THIS ROLL", the drop-down's toggle,
+    // then its parts (bl4dexTiles, filled by fillPartsColumn)
+    function partGroup(part, count, isOpen, first) {
+        var box = el("div", "bl4dex_part_group" + (isOpen ? " bl4dex_part_group_open" : ""));
+        var head = el("div", "bl4dex_part_group_head");
+        var lo = part.picks[0], hi = part.picks[1];
+        head.appendChild(el("p", "bl4dex_part_group_slot", (part.slot || "Slot").toUpperCase()));
+        head.appendChild(el("p", "bl4dex_part_group_picks", "ROLLS " + (lo === hi ? "" + hi : lo + " TO " + hi)));
+        head.appendChild(el("p", "bl4dex_part_group_count", count + " IN THIS ROLL"));
+        if (part.has_slot) {
+            var toggle = el("div", "bl4dex_part_group_toggle");
+            toggle.appendChild(el("p", "bl4dex_part_group_toggle_text", isOpen ? "HIDE OPTIONS" : "OTHER OPTIONS"));
+            toggle.appendChild(caret(isOpen));
+            head.appendChild(toggle);
+            onClick(head, function () {
+                toggleSlot(first);
+            });
+        }
+        box.appendChild(head);
+        box.bl4dexTiles = el("div", "bl4dex_part_group_tiles");
+        box.appendChild(box.bl4dexTiles);
+        return box;
+    }
+
+    // A small triangle drawn by CSS (the game's font has no arrow glyphs: they showed as a box)
+    function caret(up) {
+        return el("div", "bl4dex_caret " + (up ? "bl4dex_caret_up" : "bl4dex_caret_down"));
+    }
+
+    // A part every roll of this item has (its slot has no other pick for it), so not a random one.
+    // Unknown until the chances are in: shown till then.
+    function partFixed(part) {
+        return part.chance !== null && part.chance !== undefined && part.chance >= 0.9995;
+    }
+
+    // Opens (or closes) a part's drop-down: every part its slot can roll, with what each does
+    function toggleSlot(at) {
+        var p = partsState();
+        if (!p) return;
+        // A group's parts share one drop-down: asked for by its first part
+        var part = p.parts[at];
+        if (part && multiSlot(part)) {
+            for (var i = 0; i < p.parts.length; i++) {
+                if (p.parts[i].slot_n === part.slot_n) {
+                    at = i;
+                    break;
+                }
+            }
+        }
+        var isOpen = p.slot && p.slot.at === at + 1;
+        pickPart(at);
+        send({ do: "part_slot", at: isOpen ? null : at + 1 });
+    }
+
+    // Back, the title and part count, the filters, the arrows' legend, Roll another
+    function partsBar(item, p, rolling, own) {
+        var bar = el("div", "bl4dex_parts_bar");
+        bar.appendChild(button("Back", closeParts, "bl4dex_parts_back"));
+        var title = el("div", "bl4dex_parts_title");
+        title.appendChild(el("p", "bl4dex_parts_title_text", "PARTS"));
+        var count = p ? p.count || p.parts.length : 0;
+        if (count) title.appendChild(el("p", "bl4dex_parts_title_count", count + (own ? " on this item" : " in this roll") + "  |  click one for its details"));
+        bar.appendChild(title);
+        var filters = el("div", "bl4dex_parts_filters");
+        // (kept for every item, and between sessions: saveView)
+        filters.appendChild(chip("All parts", view.partsFilter !== "random", function () {
+            view.partsFilter = "all";
+            saveView();
+            renderParts();
+        }));
+        filters.appendChild(chip("Random parts", view.partsFilter === "random", function () {
+            view.partsFilter = "random";
+            saveView();
+            renderParts();
+        }));
+        bar.appendChild(filters);
+        var legend = el("div", "bl4dex_parts_legend");
+        legend.appendChild(arrow(true));
+        legend.appendChild(el("p", "bl4dex_parts_legend_text", "better"));
+        legend.appendChild(arrow(false));
+        legend.appendChild(el("p", "bl4dex_parts_legend_text", "worse"));
+        bar.appendChild(legend);
+        if (!own) {
+            bar.appendChild(chip(rolling ? "Rolling..." : "Roll another", rolling, function () {
+                if (!rolling) send({ do: "roll", item: item.key, count: 1 });
+            }, "bl4dex_parts_roll"));
+        }
+        return bar;
+    }
+
+    // The middle: the gun's picture (a Collection entry's own), the maker's logo with the full name
+    // beside it, rarity and type, the level; under it the picked part in full
+    // (made again only when what it shows changed: the picture, the elements, the level, the pick)
+    function fillGunColumn(b, item, latest, picked, own) {
+        var col = b.gun;
+        var e = own && dex.coll && dex.coll.byId[own];
+        var url = e ? ownPicture(e, shownInfo(own)) : bare(item) ? null : itemPictureFor(item, true);
+        var level = latest && latest.card && latest.card.level ? String(latest.card.level).replace(/^Lvl\s*/i, "") : "";
+        // The roll's own name (some legendaries change it with a part: "Upgraded Finnity XXX-L")
+        var name = latest && latest.card && latest.card.name || item.name;
+        var gunSig = JSON.stringify([item.key, own, url, latest && latest.elements, level, name]);
+        if (b.gunSig === gunSig && b.detail && b.detail.parentNode === col) {
+            var dsig = detailSig(picked);
+            if (b.detailSig !== dsig) {
+                b.detail.innerHTML = "";
+                if (picked) partDetail(b.detail, picked, item);
+                b.detailSig = dsig;
+            }
+            return;
+        }
+        b.gunSig = gunSig;
+        col.innerHTML = "";
+        var pic;
+        if (e) {
+            pic = el("div", "bl4dex_item_picture" + (url ? "" : " bl4dex_no_picture"));
+            var img = el("div", "bl4dex_picture");
+            if (url) img.style.backgroundImage = url;
+            pic.appendChild(img);
+        } else {
+            pic = itemPicture(item, true);
+        }
+        pic.classList.add("bl4dex_parts_gun_picture");
+        col.appendChild(pic);
+        var head = el("div", "bl4dex_parts_gun_head");
+        var line = el("div", "bl4dex_parts_gun_line");
+        var logo = makerArt(item.maker, "logotype");
+        if (logo) {
+            var type = el("div", "bl4dex_parts_gun_logotype");
+            type.style.backgroundImage = logo;
+            line.appendChild(type);
+        }
+        line.appendChild(el("p", "bl4dex_parts_gun_name bl4dex_name_" + rarityOf(item), name));
+        head.appendChild(line);
+        var under = el("div", "bl4dex_parts_gun_line");
+        var names = el("div", "bl4dex_parts_gun_names");
+        var kind = [item.rarity, item.type].filter(Boolean).join(" ");
+        if (item["class"]) kind += "  |  " + item["class"] + (item.hero ? " (" + item.hero + ")" : "");
+        names.appendChild(el("p", "bl4dex_parts_gun_kind", kind));
+        if (latest && latest.elements && latest.elements.length) {
+            names.appendChild(el("p", "bl4dex_parts_gun_facts", latest.elements.join(" / ") + " element"));
+        }
+        under.appendChild(names);
+        if (level) {
+            var badge = el("div", "bl4dex_parts_level");
+            badge.appendChild(el("p", "bl4dex_parts_level_word", "LEVEL"));
+            badge.appendChild(el("p", "bl4dex_parts_level_value", level));
+            under.appendChild(badge);
+        }
+        head.appendChild(under);
+        col.appendChild(head);
+        var detail = el("div", "bl4dex_parts_detail");
+        if (picked) partDetail(detail, picked, item);
+        col.appendChild(detail);
+        b.detail = detail;
+        b.detailSig = detailSig(picked);
+    }
+
+    // The picked part in full: slot, name, maker, then everything it does
+    function partDetail(d, part, item) {
+        var head = el("div", "bl4dex_parts_detail_head");
+        var titles = el("div", "bl4dex_part_titles");
+        titles.appendChild(el("p", "bl4dex_part_slot_text", part.slot.toUpperCase() + (part.core ? "  |  CORE PART" : "")));
+        titles.appendChild(el("p", "bl4dex_parts_detail_name", part.name));
+        titles.appendChild(makerLine(part, item));
+        head.appendChild(titles);
+        var mark = makerArt(part.maker, "logomark");
+        if (mark) {
+            var badge = el("div", "bl4dex_parts_detail_mark");
+            badge.style.backgroundImage = mark;
+            head.appendChild(badge);
+        }
+        d.appendChild(head);
+        var body = el("div", "bl4dex_part_body");
+        if (part.core) body.appendChild(el("p", "bl4dex_part_note", "The item's base numbers come from this part (it can't do without it):"));
+        part.stats.forEach(function (s) {
+            body.appendChild(statRow(s));
+        });
+        (part.elements || []).forEach(function (e) {
+            var row = el("div", "bl4dex_part_element");
+            var backing = el("div", "bl4dex_part_element_backing");
+            backing.style.backgroundImage = "url(" + CARD_ART + "item_card_element_backing_" + e.toLowerCase() + ".png)";
+            row.appendChild(backing);
+            row.appendChild(el("p", "bl4dex_part_element_text", "Gives it " + e + " damage"));
+            body.appendChild(row);
+        });
+        (part.skills || []).forEach(function (s) {
+            var row = el("div", "bl4dex_part_skill bl4dex_part_skill_" + (s.color || "none"));
+            var icon = el("div", "bl4dex_part_skill_icon");
+            if (s.icon) icon.style.backgroundImage = "url(Texture2D'" + s.icon + "')";
+            row.appendChild(icon);
+            row.appendChild(el("p", "bl4dex_part_skill_points", (s.points > 0 ? "+" : "") + s.points));
+            row.appendChild(el("p", "bl4dex_part_skill_name", s.name));
+            row.appendChild(arrow(s.points > 0));
+            body.appendChild(row);
+        });
+        part.added.forEach(function (t) {
+            body.appendChild(perkRow(t.text, "adds", true));
+        });
+        (part.variants || []).forEach(function (t) {
+            body.appendChild(perkRow(t, "adds", true));
+        });
+        (part.changed || []).forEach(function (t) {
+            body.appendChild(perkRow(t.text, "changes", null));
+        });
+        part.removed.forEach(function (t) {
+            body.appendChild(perkRow(t.text, "takes away", false));
+        });
+        if (partQuiet(part)) body.appendChild(el("p", "bl4dex_part_note", "No change to the card's numbers (looks, handling or zoom)."));
+        if (part.note) body.appendChild(el("p", "bl4dex_part_data", "Game data: " + part.note));
+        d.appendChild(body);
+    }
+
+    //  [logo] Jakobs (licensed part)   /   Shared part (any manufacturer)
+    function makerLine(part, item) {
+        var maker = el("div", "bl4dex_part_maker");
+        var small = makerArt(part.maker, "logomark");
+        if (small) {
+            var icon = el("div", "bl4dex_part_maker_icon");
+            icon.style.backgroundImage = small;
+            maker.appendChild(icon);
+        }
+        var licensed = part.maker && item.maker && part.maker !== item.maker;
+        maker.appendChild(el("p", "bl4dex_part_maker_text" + (part.maker ? "" : " bl4dex_part_maker_none"),
+            part.maker ? part.maker + (licensed ? "  (licensed)" : "") : "Shared (any maker)"));
+        return maker;
+    }
+
+    // A perk text's title: what comes before " - " ("[jakobs_icon]Jakobs-Licensed Accessory")
+    function perkTitle(text) {
+        var at = text.indexOf(" - ");
+        return at > 0 ? text.slice(0, at) : text.length > 40 ? text.slice(0, 40) + "..." : text;
+    }
+
+    // One part as a compact tile: the game's picture of it alone, its slot, name and maker, and a
+    // line of what it does (in full in the middle when picked)
+    function partTile(part, item, p, at, open, grouped) {
+        var tile = el("div", "bl4dex_part" + (part.core ? " bl4dex_part_core" : "") + (partQuiet(part) ? " bl4dex_part_quiet" : "") +
+            (open && !grouped ? " bl4dex_part_open" : ""));
+        tile.bl4dexAt = at;
+        onClick(tile, function () {
+            pickPart(at);
+        });
+        var pic = el("div", "bl4dex_part_picture");
+        if (part.picture) {
+            var img = el("div", "bl4dex_picture");
+            img.style.backgroundImage = "url(TextureRenderTarget2D'" + part.picture + "')";
+            pic.appendChild(img);
+        } else if ((part.elements || []).length) {
+            // An element part has no model of its own: the game's element icon
+            pic.appendChild(markupElement("bl4dex_part_picture_icon", part.elements.map(function (e) {
+                return "[" + e.toLowerCase() + "_icon]";
+            }).join(" ")));
+        } else {
+            pic.appendChild(el("p", "bl4dex_part_picture_none", p.pictures === "waiting" && part.maker ? "..." : ""));
+        }
+        var mark = makerArt(part.maker, "logomark");
+        if (mark) {
+            var badge = el("div", "bl4dex_part_maker_mark");
+            badge.style.backgroundImage = mark;
+            pic.appendChild(badge);
+        }
+        // A random part: its picture opens the drop-down of the other parts it could have been
+        if (part.has_slot && !partFixed(part)) {
+            pic.classList.add("bl4dex_part_picture_open");
+            if (!grouped) {
+                var more = el("div", "bl4dex_part_picture_more");
+                more.appendChild(el("p", "bl4dex_part_picture_more_text", open ? "HIDE OPTIONS" : "OTHER OPTIONS"));
+                more.appendChild(caret(open));
+                pic.appendChild(more);
+            }
+            onClick(pic, function () {
+                toggleSlot(at);
+            });
+        }
+        tile.appendChild(pic);
+
+        // A row: who it is (slot, name, maker), what it does, and its tally of better / worse
+        var info = el("div", "bl4dex_part_info");
+        var titles = el("div", "bl4dex_part_who");
+        titles.appendChild(el("p", "bl4dex_part_slot_text", part.slot.toUpperCase()));
+        titles.appendChild(el("p", "bl4dex_part_name", part.name));
+        titles.appendChild(makerLine(part, item));
+        info.appendChild(titles);
+        info.appendChild(effectChips(part));
+        var good = part.stats.filter(function (s) { return s.good === true; }).length + part.added.length + part.skills.length +
+            (part.variants || []).length;
+        var bad = part.stats.filter(function (s) { return s.good === false; }).length + part.removed.length;
+        var top = el("div", "bl4dex_part_tally");
+        var counts = el("div", "bl4dex_part_counts");
+        if (part.core) counts.appendChild(el("p", "bl4dex_tag bl4dex_part_tag", "CORE"));
+        else {
+            if (good) counts.appendChild(leanCount(true, good));
+            if (bad) counts.appendChild(leanCount(false, bad));
+        }
+        top.appendChild(counts);
+        top.appendChild(chanceText(part.chance, p.chances));
+        info.appendChild(top);
+        tile.appendChild(info);
+        return tile;
+    }
+
+    // What a part does, short, one line each: "^ Damage +12%", "^ Jakobs-Licensed Accessory".
+    // (Boxed chips wrapped their text inside the box in the game's UI and overlapped.)
+    function effectChips(part) {
+        var box = el("div", "bl4dex_part_chips");
+        function add(text, good, markup) {
+            var line = el("div", "bl4dex_part_line" + (good === true ? " bl4dex_part_good" : good === false ? " bl4dex_part_bad" : ""));
+            if (good === true || good === false) line.appendChild(arrow(good));
+            else line.appendChild(el("div", "bl4dex_part_arrow"));
+            line.appendChild(markup ? markupElement("bl4dex_part_line_text", text) : el("p", "bl4dex_part_line_text", text));
+            box.appendChild(line);
+        }
+        if (part.core) {
+            add("Sets the base numbers", null);
+        } else {
+            part.stats.forEach(function (s) {
+                var value = s.change === "added" ? s.to : s.change === "removed" ? "No " + s.label : s.pct || s.to;
+                add(s.change === "removed" ? value : s.label + "  " + value, s.good);
+            });
+        }
+        (part.elements || []).forEach(function (e) {
+            add(e + " damage", true);
+        });
+        (part.skills || []).forEach(function (s) {
+            add((s.points > 0 ? "+" : "") + s.points + " " + s.name, s.points > 0);
+        });
+        part.added.concat((part.variants || []).map(function (t) { return { text: t }; })).forEach(function (t) {
+            add(perkTitle(t.text), true, true);
+        });
+        (part.changed || []).forEach(function (t) {
+            add("Changes " + perkTitle(t.text), null, true);
+        });
+        part.removed.forEach(function (t) {
+            add("Loses " + perkTitle(t.text), false, true);
+        });
+        if (partQuiet(part)) add("No change on the card", null);
+        return box;
+    }
+
+    // The game's card in the right column, shrunk to fit its height if it's taller (no scrolling)
+    function fitCard(col, holder, tries) {
+        tries = tries || 0;
+        later(function () {
+            if (!holder.parentNode || !col.parentNode) return;
+            var room = col.clientHeight - 8;
+            var card = holder.firstChild ? holder.firstChild.getBoundingClientRect().height : 0;
+            if (room > 0 && card > 0) {
+                var scale = Math.min(1, room / card);
+                holder.style.transformOrigin = "top center";
+                holder.style.transform = scale < 1 ? "scale(" + scale.toFixed(3) + ")" : "none";
+            }
+            if (tries < 12) fitCard(col, holder, tries + 1);  // the card fills in over a few frames
+        }, tries ? 150 : 50);
+    }
+
+    // "37%" over "of rolls" (exact, or simulated by the game's rules), "Always" for a part every roll
+    // has, or "..." while it's being worked out. A slot that picks several parts has each one on
+    // more rolls, so a slot's chances add up to its picks (1 to 2 a roll: 150%), not 100%.
+    function chanceText(chance, status) {
+        var box = el("div", "bl4dex_part_chance");
+        if (chance === null || chance === undefined) {
+            box.appendChild(el("p", "bl4dex_part_chance_value bl4dex_part_chance_wait", status === "done" ? "" : "..."));
+            return box;
+        }
+        var pct = chance * 100;
+        if (pct >= 99.95) {
+            box.appendChild(el("p", "bl4dex_part_chance_value bl4dex_part_chance_always", "Always"));
+            return box;
+        }
+        // (a part it has is never 0%: it rolled, it's only rarer than the simulated rolls could see)
+        var text = pct >= 10 ? pct.toFixed(0) + "%" : pct >= 0.1 ? pct.toFixed(1) + "%" : "<0.1%";
+        box.appendChild(el("p", "bl4dex_part_chance_value", text));
+        box.appendChild(el("p", "bl4dex_part_chance_word", "of rolls"));
+        return box;
+    }
+
+    // A part's drop-down: every part its slot can roll, the likeliest first, each with what it does
+    // to this roll in its place (its effects read by Python, a few a frame) and the chance a roll
+    // has it; the one(s) in this roll marked
+    function slotDropdown(item, p) {
+        var slot = p.slot;
+        var box = el("div", "bl4dex_slot_drop");
+        var head = el("div", "bl4dex_slot_head");
+        var total = (slot.parts || []).length + (slot.more || 0);
+        head.appendChild(el("p", "bl4dex_slot_title", (slot.slot || "Slot").toUpperCase() + ":  " + total + (total === 1 ? " PART" : " PARTS") + " IT CAN ROLL"));
+        var picks = slot.picks ? slot.picks + (slot.picks === "1" ? " part" : " parts") + " from this slot per roll" : "";
+        var mine = p.parts[slot.at - 1];
+        var multi = slot.picks && slot.picks !== "1";
+        var sub = picks + (multi ? " (so the chances add up to more than 100%)" : "") + ".  Effects: each one in place of your " +
+            (mine ? mine.name : "part") + ".";
+        head.appendChild(el("p", "bl4dex_slot_sub", sub));
+        box.appendChild(head);
+        if (slot.status) {
+            box.appendChild(el("p", "bl4dex_empty bl4dex_bad", slot.status));
+            return box;
+        }
+        slot.parts.forEach(function (c) {
+            var row = el("div", "bl4dex_slot_part" + (c.rolled ? " bl4dex_slot_rolled" : ""));
+            var pic = el("div", "bl4dex_part_picture");
+            if (c.picture) {
+                var img = el("div", "bl4dex_picture");
+                img.style.backgroundImage = "url(TextureRenderTarget2D'" + c.picture + "')";
+                pic.appendChild(img);
+            } else {
+                pic.appendChild(el("p", "bl4dex_part_picture_none", c.maker ? "..." : ""));
+            }
+            row.appendChild(pic);
+            var who = el("div", "bl4dex_part_who");
+            who.appendChild(el("p", "bl4dex_part_slot_text", c.rolled ? "IN THIS ROLL" : (c.note ? c.note.toUpperCase() : "")));
+            who.appendChild(el("p", "bl4dex_part_name", c.name));
+            who.appendChild(makerLine(c, item));
+            row.appendChild(who);
+            if (c.effect) {
+                row.appendChild(effectChips(c.effect));
+            } else {
+                var wait = el("div", "bl4dex_part_chips");
+                wait.appendChild(el("p", "bl4dex_part_line_text", c.effect_status === "bad" ? "The game won't take it with this roll's other parts." : "Reading..."));
+                row.appendChild(wait);
+            }
+            row.appendChild(chanceText(c.chance, slot.known ? "done" : p.chances));
+            box.appendChild(row);
+        });
+        var notes = [];
+        if (slot.more) notes.push(slot.more + " less likely " + (slot.more === 1 ? "one" : "ones") + " not listed");
+        if (slot.never) notes.push(slot.never + " more " + (slot.never === 1 ? "part" : "parts") + " of this slot can't roll on this item (the game's tag rules)");
+        if (!slot.known) notes.push("working out the chances...");
+        if (notes.length) box.appendChild(el("p", "bl4dex_parts_foot", notes.join(";  ") + "."));
+        return box;
+    }
+
+    //  ^ 3   (green) / v 1 (red)
+    function leanCount(better, n) {
+        var box = el("div", "bl4dex_part_count " + (better ? "bl4dex_part_good" : "bl4dex_part_bad"));
+        box.appendChild(arrow(better));
+        box.appendChild(el("p", "bl4dex_part_count_text", String(n)));
+        return box;
+    }
+
+    // The item card's comparison arrow: green up (better), red down (worse)
+    function arrow(better) {
+        var a = el("div", "bl4dex_part_arrow " + (better ? "bl4dex_part_better" : "bl4dex_part_worse"));
+        a.style.backgroundImage = "url(" + CARD_ART + "item_card_compare_arrow_1_" + (better ? "green" : "red") + ".png)";
+        return a;
+    }
+
+    //  [icon] Damage        1,785 x 3  >  2,006 x 3   +12%  ^
+    function statRow(s) {
+        var tone = s.good === true ? " bl4dex_part_good" : s.good === false ? " bl4dex_part_bad" : "";
+        var row = el("div", "bl4dex_part_stat" + tone);
+        var backing = el("div", "bl4dex_part_stat_backing");
+        if (s.good !== null) {
+            backing.style.borderImageSource = "url(" + CARD_ART + "item_card_comparison_backing_" + (s.good ? "good" : "bad") + ".png)";
+        }
+        row.appendChild(backing);
+        var icon = el("div", "bl4dex_part_stat_icon");
+        if (s.icon) icon.style.backgroundImage = "url(Texture2D'" + s.icon + "')";
+        row.appendChild(icon);
+        // Label above, numbers under it: long ones ("480 DMG/s | 6% Chance") fit the tile
+        var text = el("div", "bl4dex_part_stat_text");
+        row.appendChild(text);
+        text.appendChild(el("p", "bl4dex_part_stat_label", s.label));
+        var values = el("div", "bl4dex_part_stat_values");
+        if (s.change === "base") {
+            values.appendChild(el("p", "bl4dex_part_stat_to", s.to));
+        } else {
+            values.appendChild(el("p", "bl4dex_part_stat_from", s.change === "added" ? "none" : s.from));
+            values.appendChild(el("p", "bl4dex_part_stat_sep", ">"));
+            values.appendChild(el("p", "bl4dex_part_stat_to", s.change === "removed" ? "none" : s.to));
+        }
+        text.appendChild(values);
+        row.appendChild(el("p", "bl4dex_part_stat_pct", s.pct || ""));
+        if (s.good !== null) row.appendChild(arrow(s.good));
+        else row.appendChild(el("div", "bl4dex_part_arrow"));
+        return row;
+    }
+
+    // A card text the part brings (green), takes away (red) or changes the numbers of
+    function perkRow(text, what, good) {
+        var row = el("div", "bl4dex_part_perk" + (good === true ? " bl4dex_part_good" : good === false ? " bl4dex_part_bad" : ""));
+        var icon = el("div", "bl4dex_part_perk_icon");
+        if (good === null) icon.style.backgroundImage = "url(" + ICON_LEGENDARY + ")";
+        else icon.appendChild(arrow(good));
+        row.appendChild(icon);
+        var texts = el("div", "bl4dex_part_perk_texts");
+        texts.appendChild(el("p", "bl4dex_part_perk_what", what.toUpperCase()));
+        texts.appendChild(markupElement("bl4dex_effect bl4dex_part_perk_text", text));
+        row.appendChild(texts);
+        return row;
+    }
+
+    // endregion
     // region Toast
 
     var toastTimer = null;
@@ -1840,16 +2952,48 @@
             dex.lastToast = next.toast.id;
             if (view.open) toast(next.toast.text);
         }
+        var coll = next.collection;
+        // (differs, not "is newer": a hot reload of the mod starts its count again)
+        if (coll && data && (!dex.coll || dex.coll.v !== coll.v)) loadCollection();
         if (!view.open) return;
-        // Only the shown item's roll changed: patch its card in place (patchRoll), else redraw it all
-        var base = JSON.stringify([next.defeated, next.unlock, next.search, next.typing, next.character, next.outdated, next.fills, next.owned_v, next.obtained, next.spoiler_free, next.uvh, next.trip]);
-        var sig = base + "|" + JSON.stringify(next.roll || null);
+        // Only the shown item's roll (or Collection entry) changed: patch it in place (patchRoll,
+        // patchOwn), else redraw it all
+        var base = JSON.stringify([next.defeated, next.unlock, next.character, next.outdated, next.fills, next.owned_v, next.obtained, next.spoiler_free, next.uvh, next.trip,
+                                   coll ? coll.char : null]);  // prettier-ignore
+        var rest = JSON.stringify(next.roll || null) + "|" + JSON.stringify(coll ? coll.shown : null);
+        var typed = JSON.stringify([next.search, next.typing]);
+        var sig = base + "|" + typed + "|" + rest;
         if (sig !== dex.sig) {
-            var onlyRoll = !!dex.sig && base === dex.sigBase;
+            var known = !!dex.sig && base === dex.sigBase;
+            var onlyTyped = known && rest === dex.sigRest;
+            var onlyRoll = known && typed === dex.sigTyped;
             dex.sig = sig;
             dex.sigBase = base;
-            if (!(onlyRoll && patchRoll())) render();
+            dex.sigRest = rest;
+            dex.sigTyped = typed;
+            // A search letter or the typing mark: the list only (its rows are kept)
+            if (onlyTyped) render("list");
+            else if (!(onlyRoll && (view.tab === "collection" ? patchOwn() : patchRoll()))) render();
         }
+        // Python has a parts screen open the page doesn't show (the page was reloaded, or it was
+        // opened from Python): show it, on its item. Not just after Back (Python may not know yet).
+        var asked = next.parts && next.parts.item;
+        var askedOwn = next.parts && next.parts.own;
+        if (asked && !dex.partsFor && Date.now() - (dex.partsClosedAt || 0) > 3000 && data.itemByKey[asked]) {
+            if (askedOwn) {
+                if (view.tab === "collection" && current.collection === askedOwn) {
+                    dex.partsFor = asked;
+                    dex.partsOwn = askedOwn;
+                    dex.partsSig = null;
+                }
+            } else {
+                if (view.tab !== "items" || current.items !== asked) goTo("items", asked);
+                dex.partsFor = asked;
+                dex.partsSig = null;
+            }
+        }
+        // The parts screen follows its own state (it redraws only when that changed)
+        if (dex.partsFor) renderParts();
         updateHover();
     }
 
@@ -1901,7 +3045,10 @@
         function next(i) {
             if (!alive()) return;
             if (i === PICTURE_INDEXES.length) {
-                if (changed) render();
+                if (changed) {
+                    picturesRev++;  // the kept list rows show old pictures: make them again
+                    render();
+                }
                 later(checkPictures, PICTURES_MS);
                 return;
             }

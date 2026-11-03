@@ -7,9 +7,6 @@ Writes dist/release/:
 - one .sdkmod per mod in installer/catalog.py (byte-for-byte reproducible, see installer/build.py)
 - BL4FixSetup.exe, rebuilt first by installer/build.py (unless --no-exe), so the setup app
   installs exactly these files
-- <mod>.assets.zip for mods with pictures (catalog `assets`, e.g. Kairosdex's): the mod downloads
-  it when the game folder lacks pictures (bl4_weapondex/fetch.py), listed in the manifest as
-  mods.<id>.pictures
 - manifest.json, which the Mod Menu reads (format: mods/bl4_mod_menu/updates.py), and
   manifest.json.sig: its signature by BL4 Fix's release key (tools/release_key.py). Mod Menus from
   0.2.3 and the setup app refuse a release without a valid one, so this only runs on the PC (and
@@ -27,7 +24,7 @@ never be offered it. Bump the version, or pass --allow-same-version for a re-rel
 files differ from the published ones only in line endings is fine (installer/build.py file_bytes
 normalizes them since 2026-10-30, so the first release after that differs everywhere).
 
-Once published, .github/workflows/verify-release.yml rebuilds the .sdkmods, the pictures zips and
+Once published, .github/workflows/verify-release.yml rebuilds the .sdkmods and
 the manual zip from the tag on GitHub's machines (tools/verify_release.py), checks they're
 byte-identical to the release's and attests them (`gh attestation verify <file> --repo
 flameaway/bl4-fix`). So build from a clean tree: committed files only (see the release notes in
@@ -206,7 +203,6 @@ def main() -> int:
 
     shutil.rmtree(OUT, ignore_errors=True)
     OUT.mkdir(parents=True)
-    build.check_picture_lists()
     previous = None if args.offline else previous_manifest(repo)
     old_mods = (previous or {}).get("mods", {})
     problems: list[str] = []
@@ -241,16 +237,6 @@ def main() -> int:
             "required": info.required,
             "license": catalog.license_id(info),
         }
-        if info.assets:
-            pictures = OUT / f"{info.id}.assets.zip"
-            count = build.build_assets(info, pictures)
-            blob = pictures.read_bytes()
-            mods[info.id]["pictures"] = {
-                "asset": pictures.name,
-                "sha256": hashlib.sha256(blob).hexdigest(),
-                "size": len(blob),
-                "count": count,
-            }
         changed = not old or old.get("version") != version
         if changed:
             notes_md.append(f"- **{info.name}** {version}" + (f" (was {old['version']})" if old else " (new)")

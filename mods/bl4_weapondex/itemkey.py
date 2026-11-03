@@ -1,7 +1,8 @@
 """
 Which item an item serial ("@Ug...") is: its item type and composition (serial indices), which is
-enough to find the legendary in dex.json. Reads only up to the first part; the format is the one
-bl4_reroll/serial.py decodes in full (base85, mirrored bytes, a token bit stream):
+enough to find the legendary in dex.json. type_and_comp reads only up to the first part; read()
+walks the whole serial for the Collection (its level and the parts written as text). The format is
+the one bl4_reroll/serial.py decodes in full (base85, mirrored bytes, a token bit stream):
 `type, 0, 1, level| ... || {composition} {part} ...|`.
 
 Plain Python (no SDK imports), so it runs on the save-reading worker thread.
@@ -86,3 +87,75 @@ def type_and_comp(serial: str) -> tuple[int, int] | None:
     except (ValueError, KeyError):
         return None
     return None
+
+
+LEVEL_FIELD = 1  # header field that holds the item level (`type, 0, 1, level| ...`)
+
+
+def _number(r: _Reader, kind: str) -> int:
+    return r.varint() if kind == "100" else r.lsb(r.lsb(5))
+
+
+def read(serial: str) -> dict[str, object] | None:
+    """
+    The whole serial: {"type", "comp", "level", "texts", "parts"} (texts: parts written as text, e.g. a
+    class mod's "ClassMod.statspecial_ricochet_damage", in order; parts: every part in serial order,
+    the composition first, as serialgen.serial takes them: (table, index), or (type, text) for a part
+    written as text), or None if it isn't one we can read.
+    """
+    try:
+        serial = serial.strip()
+        if not serial.startswith("@U"):
+            return None
+        r = _Reader(_bits(serial[2:]))
+        if r.take(7) != MAGIC:
+            return None
+        header: list[int] = []
+        comp: int | None = None
+        texts: list[str] = []
+        parts: list[tuple[int, int | str]] = []
+        while r.pos + 2 <= len(r.bits):
+            head = r.take(2)
+            if head in ("00", "01"):
+                continue
+            if r.pos + 1 > len(r.bits):
+                break
+            kind = head + r.take(1)
+            if kind in ("100", "110"):
+                value = _number(r, kind)
+                if comp is None:
+                    header.append(value)
+            elif kind == "101":
+                index = r.varint()
+                if comp is None:
+                    comp = index
+                if r.take(1) == "1":  # {table:index}
+                    parts.append((index, r.varint()))
+                    if r.take(3) != "000":
+                        return None
+                else:
+                    flag = r.take(2)
+                    if flag == "01":  # {table:[a b ...]}
+                        if r.take(2) != "01":
+                            return None
+                        while (item := r.take(2)) != "00":
+                            item += r.take(1)
+                            if item not in ("100", "110"):
+                                return None
+                            parts.append((index, _number(r, item)))
+                    elif flag == "10":  # {index}: the item type's own table
+                        parts.append((header[0] if header else 0, index))
+                    else:
+                        return None
+            elif kind == "111":
+                length = r.varint()
+                texts.append("".join(chr(r.lsb(7)) for _ in range(length)))
+                parts.append((header[0] if header else 0, texts[-1]))
+            else:
+                return None
+    except (ValueError, KeyError):
+        return None
+    if not header or comp is None:
+        return None
+    fields = dict(zip(header[2::2], header[3::2], strict=False))
+    return {"type": header[0], "comp": comp, "level": fields.get(LEVEL_FIELD, 1), "texts": texts, "parts": parts}

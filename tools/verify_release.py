@@ -7,7 +7,7 @@ Rebuilds a published release from source and checks it byte for byte (GitHub Act
 
 Run it on a checkout of the tag. It checks:
 - manifest.json.sig: signed by BL4 Fix's release key (mods/bl4_mod_menu/signing.py, Windows' bcrypt)
-- every .sdkmod and pictures zip the manifest lists: rebuilt here (installer/build.py) equal to the
+- every .sdkmod the manifest lists: rebuilt here (installer/build.py) equal to the
   manifest's SHA-256 and to the release's file
 - the manual zip (manifest `manual`, tools/manual_zip.py): rebuilt from the rebuilt .sdkmods and
   the pinned SDK, equal to the release's
@@ -85,10 +85,9 @@ def main() -> int:
             sdkmod = out / f"{mod_id}.sdkmod"
             build.build_sdkmod(REPO_ROOT / info.source / info.id, sdkmod, catalog.license_files(info, REPO_ROOT))
             compare(entry["asset"], sdkmod.read_bytes(), entry.get("sha256"))
-            if pictures := entry.get("pictures"):
-                assets = out / pictures["asset"]
-                build.build_assets(info, assets)
-                compare(pictures["asset"], assets.read_bytes(), pictures.get("sha256"))
+            if entry.get("pictures"):
+                # Releases ship no pictures since 2026-11-03 (Kairosdex makes them in game)
+                problems.append(f"{mod_id}: the manifest lists a pictures zip; releases ship none")
         if manual := manifest.get("manual"):
             built = manual_zip.build(out / manual["asset"], out, build.fetch_sdk(), args.tag)
             compare(manual["asset"], built.read_bytes(), manual.get("sha256"))

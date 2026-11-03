@@ -4,8 +4,8 @@ Offline test of the release's manual install zip (tools/manual_zip.py) and its v
 
 - the zip holds the SDK (no sdk_mods/settings/), every catalog .sdkmod, the README, and exactly the
   UI Link pak + startup page scripts the setup app's prepare_pages writes into a fresh game folder
-  (run here with the link's game check stubbed to "ok": a fake game has no paks), and the same
-  pictures the setup app's _install_assets writes, each small/ copy after its full-size picture
+  (run here with the link's game check stubbed to "ok": a fake game has no paks), and no pictures
+  (Kairosdex makes its own in game; nothing made from the game's files is shipped)
 - two builds give the same bytes
 - extracted over a game folder with the player's settings, nothing in settings/ changes
 - verify_release passes on a matching fake release and fails on a changed .sdkmod / zip / sums
@@ -88,40 +88,15 @@ def main() -> int:
           ".sdkmods are the release's bytes")
     check(manual_zip.README_NAME in names, "README in the zip")
 
-    # Pictures (catalog `assets`): what the setup app's _install_assets writes into a fresh game
-    # folder, PNGs byte for byte and index.json by content (the app writes it with its own JSON)
-    picture_dirs = tuple(f"{manual_zip.UI_REL}/{rel_dir}/" for m in catalog.MODS for rel_dir in m.assets)
-    zip_pictures = {n: d for n, d in contents.items() if n.startswith(picture_dirs)}
-    pictures_game = tmp / "pictures_game"
-    payload_assets = core.payload_assets
-    core.payload_assets = lambda mod_id: tmp / f"{mod_id}.assets.zip"
-    try:
-        for info in catalog.MODS:
-            if info.assets:
-                build.build_assets(info, tmp / f"{info.id}.assets.zip")
-                core._install_assets(pictures_game, info, log=lambda _line: None)  # noqa: SLF001
-    finally:
-        core.payload_assets = payload_assets
-    app_pictures = {p.relative_to(pictures_game).as_posix(): p.read_bytes() for p in pictures_game.rglob("*") if p.is_file()}
-
-    def same_picture(name: str) -> bool:
-        if name.endswith(".json"):
-            return json.loads(zip_pictures[name]) == json.loads(app_pictures[name])
-        return zip_pictures[name] == app_pictures[name]
-
-    pngs = sum(1 for n in zip_pictures if n.endswith(".png"))
-    check(pngs > 0 and set(zip_pictures) == set(app_pictures) and all(same_picture(n) for n in zip_pictures),
-          f"the pictures the setup app installs ({pngs} PNGs)")
-    order = {n: i for i, n in enumerate(n for n in zipfile.ZipFile(out).namelist())}
-    late = [n for n in zip_pictures if "/small/" in n and n.endswith(".png")
-            and order[n] < order.get(n.replace("/small/", "/"), -1)]
-    check(not late, f"every small/ copy after its picture ({late[:2]})")
+    # No pictures: Kairosdex makes them in game (2026-11-03); nothing made from the game's files ships
+    pictures = [n for n in contents if n.lower().endswith((".png", ".jpg", ".dds"))]
+    check(not pictures, f"no pictures in the zip ({pictures[:2]})")
 
     game = tmp / "fake_game"
     (game / core.GAME_EXE_REL).parent.mkdir(parents=True)
     expected = setup_app_pages(rel, game)
     zip_pages = {n: d for n, d in contents.items()
-                 if n.startswith(("OakGame/Content/Paks/", "OakGame/Content/uiresources/")) and n not in zip_pictures}
+                 if n.startswith(("OakGame/Content/Paks/", "OakGame/Content/uiresources/"))}
     check(f"OakGame/Content/Paks/~mods/{catalog.LINK_PAK}" in zip_pages, "the UI Link pak is in the zip")
     check(any(n.endswith("bl4link/boot.js") for n in zip_pages), "bl4link/boot.js is in the zip")
     missing = sorted(set(expected) - set(zip_pages))
@@ -150,10 +125,6 @@ def main() -> int:
     for info in catalog.MODS:
         data = (rel / f"{info.id}.sdkmod").read_bytes()
         manifest["mods"][info.id] = {"asset": f"{info.id}.sdkmod", "sha256": hashlib.sha256(data).hexdigest()}
-        if info.assets:
-            build.build_assets(info, rel / f"{info.id}.assets.zip")
-            blob = (rel / f"{info.id}.assets.zip").read_bytes()
-            manifest["mods"][info.id]["pictures"] = {"asset": f"{info.id}.assets.zip", "sha256": hashlib.sha256(blob).hexdigest()}
     (rel / "BL4FixSetup.exe").write_bytes(b"MZ test")
     manifest["app"]["sha256"] = hashlib.sha256(b"MZ test").hexdigest()
     manifest["manual"] = {"asset": out.name, "sha256": hashlib.sha256(out.read_bytes()).hexdigest()}
@@ -169,7 +140,7 @@ def main() -> int:
 
     check(run() == 0, "verify_release passes on a matching release")
     listed = (tmp / "verified.txt").read_text(encoding="utf-8").split()
-    check(len(listed) == len(catalog.MODS) + sum(1 for m in catalog.MODS if m.assets) + 1, f"{len(listed)} files listed for attestation")
+    check(len(listed) == len(catalog.MODS) + 1, f"{len(listed)} files listed for attestation")
     victim = rel / "bl4_less_fog.sdkmod"
     good = victim.read_bytes()
     victim.write_bytes(good + b"x")

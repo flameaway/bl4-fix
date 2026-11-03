@@ -5496,7 +5496,7 @@
    ]
   },
   "vla_ar.comp_05_legendary_dualdamage": {
-   "name": "Aegon's Dream / Buzzymuzz",
+   "name": "Aegon's Dream",
    "type": "Assault Rifle",
    "maker": "Vladof",
    "rarity": "Legendary",
@@ -5533,7 +5533,27 @@
    ]
   },
   "ord_grenade_gadget.comp_05_legendary_alignment": {
-   "name": "Alignment / Ancient / Seeker",
+   "name": "Alignment",
+   "naming": [
+    {
+     "index": 14,
+     "title": "Alignment",
+     "priority": 3.0,
+     "noprefix": false
+    },
+    {
+     "index": 16,
+     "prefix": "Ancient",
+     "priority": 2.0,
+     "noprefix": false
+    },
+    {
+     "index": 13,
+     "title": "Seeker",
+     "priority": 0.5,
+     "noprefix": false
+    }
+   ],
    "type": "Grenade",
    "maker": "Order",
    "rarity": "Legendary",
@@ -5913,7 +5933,7 @@
    ]
   },
   "jak_grenade_gadget.comp_05_legendary_bismuth": {
-   "name": "Bismuth-Tipped Dagger / Throwing Knife",
+   "name": "Bismuth-Tipped Dagger",
    "type": "Grenade",
    "maker": "Jakobs",
    "rarity": "Legendary",
@@ -6921,7 +6941,7 @@
    ]
   },
   "bor_sg.comp_05_legendary_convergence": {
-   "name": "Convergence / Hellhound",
+   "name": "Convergence",
    "type": "Shotgun",
    "maker": "Ripper",
    "rarity": "Legendary",
@@ -7942,7 +7962,21 @@
    ]
   },
   "vla_sr.comp_05_legendary_finnty": {
-   "name": "Finnity XXX-L / Upgraded Finnity XXX-L",
+   "name": "Finnity XXX-L",
+   "naming": [
+    {
+     "index": 1,
+     "title": "Finnity XXX-L",
+     "priority": 3.0,
+     "noprefix": true
+    },
+    {
+     "index": 71,
+     "title": "Upgraded Finnity XXX-L",
+     "priority": 4.0,
+     "noprefix": true
+    }
+   ],
    "type": "Sniper Rifle",
    "maker": "Vladof",
    "rarity": "Legendary",
@@ -11367,7 +11401,21 @@
    ]
   },
   "mal_sm.comp_05_legendary_plasmacoil": {
-   "name": "Plasma Coil / Superconducting Plasma Coil",
+   "name": "Plasma Coil",
+   "naming": [
+    {
+     "index": 62,
+     "title": "Plasma Coil",
+     "priority": 3.0,
+     "noprefix": true
+    },
+    {
+     "index": 61,
+     "title": "Superconducting Plasma Coil",
+     "priority": 3.0,
+     "noprefix": true
+    }
+   ],
    "type": "SMG",
    "maker": "Maliwan",
    "rarity": "Legendary",
@@ -11457,25 +11505,6 @@
    ],
    "bosses": [
     "skank-eyes"
-   ]
-  },
-  "ted_ps.comp_05_legendary_sideshow": {
-   "name": "Pocketshot / Sideshow",
-   "type": "Pistol",
-   "maker": "Tediore",
-   "rarity": "Legendary",
-   "si": 1,
-   "ti": 5,
-   "red": [
-    "My record is 24."
-   ],
-   "effects": [
-    "[rarity_legendary]Juggler[/rarity_legendary] - Let's play a game. Shoot as many [secondary]targets[/secondary] as possible before they hit the ground, and [secondary]refill[/secondary] up to [secondary]2 Ammo[/secondary] per [secondary]target[/secondary] hit"
-   ],
-   "world": true,
-   "reward": true,
-   "bosses": [
-    "divisioner"
    ]
   },
   "tor_ar.comp_05_legendary_potatothrower": {
@@ -12918,6 +12947,25 @@
    ],
    "bosses": [
     "child-of-terramorphous"
+   ]
+  },
+  "ted_ps.comp_05_legendary_sideshow": {
+   "name": "Sideshow",
+   "type": "Pistol",
+   "maker": "Tediore",
+   "rarity": "Legendary",
+   "si": 1,
+   "ti": 5,
+   "red": [
+    "My record is 24."
+   ],
+   "effects": [
+    "[rarity_legendary]Juggler[/rarity_legendary] - Let's play a game. Shoot as many [secondary]targets[/secondary] as possible before they hit the ground, and [secondary]refill[/secondary] up to [secondary]2 Ammo[/secondary] per [secondary]target[/secondary] hit"
+   ],
+   "world": true,
+   "reward": true,
+   "bosses": [
+    "divisioner"
    ]
   },
   "tor_hw.comp_05_legendary_sidewinder": {

@@ -12,9 +12,13 @@ game exports as a Radiance .hdr file, and we tone map it here:
 
 from __future__ import annotations
 
+import array
+import bisect
 import json
 import math
+import os
 import struct
+import sys
 import threading
 import time
 import zlib
@@ -107,10 +111,63 @@ SMALL_DIR = "small"
 PNG_SIGNATURE = bytes((0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
 SMALL_FACTOR = 4  # 512x512 -> 128x128, 512x256 -> 128x64
 SLICE_S = 0.001  # work this long, then sleep: a worker in pure Python holds the GIL the whole time
+# ...this long: enough for a waiting thread to take the GIL. It was SLICE_S, which halved the pace;
+# 0.1 ms lets another thread in as soon (p99 1.7-1.8 ms against 1.7-2.0) and compose took 25-30%
+# less time (real captures, offline, 2026-11-03). sleep(0) starves it (it takes the GIL straight back)
+BREATH_S = 0.0001
 
 
 def small_path(png: Path) -> Path:
     return png.parent / SMALL_DIR / png.name
+
+
+PNG_END = bytes.fromhex("0000000049454e44ae426082")  # the IEND chunk every whole PNG ends with
+# path -> (size, mtime_ns) of files found whole: each is opened once a session (until it changes)
+_WHOLE: dict[str, tuple[int, int]] = {}
+_WHOLE_LOCK = threading.Lock()
+
+
+def whole_pngs(folder: Path) -> list[str]:
+    """
+    The names (no .png) of the folder's pictures that are whole: the PNG signature first and the
+    IEND chunk last. An empty file or one cut short (an unpack or copy that stopped part way)
+    counts as missing, so it's made again. Opening every file is slow cold (~870 files: 6.4 s,
+    0.15 s warm; 2026-11-03), so a file found whole isn't opened again while its size and date
+    stay the same: a later scan is a folder listing (~2 ms). Any thread.
+    """
+    out = []
+    try:
+        entries = [e for e in os.scandir(folder) if e.name.endswith(".png") and e.is_file()]
+    except OSError:
+        return []
+    for entry in entries:
+        try:
+            st = entry.stat()
+        except OSError:
+            continue
+        stamp = (st.st_size, st.st_mtime_ns)
+        with _WHOLE_LOCK:
+            known = _WHOLE.get(entry.path) == stamp
+        if not known:
+            if not _is_whole(entry.path, st.st_size):
+                continue
+            with _WHOLE_LOCK:
+                _WHOLE[entry.path] = stamp
+        out.append(entry.name[:-4])
+    return sorted(out)
+
+
+def _is_whole(path: str, size: int) -> bool:
+    if size < len(PNG_SIGNATURE) + len(PNG_END):
+        return False
+    try:
+        with open(path, "rb") as f:
+            if f.read(len(PNG_SIGNATURE)) != PNG_SIGNATURE:
+                return False
+            f.seek(-len(PNG_END), os.SEEK_END)
+            return f.read(len(PNG_END)) == PNG_END
+    except OSError:
+        return False
 
 
 def shrink(width: int, height: int, rgba: bytes, factor: int = SMALL_FACTOR) -> tuple[int, int, bytes]:
@@ -145,7 +202,7 @@ def shrink(width: int, height: int, rgba: bytes, factor: int = SMALL_FACTOR) -> 
                 out[o + 2] = b // a
                 out[o + 3] = (a + count // 2) // count
             if time.perf_counter() > until:
-                time.sleep(SLICE_S)
+                time.sleep(BREATH_S)
                 until = time.perf_counter() + SLICE_S
     return w, h, bytes(out)
 
@@ -157,6 +214,18 @@ def write_small(png: Path, width: int, height: int, rgba: bytes) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     write_png(target, w, h, small)
     write_small_index(png.parent)
+
+
+def write_index(folder: Path) -> None:
+    """
+    index.json, which the page reads: {name: version} for each picture, the version being its
+    file's date, which the page puts in the picture's address so a picture taken again shows at once
+    instead of the copy it already loaded. Each writer writes its own temp file and swaps it in.
+    """
+    index = {p.stem: int(p.stat().st_mtime) for p in sorted(folder.glob("*.png"))}
+    tmp = folder / f"index.{threading.get_ident()}.tmp"
+    tmp.write_text(json.dumps(index), encoding="utf-8")
+    tmp.replace(folder / "index.json")
 
 
 def write_small_index(folder: Path) -> None:
@@ -277,6 +346,69 @@ BLACK_PAINT = 0.004  # paint darker than this ...
 BLACK_SHARE = 0.9  # ... on this share of the boss: its materials give no paint colour at all
 
 
+CHUNK = 512  # pixels per step of compose's quick loops: the clock is read between steps (_Breather)
+SLOW_CHUNK = 256  # the same for its per-pixel loops (~2 µs a pixel)
+KTH_SORT = 16384  # _kth: lists up to this long are just sorted (a few ms at most)
+
+
+class _Breather:
+    """
+    Lets go of the GIL every SLICE_S of work (as shrink does): compose runs on a worker thread
+    for about a second, and in one go it made every mod's hooks on the game thread wait for it.
+    """
+
+    def __init__(self) -> None:
+        self.until = time.perf_counter() + SLICE_S
+
+    def __call__(self) -> None:
+        if time.perf_counter() > self.until:
+            time.sleep(BREATH_S)
+            self.until = time.perf_counter() + SLICE_S
+
+    def steps(self, n: int, size: int = CHUNK) -> range:
+        """Start indices of `size`-long steps through n items (call self() after each)."""
+        return range(0, n, size)
+
+
+def _kth(values: list[float], k: int, breathe: _Breather) -> float:
+    """
+    sorted(values)[k], without sorting it all in one go (a C sort of ~100k floats holds the GIL
+    for ~15 ms): keeps the values between two pivots picked from a sample, then sorts those.
+    """
+    n = len(values)
+    if n <= KTH_SORT:
+        return sorted(values)[k]
+    sample = sorted(values[:: max(1, n // 1024)])
+    m = len(sample)
+    # The sample's k-th share, widened: the true k-th value is almost always in between
+    lo = sample[max(0, k * m // n - 32)]
+    hi = sample[min(m - 1, k * m // n + 32)]
+    below = 0
+    middle: list[float] = []
+    for s in breathe.steps(n):
+        part = values[s : s + CHUNK]
+        below += sum(1 for v in part if v < lo)
+        middle += [v for v in part if lo <= v <= hi]
+        breathe()
+    if below <= k < below + len(middle):
+        if lo == hi:
+            return lo  # all of the middle is that one value (Logistics Manager Reyes: black nearly everywhere)
+        if KTH_SORT * 4 < len(middle) <= n // 2:
+            return _kth(middle, k - below, breathe)  # it shrank: narrow it down again
+        return sorted(middle)[k - below]
+    return sorted(values)[k]  # the sample missed it (very unlikely): the plain way
+
+
+def _floats(blob: bytes, n: int) -> array.array:
+    values = array.array("f")
+    values.frombytes(blob)
+    if len(values) != n * 4:
+        raise ValueError(f"a pass holds {len(values) // 4} pixels, expected {n}")
+    if sys.byteorder != "little":
+        values.byteswap()
+    return values
+
+
 def compose(width: int, height: int, hdr: bytes, base: bytes, normal: bytes, depth: bytes) -> bytes:
     """
     The picture, drawn from captures of the same frozen view (float RGBA per pixel each):
@@ -286,78 +418,192 @@ def compose(width: int, height: int, hdr: bytes, base: bytes, normal: bytes, dep
     - base: paint colour (linear), which is what keeps every boss's true colours;
     - normal, depth: where surfaces turn or step away, and the silhouette, get ink lines, as the
       game's own outlines do.
+
+    Worker thread: pure Python, so it lets go of the GIL every millisecond (_Breather; the first
+    version held it up to ~70 ms at a time, in its sorts and when it returned). Works channel by
+    channel on the boss's own pixels only: byte for byte the first version's picture
+    (dev/kairosdex_compose_test.py) for ~half the work (0.48 s against 0.84 s offline); with its
+    breaks it takes about as long as before.
     """
     n = width * height
-    a = struct.unpack(f"<{n * 4}f", hdr)
-    c = struct.unpack(f"<{n * 4}f", base)
-    nm = struct.unpack(f"<{n * 4}f", normal)
-    dp = struct.unpack(f"<{n * 4}f", depth)
+    breathe = _Breather()
+    a, c, nm, dp = (_floats(blob, n) for blob in (hdr, base, normal, depth))
+    a_r, a_g, a_b, a_a = a[0::4], a[1::4], a[2::4], a[3::4]
+    c_r, c_g, c_b = c[0::4], c[1::4], c[2::4]
+    n_x, n_y, n_z = nm[0::4], nm[1::4], nm[2::4]
+    d = dp[0::4]
+    del a, c, nm, dp
+    breathe()
     # The boss: drawn in the HDR shot and solid (effects like smoke and particle clouds are drawn but
     # have no depth or paint, and came out as black blobs)
-    inside = [a[i * 4 + 3] < 1 and dp[i * 4] < NO_DEPTH for i in range(n)]
-    # Some materials give no paint colour (it reads pure white): those pixels take their colour
-    # from the HDR shot instead
-    unpainted = [inside[i] and min(c[i * 4], c[i * 4 + 1], c[i * 4 + 2]) >= UNPAINTED for i in range(n)]
-
-    def lum(f: tuple[float, ...], i: int) -> float:
-        return 0.2126 * f[i * 4] + 0.7152 * f[i * 4 + 1] + 0.0722 * f[i * 4 + 2]
-
+    inside = [False] * n
+    idx: list[int] = []  # the boss's pixels, in order
+    for s in breathe.steps(n):
+        e = min(n, s + CHUNK)
+        here = [x < 1 and z < NO_DEPTH for x, z in zip(a_a[s:e], d[s:e])]
+        inside[s:e] = here
+        idx += [s + j for j, v in enumerate(here) if v]
+        breathe()
+    del a_a
+    if not idx:
+        raise ValueError("the capture is empty")
+    m = len(idx)
+    # Per boss pixel (in idx order): HDR and paint brightness, paint colour
+    pr: list[float] = []  # paint
+    pg: list[float] = []
+    pb: list[float] = []
+    hr: list[float] = []  # HDR
+    hg: list[float] = []
+    hb: list[float] = []
+    lum_a: list[float] = []
+    lum_c: list[float] = []
+    unpainted: list[bool] = []
+    for s in breathe.steps(m):
+        part = idx[s : s + CHUNK]
+        cr, cg, cb = [c_r[i] for i in part], [c_g[i] for i in part], [c_b[i] for i in part]
+        ar, ag, ab = [a_r[i] for i in part], [a_g[i] for i in part], [a_b[i] for i in part]
+        pr += cr
+        pg += cg
+        pb += cb
+        hr += ar
+        hg += ag
+        hb += ab
+        lum_a += [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in zip(ar, ag, ab)]
+        lum_c += [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in zip(cr, cg, cb)]
+        # Some materials give no paint colour (it reads pure white): those pixels take their colour
+        # from the HDR shot instead
+        unpainted += [min(r, g, b) >= UNPAINTED for r, g, b in zip(cr, cg, cb)]
+        breathe()
     # Others give none as pure black, all over (Logistics Manager Reyes, Volcanus): a boss whose paint
     # is black nearly everywhere is all unpainted (real black paint is only ever part of one)
-    paint = sorted(lum(c, i) for i in range(n) if inside[i])
-    if paint and paint[int(len(paint) * BLACK_SHARE)] < BLACK_PAINT:
-        unpainted = inside[:]
-
-    if not any(inside):
-        raise ValueError("the capture is empty")
-    light = [lum(a, i) / max(lum(c, i), 0.02) if inside[i] and not unpainted[i] else 0.0 for i in range(n)]
-    lit = sorted(light[i] for i in range(n) if inside[i] and not unpainted[i])
-    median = (lit[len(lit) // 2] or 1.0) if lit else 1.0
+    if _kth(lum_c, int(m * BLACK_SHARE), breathe) < BLACK_PAINT:
+        unpainted = [True] * m
+    light = [0.0] * m
+    for s in breathe.steps(m):
+        e = min(m, s + CHUNK)
+        light[s:e] = [0.0 if u else la / max(lc, 0.02) for u, la, lc in zip(unpainted[s:e], lum_a[s:e], lum_c[s:e])]
+        breathe()
+    lit: list[float] = []
+    raw: list[float] = []
+    for s in breathe.steps(m):
+        e = min(m, s + CHUNK)
+        lit += [v for v, u in zip(light[s:e], unpainted[s:e]) if not u]
+        raw += [max(la, 0.0) for la, u in zip(lum_a[s:e], unpainted[s:e]) if u]
+        breathe()
+    median = (_kth(lit, len(lit) // 2, breathe) or 1.0) if lit else 1.0
     # Unpainted pixels (fur and the like): the HDR shot's hue, at a brightness squeezed into a band
     # around their own median (their lighting is harsh, with pure black shadows); where a pixel
     # is too dark to have a hue, the average hue of the rest
-    raw = sorted(max(lum(a, i), 0.0) for i in range(n) if unpainted[i])
-    raw_median = (raw[len(raw) // 2] if raw else 0.0) or 1e-4
-    hue_sum = [0.0, 0.0, 0.0]
+    raw_median = (_kth(raw, len(raw) // 2, breathe) if raw else 0.0) or 1e-4
+    floor = HUE_FLOOR * raw_median
+    hue_r = hue_g = hue_b = 0.0
     hued = 0
-    for i in range(n):
-        if unpainted[i] and (v := lum(a, i)) > HUE_FLOOR * raw_median:
-            for k in range(3):
-                hue_sum[k] += max(a[i * 4 + k], 0.0) / v
-            hued += 1
-    avg_hue = [h / hued for h in hue_sum] if hued else [1.0, 1.0, 1.0]
-    out = bytearray(n * 4)
-    for y in range(height):
-        for x in range(width):
-            i = y * width + x
-            if not inside[i]:
+    for s in breathe.steps(m):
+        for k in range(s, min(m, s + CHUNK)):
+            if unpainted[k] and (v := lum_a[k]) > floor:
+                hue_r += max(hr[k], 0.0) / v
+                hue_g += max(hg[k], 0.0) / v
+                hue_b += max(hb[k], 0.0) / v
+                hued += 1
+        breathe()
+    avg_hue = (hue_r / hued, hue_g / hued, hue_b / hued) if hued else (1.0, 1.0, 1.0)
+    del c_r, c_g, c_b, a_r, a_g, a_b
+    # Ink, per boss pixel: the frame's edge, the silhouette, a depth step or a turn of the surface
+    ink = [True] * m
+    last = n - width
+    for s in breathe.steps(m, SLOW_CHUNK):
+        for k in range(s, min(m, s + SLOW_CHUNK)):
+            i = idx[k]
+            x = i % width
+            if x == 0 or x == width - 1 or i < width or i >= last:
                 continue
-            if unpainted[i]:
-                v = max(lum(a, i), 0.0)
-                hue = [max(a[i * 4 + k], 0.0) / v for k in range(3)] if v > HUE_FLOOR * raw_median else avg_hue
+            dd = d[i]
+            step = INK_DEPTH * max(dd, 1.0)
+            nx, ny, nz = n_x[i], n_y[i], n_z[i]
+            j = i - 1
+            if not inside[j] or abs(d[j] - dd) > step or nx * n_x[j] + ny * n_y[j] + nz * n_z[j] < INK_NORMAL:
+                continue
+            j = i + 1
+            if not inside[j] or abs(d[j] - dd) > step or nx * n_x[j] + ny * n_y[j] + nz * n_z[j] < INK_NORMAL:
+                continue
+            j = i - width
+            if not inside[j] or abs(d[j] - dd) > step or nx * n_x[j] + ny * n_y[j] + nz * n_z[j] < INK_NORMAL:
+                continue
+            j = i + width
+            if not inside[j] or abs(d[j] - dd) > step or nx * n_x[j] + ny * n_y[j] + nz * n_z[j] < INK_NORMAL:
+                continue
+            ink[k] = False
+        breathe()
+    out = bytearray(n * 4)
+    level_of, steps = bisect.bisect_right, _steps()
+    gain = LIGHT_GAIN
+    keep = 1 - AMBIENT
+    for s in breathe.steps(m, SLOW_CHUNK):
+        for k in range(s, min(m, s + SLOW_CHUNK)):
+            if unpainted[k]:
+                v = lum_a[k]
+                if v < 0.0:
+                    v = 0.0
                 level = MID_PAINT * min(max((v / raw_median) ** UNPAINTED_CURVE, UNPAINTED_LOW), UNPAINTED_HIGH)
-                r, g, b = hue[0] * level, hue[1] * level, hue[2] * level
+                if v > floor:
+                    r, g, b = max(hr[k], 0.0) / v * level, max(hg[k], 0.0) / v * level, max(hb[k], 0.0) / v * level
+                else:
+                    r, g, b = avg_hue[0] * level, avg_hue[1] * level, avg_hue[2] * level
             else:
-                shade = AMBIENT + LIGHT_GAIN * min(light[i] / median, LIGHT_MAX) * (1 - AMBIENT)
-                r, g, b = c[i * 4] * shade, c[i * 4 + 1] * shade, c[i * 4 + 2] * shade
-            if _inked(i, x, y, width, height, inside, nm, dp):
+                shade = AMBIENT + gain * min(light[k] / median, LIGHT_MAX) * keep
+                r, g, b = pr[k] * shade, pg[k] * shade, pb[k] * shade
+            if ink[k]:
                 r, g, b = r * INK, g * INK, b * INK
-            out[i * 4 : i * 4 + 4] = bytes((_srgb(r), _srgb(g), _srgb(b), 255))
+            o = idx[k] * 4
+            out[o : o + 4] = (level_of(steps, r), level_of(steps, g), level_of(steps, b), 255)
+        breathe()
+    # Freed a list at a time: all at once (on return) is a million floats, ~12 ms in one go
+    for big in (pr, pg, pb, hr, hg, hb, lum_a, lum_c, light, lit, raw, unpainted, ink, idx, inside):
+        big.clear()
+        breathe()
+    del d, n_x, n_y, n_z
+    breathe()
     return bytes(out)
 
 
-def _inked(i: int, x: int, y: int, width: int, height: int, inside: list[bool], nm: tuple[float, ...], dp: tuple[float, ...]) -> bool:
-    if x == 0 or y == 0 or x == width - 1 or y == height - 1:
-        return True
-    d = dp[i * 4]
-    for j in (i - 1, i + 1, i - width, i + width):
-        if not inside[j]:
-            return True  # the silhouette
-        if abs(dp[j * 4] - d) > INK_DEPTH * max(d, 1.0):
-            return True
-        if nm[i * 4] * nm[j * 4] + nm[i * 4 + 1] * nm[j * 4 + 1] + nm[i * 4 + 2] * nm[j * 4 + 2] < INK_NORMAL:
-            return True
-    return False
+def _srgb_steps() -> list[float]:
+    """
+    For each output level 1..255, the smallest float _srgb gives it for: _srgb is a step function,
+    so a level is how many of these a value reaches (bisect), the same byte without the power
+    function. Each found by halving the gap between doubles (their bit patterns sort as they do).
+    """
+
+    def as_float(bits: int) -> float:
+        return struct.unpack("<d", struct.pack("<q", bits))[0]
+
+    def as_bits(x: float) -> int:
+        return struct.unpack("<q", struct.pack("<d", x))[0]
+
+    steps = []
+    lo_bits = as_bits(0.0)
+    for level in range(1, 256):
+        hi_bits = as_bits(1.0)  # _srgb(1.0) is 255
+        while lo_bits < hi_bits:
+            mid = (lo_bits + hi_bits) // 2
+            if _srgb(as_float(mid)) >= level:
+                hi_bits = mid
+            else:
+                lo_bits = mid + 1
+        steps.append(as_float(lo_bits))
+    return steps
+
+
+_SRGB_STEPS: list[float] = []  # made the first time compose runs (~14 ms: not at import, on the game thread)
+
+
+def _steps() -> list[float]:
+    if not _SRGB_STEPS:
+        _SRGB_STEPS[:] = _srgb_steps()
+    return _SRGB_STEPS
+
+
+def _srgb_fast(x: float) -> int:
+    return bisect.bisect_right(_steps(), x)
 
 
 def from_look(width: int, height: int, hdr: bytes, look: bytes) -> bytes:

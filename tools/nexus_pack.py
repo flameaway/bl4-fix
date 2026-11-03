@@ -1,19 +1,18 @@
 """
 Packs one mod for a manual install from Nexus Mods (dev only).
 
-    python tools/nexus_pack.py bl4_weapondex [--no-pictures]
+    python tools/nexus_pack.py bl4_weapondex
 
 Writes dist/nexus/<mod>/:
 - <Name>-<version>.zip: sdk_mods/<mod>.sdkmod, to extract into the game folder. The .sdkmod is the
   same build as the GitHub release's (installer/build.py), so the Mod Menu's updater treats it
   like an installed one; a warning is printed if its bytes differ from the published file of the
   same version (an unpublished change, or the CRLF trap: build from the main tree's bytes).
-- <Name>-Pictures-<version>.zip, for mods with pictures (catalog `assets`, e.g. Kairosdex's boss
-  and item pictures, from assets/ in the repo like the setup app's):
-  OakGame/Content/uiresources/..., to extract into the game folder. An optional file on Nexus.
 - README.txt: install steps, requirements and the first-launch note, for the Nexus description.
 
 The SDK (oak2-mod-manager) is not bundled (nor a mod a NOTES entry `needs`): the readme links them.
+No pictures either: Kairosdex makes its boss and item pictures in the player's game, at the title
+screen (bl4_weapondex/titlebake.py); nothing made from the game's files is shipped (2026-11-03).
 """
 
 from __future__ import annotations
@@ -52,9 +51,10 @@ NOTES: dict[str, dict[str, str]] = {
         "first": (
             "The Kairosdex screen (F8, the pause menu entry) and the new-boss / new-legendary HUD\n"
             "banners are set up during the first launch and show from the second one (the game\n"
-            "reads its .pak files only at startup). Restart the game once after installing."
+            "reads its .pak files only at startup). Restart the game once after installing.\n"
+            "The boss and item pictures are made in your own game, at the title screen: the first\n"
+            "time it takes a minute or so (a notice shows how far along it is), then only new ones."
         ),
-        "pictures": "Boss portraits and item pictures. Without them the dex shows silhouettes.",
     },
 }
 
@@ -70,20 +70,7 @@ def published_sha256(mod_id: str, version: str) -> str | None:
     return entry.get("sha256") if entry.get("version") == version else None
 
 
-def pictures_zip(info: catalog.ModInfo, out: Path) -> int:
-    """build.build_assets' pictures, under the game folder's path instead of uiresources/."""
-    tmp = out.with_suffix(".tmp")
-    count = build.build_assets(info, tmp)
-    with zipfile.ZipFile(tmp) as src, zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as dst:
-        for item in src.infolist():
-            zinfo = zipfile.ZipInfo(f"{UI_PREFIX}/{item.filename}", item.date_time)
-            zinfo.external_attr = item.external_attr
-            dst.writestr(zinfo, src.read(item))
-    tmp.unlink()
-    return count
-
-
-def readme(info: catalog.ModInfo, version: str, description: str, has_pictures: bool) -> str:
+def readme(info: catalog.ModInfo, version: str, description: str) -> str:
     notes = NOTES.get(info.id, {})
     lines = [
         f"{info.name} {version}",
@@ -104,11 +91,6 @@ def readme(info: catalog.ModInfo, version: str, description: str, has_pictures: 
         f"1. Extract {info.name}-{version}.zip into the Borderlands 4 game folder",
         f"   (it puts sdk_mods/{info.id}.sdkmod in place).",
     ]
-    if has_pictures:
-        lines += [
-            f"2. Optional: extract {info.name}-Pictures-{version}.zip into the same folder.",
-            f"   {notes.get('pictures', '')}".rstrip(),
-        ]
     if first := notes.get("first"):
         lines += ["", "FIRST LAUNCH", first]
     if use := notes.get("use"):
@@ -134,7 +116,6 @@ def readme(info: catalog.ModInfo, version: str, description: str, has_pictures: 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("mod", help="catalog id, e.g. bl4_weapondex")
-    parser.add_argument("--no-pictures", action="store_true", help="skip the pictures zip")
     args = parser.parse_args()
 
     info = next((m for m in catalog.MODS if m.id == args.mod), None)
@@ -168,13 +149,7 @@ def main() -> int:
     sdkmod.unlink()
     print(f"wrote {main_zip.relative_to(REPO_ROOT)} ({main_zip.stat().st_size // 1024} KB)")
 
-    has_pictures = bool(info.assets) and not args.no_pictures
-    if has_pictures:
-        pics = out / f"{name}-Pictures-{version}.zip"
-        count = pictures_zip(info, pics)
-        print(f"wrote {pics.relative_to(REPO_ROOT)} ({count} pictures, {pics.stat().st_size // (1024 * 1024)} MB)")
-
-    (out / "README.txt").write_text(readme(info, version, project.get("description", info.blurb), has_pictures), encoding="utf-8")
+    (out / "README.txt").write_text(readme(info, version, project.get("description", info.blurb)), encoding="utf-8")
     print(f"wrote {(out / 'README.txt').relative_to(REPO_ROOT)}")
     return 0
 

@@ -74,10 +74,6 @@ def payload_mod(mod_id: str) -> Path:
     return PAYLOAD / f"{mod_id}.sdkmod"
 
 
-def payload_assets(mod_id: str) -> Path:
-    return PAYLOAD / f"{mod_id}.assets.zip"
-
-
 def _version_key(version: str | None) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", version or "")[:4])
 
@@ -476,8 +472,6 @@ def _verify_payload() -> None:
         raise RuntimeError(f"bundled SDK zip is corrupt (sha256 {digest})")
     if missing := [m.id for m in catalog.MODS if not payload_mod(m.id).is_file()]:
         raise RuntimeError(f"bundled mod file is missing: {', '.join(missing)}")
-    if missing := [m.id for m in catalog.MODS if m.assets and not payload_assets(m.id).is_file()]:
-        raise RuntimeError(f"bundled pictures are missing: {', '.join(missing)}")
 
 
 def install_vcredist(log) -> None:  # noqa: ANN001
@@ -625,8 +619,6 @@ def _install_mod(game_dir: Path, info: catalog.ModInfo, new: bool, log=print) ->
         log(f"Kept {info.name} {have} (newer than this app's {ours}).")
     else:
         shutil.copyfile(payload_mod(info.id), target)
-    if info.assets:
-        _install_assets(game_dir, info, log)
     if info.id == SKIP_INTRO:
         return  # its enabled flag is the movie switch (set_skip_intro)
 
@@ -643,49 +635,6 @@ def _install_mod(game_dir: Path, info: catalog.ModInfo, new: bool, log=print) ->
         data = {}
     data["enabled"] = True
     _write_json(mod_settings, data)
-
-
-def _install_assets(game_dir: Path, info: catalog.ModInfo, log=print) -> None:  # noqa: ANN001
-    """
-    Unpacks a mod's bundled pictures into uiresources. Each folder has an index.json of picture ->
-    version (the page only shows listed pictures): a picture the player already has in a newer
-    version (taken in their own game) is kept, and the indexes are merged. Full-size folders go
-    before their small/ copies, so a small copy is never older than its picture (Weapondex would
-    remake it otherwise).
-    """
-    ui = game_dir / UI_REL
-    added = 0
-    with zipfile.ZipFile(payload_assets(info.id)) as zf:
-        indexes = [n.rsplit("/", 1)[0] for n in zf.namelist() if n.endswith("/index.json")]
-        folders = sorted(indexes, key=lambda f: (f.count("/"), f))
-        for folder in folders:
-            ours = json.loads(zf.read(f"{folder}/index.json"))
-            target = ui / folder
-            try:
-                theirs = json.loads((target / "index.json").read_text(encoding="utf-8"))
-                if not isinstance(theirs, dict):
-                    theirs = {}
-            except (OSError, ValueError):
-                theirs = {}
-            target.mkdir(parents=True, exist_ok=True)
-            merged = dict(theirs)
-            for key, version in ours.items():
-                png = target / f"{key}.png"
-                if theirs.get(key, 0) > version and png.is_file():
-                    continue
-                content = zf.read(f"{folder}/{key}.png")
-                try:
-                    if png.read_bytes() == content:
-                        merged[key] = version
-                        continue
-                except OSError:
-                    pass
-                png.write_bytes(content)
-                merged[key] = version
-                added += 1
-            _write_json(target / "index.json", merged)
-    if added:
-        log(f"Installed {added} {info.name} pictures.")
 
 
 def remove_mod(game_dir: Path, mod_id: str, log=print) -> None:  # noqa: ANN001
