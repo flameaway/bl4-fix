@@ -101,8 +101,7 @@ Command line: `BL4FixSetup.exe --list-mods`, `--mods <ids>`, `--add-mod <id>`,
 ### Install without the setup app
 
 Rather not run an exe? Every release also has **[`BL4Fix-Manual.zip`](https://github.com/flameaway/bl4-fix/releases/latest/download/BL4Fix-Manual.zip)**:
-the same mods, the pinned Python SDK, the page files the setup app prepares and Kairosdex's boss
-and item pictures, with no program
+the same mods, the pinned Python SDK and the page files the setup app prepares, with no program
 to run. Each `.sdkmod` inside is a zip of readable Python. GitHub rebuilds the zip from the source
 code and attests it, so you can check it's exactly what this repository builds (see
 [Checking a download](#checking-a-download)).
@@ -111,7 +110,8 @@ code and attests it, so you can check it's exactly what this repository builds (
 2. Extract everything in the zip into the game folder, the one with `OakGame` in it (Steam:
    right-click the game > **Manage** > **Browse local files**). Say yes to replacing files.
 3. Launch the game. Every mod starts switched on; switch off the ones you don't want on **MODS**
-   (F7). Kairosdex's pictures are already in place: nothing downloads on the first launch.
+   (F7). Kairosdex makes its boss and item pictures in your game the first time you reach the
+   title screen (a minute or so, with a notice showing how far along it is).
 
 What the setup app does that the zip leaves to you:
 
@@ -266,9 +266,11 @@ yourself.
 
 Item cards that tell you what an item actually does.
 
-- **Class mods** list every boosted skill with its name, ranks, numbers and full description,
-  coloured by skill tree, instead of only icons and "+2". Skill tooltips show the class mod's
-  bonus too ("0/5 [+3 from Class Mod]").
+- **Class mods** list every boosted skill with its name, your rank ("3/5"), the mod's points and
+  the most that mod's rarity can roll on a skill ("+2 (max +5)"), and its full description,
+  coloured by skill tree, instead of only icons and "+2". Turn on **Exact skill numbers** for each
+  skill's numbers now and with the mod ("+14% » +35%"), for every class. Skill tooltips show the class mod's bonus too
+  ("0/5 [+3 from Class Mod]").
 - **Firmware** shows its tiers and numbers.
 - **Secondary stats** (the small row, e.g. `35cm`) show their name ("Splash Radius").
 - **Banner and red flavour text** render the game's colour markup.
@@ -284,7 +286,8 @@ Item cards that tell you what an item actually does.
 <img src="docs/images/hdr-kairosdex.jpg" alt="Kairosdex (F8): every boss and every legendary they drop" width="100%">
 
 A dex of every boss in the game and the legendaries they drop (**F8**, or **Kairosdex** in the
-pause menu): **118 bosses** and **318 legendaries and pearls**, each rendered in game. Search and
+pause menu): **118 bosses** and **318 legendaries and pearls**, each pictured in your own game
+(made at the title screen the first time, in about a minute). Search and
 sort it, filter by region, kind, item type and maker, and see each item's stats at your level,
 re-rolled live. Bosses you've already beaten are filled in from your save (read only), and new
 ones are logged as you kill them, in solo or co-op. A HUD banner celebrates your first kill of
@@ -466,9 +469,8 @@ launch" in the Mod Menu's own settings. When there are updates, **MODS** shows a
 3. They install when the game closes, or press **Restart now** to close the game, install them
    and start it again (Steam).
 
-Mods you didn't install are listed there too, with an **Install** button. New boss and item
-pictures for the Kairosdex come with a new `BL4FixSetup.exe` or `BL4Fix-Manual.zip`, and the
-Kairosdex downloads any that are missing by itself.
+Mods you didn't install are listed there too, with an **Install** button. When an update adds
+bosses or items to the Kairosdex, it makes their pictures at the next title screen.
 
 ## Safety
 
@@ -487,8 +489,6 @@ and checks the files.
 **What goes online, and when.**
 - **Update checks** go to GitHub only, once per launch, and only after you answer Yes to "Check for
   updates automatically?" on the Updates page. Mods download only when you press Update or Install.
-- **Kairosdex** downloads its boss and item pictures from BL4 Fix's latest GitHub release if they're
-  missing from the game folder.
 - **BL4 Direct Connect's page** and the setup app's Co-op page look up your public IP (api.ipify.org,
   else ifconfig.me) to show the address friends join.
 - **The setup app** checks GitHub for a newer version when it starts, and downloads Microsoft's
@@ -555,7 +555,7 @@ run it at all, [install from the zip](#install-without-the-setup-app).
   `Get-FileHash BL4Fix-Manual.zip` (or `BL4FixSetup.exe`) and compare.
 - **Built by GitHub from this source:** after each release, GitHub Actions
   ([`verify-release.yml`](.github/workflows/verify-release.yml)) checks out the release's tag,
-  rebuilds every `.sdkmod`, the Kairosdex pictures zip and `BL4Fix-Manual.zip`, checks they're
+  rebuilds every `.sdkmod` and `BL4Fix-Manual.zip`, checks they're
   byte-for-byte the released files, and attests them. With the
   [GitHub CLI](https://cli.github.com/): `gh attestation verify BL4Fix-Manual.zip --repo flameaway/bl4-fix`.
   The setup exe isn't rebuilt there (its window uses the game's own art, which only a PC with the
@@ -627,25 +627,24 @@ and almost every change reloads live without restarting the game.
 | [`mods/`](mods) | One folder per mod |
 | [`ported/`](ported) | GPL-3.0 rewrites of Yeti's mods |
 | [`installer/`](installer) | The setup app: `python installer/build.py` produces `dist/BL4FixSetup.exe`; `catalog.py` lists the mods |
-| [`assets/`](assets) | Kairosdex's boss and item pictures (rendered in game), shipped by the setup app |
 | [`tools/`](tools) | Generators for game-derived data (`gen_*.py`), NCS parser (our rewrite of monokrome's [`bl4-ncs`](https://github.com/monokrome/bl4)), desktop agent, bridge client, live UI editing, `release.py` |
 | [`dev/`](dev) | The bridge mod (run Python on the game thread from outside), hot-reload scripts, reverse-engineering and profiling tools |
 | [`docs/`](docs) | Write-ups: co-op fast travel, network performance, game hitches |
 
 ### Building the setup app
 
-You need Windows, Python 3.11+ and Borderlands 4 installed. Then run:
+You need Windows and Python 3.11+ (the game itself isn't needed). Then run:
 
 ```
 python installer/build.py
 ```
 
 It downloads the pinned SDK, packs every mod and builds `dist/BL4FixSetup.exe` with PyInstaller (in
-`installer/.venv`). The setup window uses the game's own fonts, menus and art. Those aren't in git, so
-the first build reads them out of your game's paks and decompresses them with
-[pyooz](https://pypi.org/project/pyooz/) (`tools/gen_setup_ui.py`). Use `BL4_GAME_DIR` if the game
-isn't in the default Steam folder. Kairosdex's boss and item pictures are rendered in game, which
-takes a long time, so they're kept ready-made in [`assets/`](assets). The first build also compiles
+`installer/.venv`). The setup window is styled after the game's menus but holds no game files: its
+art (`installer/ui/art/`, the backdrop and icon made by `tools/gen_setup_art.py`) is our own and its
+font is [Saira](https://github.com/Omnibus-Type/Saira) (SIL Open Font License), so nothing has to
+come from your install. No pictures are shipped either: Kairosdex makes its boss and item pictures
+in each player's own game, at the title screen. The first build also compiles
 PyInstaller's loader from source, which needs Visual Studio's C++ build tools ("Desktop
 development with C++"); without them it warns and uses the stock loader.
 
@@ -684,6 +683,8 @@ two-instance testing, the installer).
   [Less Fog](https://www.nexusmods.com/borderlands4/mods/336), the idea of
   Less Fog. Ours is a separate SDK version (it scales the live fog instead of editing the game's
   fog data in a pak) and shares no code with it.
+- The [Saira](https://github.com/Omnibus-Type/Saira) authors (Omnibus-Type) for the setup app's
+  font (SIL Open Font License 1.1, `installer/ui/fonts/OFL.txt`).
 
 ## License
 
@@ -701,6 +702,8 @@ Files that come from other people's code keep those authors' notices and license
   those three mods too). GPL-3.0 allows the combination; these files stay AGPL-3.0.
 - `mods/bl4_direct/ui.py`: follows mattmab's MattsBL4ModsMenu, MIT (notice in the file).
 - `tools/ncs_parse.py`: from monokrome's bl4, BSD-2-Clause (notice in the file).
+- `installer/ui/fonts/Saira.ttf`: the Saira font, SIL Open Font License 1.1
+  (`installer/ui/fonts/OFL.txt`, bundled with it in the setup app).
 
 Borderlands 4 game files and anything generated from them (pages, data, pictures) belong to
 Gearbox Software and aren't covered by this license.
