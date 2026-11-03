@@ -335,6 +335,11 @@ def _enable() -> None:
     _requested.clear()
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[range_option],
     hooks=[watch_shots, remote_fire_start, remote_fire_stop],

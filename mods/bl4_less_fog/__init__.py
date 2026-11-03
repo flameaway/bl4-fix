@@ -152,6 +152,11 @@ def _disable() -> None:
     _S.restored = False
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[preset_option, density_option, start_option, haze_option],
     hooks=[tick],

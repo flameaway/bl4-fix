@@ -129,6 +129,11 @@ def machine_used(obj: UObject, _args: WrappedStruct, _ret: Any, _func: BoundFunc
         logging.error(f"[Encore Tweaks] {ex!r}")
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[health_option, ammo_option, skill_option, kill_option],
     hooks=[machine_used],

@@ -268,6 +268,11 @@ def _disable() -> None:
     _reset()
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[bank_option, fast_option],
     hooks=[tick, link_tick],

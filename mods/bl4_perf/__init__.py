@@ -218,6 +218,11 @@ def _disable() -> None:
     _cleanup()
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[python_option, gc_option, framegen_option, dlss_option, memory_option],
     hooks=[tick],

@@ -124,6 +124,11 @@ def backup_command(_: object) -> None:
     _backup_now(backup_button)
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[keep_option, launch_option, backup_button, folder_button],
     hooks=[_tick],

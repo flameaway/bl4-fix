@@ -358,6 +358,11 @@ def _disable() -> None:
     frametick.add(CLEANUP_ID, once)
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[sharpness_option, percent_option],
     hooks=[tick],

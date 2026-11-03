@@ -163,6 +163,11 @@ def _disable() -> None:
     hotkeys.stop()
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[skills_option, specs_option, hotkey_group],
     hooks=[_tick],

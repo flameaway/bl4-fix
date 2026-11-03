@@ -18,7 +18,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-MOD_VERSION = "0.5.3"
+MOD_VERSION = "0.5.4"
 SDK_VERSION = "0.3"
 DEFAULT_PORT = 7777
 FRIENDS_FILE_NAME = "bl4_direct_friends.json"

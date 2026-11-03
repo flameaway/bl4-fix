@@ -293,6 +293,11 @@ def _disable() -> None:
             logging.error(f"[Dialog Skipper] {ex!r}")
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[auto_option, delay_option, keep_enemy_option, keep_player_option],
     keybinds=[skip_key, toggle_auto_key, speed_up_key, normal_speed_key],

@@ -36,4 +36,9 @@ def _disable() -> None:
         logging.error(f"[Skip Intro] Couldn't put the logo movies back: {ex!r}")
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(on_enable=_enable, on_disable=_disable)

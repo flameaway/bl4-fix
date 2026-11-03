@@ -95,8 +95,22 @@ def _child(zip_path: str, mod_id: str, game: str) -> None:
     sdk.__version_info__ = (3, 2, 0)
     built: list[dict] = []
     base = sys.modules["mods_base"]
-    base.build_mod = lambda *a, **k: built.append(k) or Stub()
     base.SETTINGS_DIR = Path(game) / "sdk_mods" / "settings"
+
+    def build_mod(*a: object, **k: object) -> Stub:
+        # What mods_base's load_settings would see now (firston: a new mod starts on)
+        import json  # noqa: PLC0415
+
+        path = base.SETTINGS_DIR / f"{mod_id}.json"
+        try:
+            on = json.loads(path.read_text(encoding="utf-8")).get("enabled", False)
+        except (OSError, ValueError):
+            on = False
+        print(f"enabled at build_mod: {on}")
+        built.append(k)
+        return Stub()
+
+    base.build_mod = build_mod
     base.mod_list = []
     base.__version_info__ = (1, 10)
     base.ENGINE = Stub()
@@ -140,7 +154,10 @@ def main() -> None:
                 capture_output=True, text=True, timeout=120, cwd=str(tmp),
             )
             out = (run.stdout + run.stderr).strip()
-            if run.returncode or "build_mod calls: 1" not in out:
+            # Every mod but the Mod Menu (a Library, always on) writes "enabled": true for its
+            # first launch (shared/firston) before build_mod loads the settings
+            starts_on = info.id == "bl4_mod_menu" or "enabled at build_mod: True" in out
+            if run.returncode or "build_mod calls: 1" not in out or not starts_on:
                 fails.append(info.id)
                 print(f"FAIL {info.id}\n{out}\n")
             else:

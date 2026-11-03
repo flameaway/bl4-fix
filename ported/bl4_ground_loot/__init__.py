@@ -391,6 +391,11 @@ def clear_key() -> None:
         logging.error(f"[Ground Loot] {ex!r}")
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[pickups_option, gear_option, range_option, partners_option],
     keybinds=[bring_key, clear_key],

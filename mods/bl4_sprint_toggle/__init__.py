@@ -130,10 +130,12 @@ def _tick() -> None:
             health.tick()  # "needs an update" statuses for all our mods (shared/health)
         names = _toggle_keys()
         focused = _focused(now)
-        # A key held when the game comes back to the front doesn't count
+        # A key held when the game comes back to the front doesn't count: out of focus the key reads
+        # as held. That's never a press itself: losing focus used to be one, so every alt-tab (or
+        # any window taking the foreground) toggled sprint (2026-11-02, user: "randomly toggling")
         down = (binds.any_down(names) if focused else True) if names else False
         was, Keys.was_down = Keys.was_down, down
-        pressed = down and not was
+        pressed = focused and down and not was
         state = sprint.State
         # Only the key check above on most frames (2026-10-29, user: "should be a free mod"). The
         # full pass (controller, character, bindings, the movement flags) runs on a press, an
@@ -185,6 +187,11 @@ def _enable() -> None:
 def _disable() -> None:
     sprint.reset()  # the game's own sprint state is left as it is: it ends at the next stop
 
+
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
 
 mod = build_mod(
     options=[always_option, custom_key_option],

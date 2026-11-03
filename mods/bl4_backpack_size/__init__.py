@@ -160,6 +160,11 @@ if coop is not None:
     coop.on_push(PUSH_KIND, _on_host_sizes)
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[size_option, bank_option, lost_loot_option],
     hooks=[tick],

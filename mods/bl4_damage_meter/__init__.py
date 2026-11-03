@@ -301,6 +301,11 @@ def _disable() -> None:
 
 # endregion
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     options=[open_button, open_key, report_option, fight_gap, reset_button],
     keybinds=[],

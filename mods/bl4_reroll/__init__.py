@@ -705,6 +705,11 @@ def _disable() -> None:
 
 # endregion
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
     # The rest of the options are built from the backpack (_refresh); these are listed here so
     # their saved values load
