@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 1000" preserveAspectRatio="none">
+  <!-- Main menu panel edge: bent gold rails with rivets (left side; the right one is mirrored) -->
+  <g fill="none" stroke-linejoin="bevel" vector-effect="non-scaling-stroke">
+    <path d="M46 0 V250 L14 300 V640 L46 690 V1000" stroke="#c98a35" stroke-opacity="0.55" stroke-width="2" vector-effect="non-scaling-stroke"/>
+    <path d="M54 0 V246 L22 296 V644 L54 694 V1000" stroke="#c98a35" stroke-opacity="0.22" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+    <path d="M38 0 V254 L6 304 V636 L38 686 V1000" stroke="#3f769d" stroke-opacity="0.35" stroke-width="1" vector-effect="non-scaling-stroke"/>
+  </g>
+  <g fill="#f2a73b" fill-opacity="0.75">
+    <rect x="11" y="330" width="6" height="26"/>
+    <rect x="11" y="586" width="6" height="26"/>
+    <rect x="43" y="120" width="6" height="14"/>
+    <rect x="43" y="830" width="6" height="14"/>
+  </g>
+</svg>

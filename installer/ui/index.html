@@ -3,32 +3,21 @@
 <head>
 <meta charset="utf-8">
 <title>BL4 Fix</title>
-<!-- The game's own stylesheets (tools/gen_setup_ui.py copies them from the install into game/) -->
-<link rel="stylesheet" href="game/_shared/css/gbx.css">
-<link rel="stylesheet" href="game/_shared/css/oakgame.css">
-<link rel="stylesheet" href="game/_shared/css/oak_markup.css">
-<link rel="stylesheet" href="game/_shared/css/color_tint_filters.css">
-<link rel="stylesheet" href="game/_shared/css/shared_animations.css">
-<link rel="stylesheet" href="game/components/gbx_button/css/gbx_button.css">
-<link rel="stylesheet" href="game/components/list_button/css/list_button.css">
-<link rel="stylesheet" href="game/components/main_menu_button/css/main_menu_button.css">
-<link rel="stylesheet" href="game/components/pip/css/pip.css">
-<link rel="stylesheet" href="game/components/toggle/css/toggle.css">
-<link rel="stylesheet" href="game/components/stepper/css/stepper.css">
-<link rel="stylesheet" href="game/components/text_input/css/text_input.css">
-<link rel="stylesheet" href="game/components/category_divider/css/category_divider.css">
-<link rel="stylesheet" href="game/menu_main/css/menu_main.css">
-<link rel="stylesheet" href="game/menu_options/css/menu_options.css">
-<link rel="stylesheet" href="game/title_screen/css/title_screen.css">
-<link rel="stylesheet" href="game/dialog_popup/css/dialog_popup.css">
-<link rel="stylesheet" href="game/celebratory_notifications/css/celebratory_notifications.css">
+<!-- Everything here is BL4 Fix's own: art/ (SVGs, tools/gen_setup_art.py for the raster parts),
+     fonts/Saira.ttf (SIL Open Font License, fonts/OFL.txt), setup.css, app.js -->
 <link rel="stylesheet" href="setup.css">
 </head>
 <body>
 <div id="bg">
   <div class="bg_art"></div>
+  <div class="bg_grid"></div>
   <div class="bg_shade"></div>
-  <div id="claptrap"><img src="game/_setup/claptrap.png" alt="" draggable="false"></div>
+  <!-- Right: the mark, huge and faint, standing on the horizon behind scan lines -->
+  <div id="emblem">
+    <div class="emblem_glow"></div>
+    <div class="mark emblem_mark"><img class="mark_core" src="art/mark_core.svg" alt="" draggable="false"><img class="mark_ring" src="art/mark_ring.svg" alt="" draggable="false"></div>
+    <div class="emblem_scan"></div>
+  </div>
 </div>
 
 <div id="titlebar">
@@ -37,8 +26,13 @@
   <button class="tb_btn tb_close" id="btn-close" title="Close"><span class="tb_x"></span></button>
 </div>
 
-<!-- The title screen's main menu (menu_main.html), filled in by app.js -->
-<div id="menu_slot"></div>
+<!-- The main menu: a panel on the left, filled in by app.js -->
+<nav id="menu">
+  <div class="menu_panel"><i class="menu_rail"></i><i class="menu_rail menu_rail_r"></i></div>
+  <div class="menu_logo mark"><img class="mark_core" src="art/mark_core.svg" alt="" draggable="false"><img class="mark_ring" src="art/mark_ring.svg" alt="" draggable="false"></div>
+  <div class="menu_list" id="menu-list"></div>
+</nav>
+<div class="menu_ver"><p id="menu-ver"></p></div>
 
 <div id="content">
   <div class="su_header">
@@ -46,25 +40,31 @@
     <p class="su_crumb" id="page-crumb"></p>
   </div>
   <div class="su_body">
-    <div class="su_entries menu_options_entry_list" id="entries"></div>
-    <div class="menu_options_details_container su_details">
-      <div class="menu_options_details_gradient_bg menu_options_details_gradient_bg_bottom"></div>
-      <div class="menu_options_details_container_inner">
-        <div class="menu_options_details">
-          <div class="menu_options_details_title med_text_1" id="d-title"></div>
-          <p class="su_details_meta small_text_2" id="d-meta"></p>
-          <p class="menu_options_details_description small_text_2" id="d-body"></p>
-          <div class="su_log" id="log" hidden></div>
-        </div>
+    <div class="su_entries" id="entries"></div>
+    <div class="su_details">
+      <div class="su_details_glow"></div>
+      <div class="su_details_inner">
+        <p class="su_details_title" id="d-title"></p>
+        <p class="su_details_meta" id="d-meta"></p>
+        <p class="su_details_body" id="d-body"></p>
+        <div class="su_log" id="log" hidden></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Boot: the game's title screen -->
-<div id="boot"><div id="boot_slot"></div><p class="su_boot_prompt" id="boot-prompt">Connecting to ECHO-4...</p></div>
+<!-- Boot: the mark powering up -->
+<div id="boot">
+  <div class="boot_art">
+    <div class="boot_glow"></div>
+    <svg class="boot_bolts" id="boot-bolts" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="mark boot_mark"><img class="mark_core" src="art/mark_core.svg" alt="" draggable="false"><img class="mark_ring" src="art/mark_ring.svg" alt="" draggable="false"></div>
+    <p class="boot_word">BL4 <span>Fix</span></p>
+  </div>
+  <p class="su_boot_prompt" id="boot-prompt">Connecting to ECHO-4...</p>
+</div>
 
-<!-- Popup (the game's dialog panel) -->
+<!-- Popup -->
 <div id="dialog" hidden>
   <div class="su_dialog">
     <div class="su_dialog_head"><p id="dialog-title"></p></div>
@@ -75,9 +75,9 @@
   </div>
 </div>
 
-<!-- Working: the game's vault spinner -->
+<!-- Working: the mark's ring spinning round the arch -->
 <div id="working" hidden>
-  <div class="su_spinner"></div>
+  <div class="mark su_spinner"><img class="mark_core" src="art/mark_core.svg" alt="" draggable="false"><img class="mark_ring" src="art/mark_ring.svg" alt="" draggable="false"></div>
   <p class="su_working_title" id="working-title">Installing</p>
   <div class="su_pbar"><i id="pfill"></i></div>
   <p class="su_working_line" id="working-line"></p>
@@ -85,7 +85,7 @@
 
 <!-- Done -->
 <div id="celebrate" hidden>
-  <div class="su_cel_badge"></div>
+  <div class="mark su_cel_badge"><img class="mark_core" src="art/mark_core.svg" alt="" draggable="false"><img class="mark_ring" src="art/mark_ring.svg" alt="" draggable="false"></div>
   <p class="su_cel_word" id="cel-word">Installed</p>
   <p class="su_cel_sub" id="cel-sub"></p>
   <div class="su_cel_btns" id="cel-btns"></div>

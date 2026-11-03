@@ -1,8 +1,7 @@
-/* BL4 Fix setup page, built from the game's own menus: the title screen, its main menu, Options
-   rows (toggle, stepper, list button) and fonts, from game/ (tools/gen_setup_ui.py). Talks to
-   webgui.Api through window.pywebview.api; with ?mock in the URL it runs on fake data (previews).
-   Templates are cloned the way the in-game Mod Menu does it: data-bind and l10n attributes stripped,
-   the gbx and widget custom elements turned into divs. */
+/* BL4 Fix setup page: a menu panel, rows of settings (toggle, stepper, button, text box) and a
+   details pane in the style of the game's menus, drawn with our own markup, CSS and art (setup.css,
+   art/). Talks to webgui.Api through window.pywebview.api; with ?mock in the URL it runs on fake
+   data (previews). */
 "use strict";
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -34,9 +33,7 @@ const S = {
   safe: null,
 };
 
-/* ---------- templates ---------- */
-
-const T = {};
+/* ---------- components (setup.css draws them) ---------- */
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -45,62 +42,15 @@ function el(tag, cls, text) {
   return e;
 }
 
-// Game markup as live DOM: bindings and localisation ids off, custom elements as divs
-function clean(root) {
-  $$("script, link", root).forEach((n) => n.remove());
-  const walk = (node) => {
-    for (const child of [...node.children]) walk(child);
-    for (const a of [...node.attributes]) {
-      if (/^(data-bind|data-l10n|gbx-data-l10n|data-input|gue-|tooltip-data-key|gbx-component-)/.test(a.name)) node.removeAttribute(a.name);
-    }
-    const tag = node.tagName.toLowerCase();
-    if (tag.includes("-") && tag !== "gbx-text-input" && tag !== "gbx-component") {
-      const div = document.createElement("div");
-      for (const a of node.attributes) div.setAttribute(a.name, a.value);
-      div.dataset.tag = tag;
-      while (node.firstChild) div.appendChild(node.firstChild);
-      node.replaceWith(div);
-    }
-  };
-  for (const child of [...root.children]) walk(child);
-  return root;
+// An element with empty decoration layers (<i class=...>) in front of its content
+function deco(tag, cls, layers, ...children) {
+  const e = el(tag, cls);
+  for (const l of layers) e.appendChild(el("i", l));
+  e.append(...children);
+  return e;
 }
 
-function parse(html) {
-  const t = document.createElement("template");
-  t.innerHTML = html;
-  return clean(t.content);
-}
-
-async function loadTemplates() {
-  const get = (p) => fetch("game/" + p).then((r) => r.text());
-  const [list, mm, toggle, stepper, input, options, menuMain, title, filters] = await Promise.all([
-    get("components/list_button/list_button.html"),
-    get("components/main_menu_button/main_menu_button.html"),
-    get("components/toggle/toggle.html"),
-    get("components/stepper/stepper.html"),
-    get("components/text_input/text_input.html"),
-    get("menu_options/menu_options.html"),
-    get("menu_main/menu_main.html"),
-    get("title_screen/title_screen.html"),
-    get("_setup/filters.svg"),
-  ]);
-  T.list = parse(list).firstElementChild;
-  T.mm = parse(mm).firstElementChild;
-  T.toggle = parse(toggle).firstElementChild;
-  T.stepper = parse(stepper).firstElementChild;
-  T.input = parse(input).firstElementChild;
-  const opts = parse(options);
-  T.entry = $(".menu_options_regular_entry", opts);
-  T.title = $(".menu_options_title_entry", opts);
-  T.menuMain = parse(menuMain);
-  T.titleScreen = parse(title);
-  // The game's tints (Coherent colour matrices), as SVG filters the stylesheets point at
-  document.body.insertAdjacentHTML("afterbegin", filters);
-}
-
-const make = (name) => T[name].cloneNode(true);
-
+// Hover is a class (not :hover) so a row can light its control too, and previews can fake it
 function hoverable(target, host = target) {
   target.addEventListener("mouseenter", () => host.classList.add("hover_effect"));
   target.addEventListener("mouseleave", () => host.classList.remove("hover_effect"));
@@ -114,23 +64,44 @@ function onClick(target, fn) {
 }
 
 function listButton(text, fn, cls) {
-  const b = make("list");
-  b.classList.add("su_btn");
+  const b = deco("div", "su_btn", ["btn_back", "btn_grad", "btn_fui", "btn_outline", "btn_glow", "btn_corner", "btn_pip"], el("p", "btn_txt", text));
   if (cls) b.classList.add(...cls.split(" "));
-  $(".button_txt", b).textContent = text;
   hoverable(b);
   if (fn) onClick(b, () => { if (!b.classList.contains("su_disabled")) fn(); });
   return b;
 }
 
-/* ---------- boot: the title screen ---------- */
+/* ---------- boot: the mark powers up ---------- */
+
+// Jagged arcs of light around the mark, a new set every few frames while the boot screen shows
+function bootBolts() {
+  const svg = $("#boot-bolts");
+  const bolt = () => {
+    const a = Math.random() * Math.PI * 2;
+    const len = 0.35 + Math.random() * 0.5;
+    const r0 = 250 + Math.random() * 60;
+    let d = "";
+    const steps = 9;
+    for (let i = 0; i <= steps; i++) {
+      const t = a + (len * i) / steps;
+      const r = r0 + (Math.random() - 0.5) * 46;
+      d += `${i ? "L" : "M"}${(500 + Math.cos(t) * r).toFixed(1)} ${(500 + Math.sin(t) * r).toFixed(1)} `;
+    }
+    return `<path d="${d}"/>`;
+  };
+  const draw = () => {
+    if ($("#boot").classList.contains("done")) return;
+    svg.innerHTML = Array.from({ length: 1 + Math.floor(Math.random() * 3) }, bolt).join("");
+    setTimeout(draw, 70 + Math.random() * 160);
+  };
+  draw();
+}
 
 async function boot() {
   S.api = await getApi();
-  await loadTemplates();
-  $("#boot_slot").appendChild(T.titleScreen.firstElementChild);
   const still = params.has("still");
   if (still) document.body.classList.add("still");
+  else bootBolts();
   const started = performance.now();
   S.info = await S.api.init();
   S.gameDir = S.info.game_dir;
@@ -188,7 +159,7 @@ function getApi() {
   });
 }
 
-/* ---------- the main menu (title screen panel) ---------- */
+/* ---------- the main menu (the panel on the left) ---------- */
 
 const NAV = [
   { id: "update", text: "Update App", big: true }, // shown only when a newer release is out
@@ -203,40 +174,30 @@ const NAV = [
 ];
 
 function buildMenu() {
-  const widget = T.menuMain.firstElementChild;
-  const list = $(".mm_entry_list", widget);
+  const list = $("#menu-list");
   list.innerHTML = "";
   S.nav = {};
   for (const item of NAV) {
     if (item.divider) {
-      list.appendChild(el("div", "mm_section_divider"));
+      list.appendChild(el("div", "mi_divider"));
       continue;
     }
-    const slot = el("div", item.big ? "mm_entry_item mm_main_btn_fontsize big_text_1" : "mm_entry_item_sub mm_sub_btn_fontsize med_text_1");
-    const btn = make("mm");
-    $(".mm_button_txt", btn).textContent = item.text;
-    // The brackets next to Game Settings hold its icons; Install shows the pending changes there
-    const info = $(".mm_game_settings_info", btn);
+    // A lit band with an orange pip at each end on hover; Install and Update App show their
+    // pending changes in brackets next to the text
+    const txt = el("p", "mi_txt", item.text);
+    const slot = deco("div", "mi " + (item.big ? "mi_big" : "mi_sub"), ["mi_band", "mi_pip", "mi_pip mi_pip_r"], txt);
     if (item.id === "install" || item.id === "update") {
-      $$(".mm_game_settings_icon", info).forEach((n) => n.remove());
-      info.appendChild(el("p", "su_mm_info", ""));
-      slot.classList.add("game_settings_enable", "su_mm_install");
+      slot.classList.add("su_mm_install");
+      slot.appendChild(el("p", "su_mm_info", ""));
       if (item.id === "update") slot.hidden = true;
-    } else {
-      info.remove();
     }
-    $$(".pip", btn).forEach((n) => n.remove());
-    slot.appendChild(btn);
-    slot.addEventListener("mouseenter", () => { btn.classList.add("hover_effect"); slot.classList.add("hover_effect"); });
-    slot.addEventListener("mouseleave", () => { btn.classList.remove("hover_effect"); slot.classList.remove("hover_effect"); });
+    hoverable(slot);
     onClick(slot, () => navigate(item.id));
     list.appendChild(slot);
-    S.nav[item.id] = { slot, btn };
+    S.nav[item.id] = { slot, txt };
   }
   // ECHO OS version line, bottom left
-  const ver = $(".menu_echo_os_ver", widget);
-  if (ver) ver.textContent = `//.ECHO-4 OS  BL4 FIX ${S.info.version}`;
-  $("#menu_slot").appendChild(widget);
+  $("#menu-ver").textContent = `//.ECHO-4 OS  BL4 FIX ${S.info.version}`;
 }
 
 function navigate(id) {
@@ -249,24 +210,22 @@ function navigate(id) {
 
 function showPage(id) {
   S.page = id;
-  for (const [key, n] of Object.entries(S.nav)) {
-    n.slot.classList.toggle("su_current", key === id);
-    n.btn.classList.toggle("su_current", key === id);
-  }
+  for (const [key, n] of Object.entries(S.nav)) n.slot.classList.toggle("su_current", key === id);
   render();
   $("#entries").scrollTop = 0;
 }
 
 /* ---------- rows ---------- */
 
+// A settings row: the name panel (left) and its controls in a framed box (right)
 function row(name, parts, details, opts = {}) {
-  const wrap = make("entry");
-  wrap.classList.add("su_entry_wrap");
-  const entry = $(".menu_options_entry", wrap);
-  $(".menu_options_entry_text", wrap).textContent = name;
-  const comp = $(".menu_options_entry_component", wrap);
+  const panel = deco("div", "row_panel", ["row_back", "row_grad", "row_bracket", "row_pip", "row_corner"], el("p", "row_name", name));
+  if (opts.status) panel.appendChild(el("p", "su_status su_status_" + opts.status.kind, opts.status.text));
+  const comp = el("div", "row_parts");
   for (const p of parts) if (p) comp.appendChild(p);
-  if (opts.status) $(".list_entry_panel", wrap).appendChild(el("p", "su_status su_status_" + opts.status.kind, opts.status.text));
+  const ctl = deco("div", "row_ctl", ["ctl_back", "ctl_stroke", "ctl_stroke_hover", "ctl_glow", "ctl_corner"], comp);
+  const entry = el("div", "row");
+  entry.append(panel, ctl);
   entry.addEventListener("mouseenter", () => {
     entry.classList.add("hover_effect");
     if (details) showDetails(details);
@@ -277,29 +236,28 @@ function row(name, parts, details, opts = {}) {
     showDetails(pageDetails());
   });
   if (opts.onClick) onClick(entry, opts.onClick);
-  $("#entries").appendChild(wrap);
-  return wrap;
+  $("#entries").appendChild(entry);
+  return entry;
 }
 
+// A section heading: a blue tick, the title, then a faint bar to the right edge
 function title(text) {
-  const t = make("title");
-  t.classList.add("su_title_entry");
-  const label = $(".cat_divider_title", t);
-  if (label) label.textContent = text;
+  const t = el("div", "section");
+  t.append(el("i", "section_tick"), el("p", "section_title", text), deco("div", "section_bar", ["section_dash", "section_tick"]));
   $("#entries").appendChild(t);
 }
 
 function toggle(value, onSet, offText = "Off", onText = "On") {
-  const t = make("toggle");
-  const left = $(".toggle_button_left", t);
-  const right = $(".toggle_button_right", t);
-  const texts = $$(".toggle_button_text", t);
-  texts[0].textContent = offText;
-  texts[1].textContent = onText;
-  left.classList.toggle("active", !value);
-  right.classList.toggle("active", !!value);
-  hoverable(left);
-  hoverable(right);
+  const half = (text, side, on) => {
+    const h = deco("div", `toggle_half toggle_${side}`, ["toggle_grad", "toggle_lit", "toggle_edge", "toggle_mid", "box_glow"], el("p", "toggle_txt", text));
+    h.classList.toggle("active", on);
+    hoverable(h);
+    return h;
+  };
+  const left = half(offText, "l", !value);
+  const right = half(onText, "r", !!value);
+  const t = el("div", "toggle");
+  t.append(left, right);
   if (onSet) {
     onClick(left, () => value && onSet(false));
     onClick(right, () => !value && onSet(true));
@@ -308,21 +266,22 @@ function toggle(value, onSet, offText = "Off", onText = "On") {
 }
 
 function stepper(text, onStep) {
-  const s = make("stepper");
-  $(".stepper_value", s).textContent = text;
-  $(".stepper_indicator_container", s)?.remove();
-  const left = $(".stepper_button_left", s);
-  const right = $(".stepper_button_right", s);
-  hoverable(left);
-  hoverable(right);
-  onClick(left, () => onStep(-1));
-  onClick(right, () => onStep(1));
+  const button = (side, step) => {
+    const b = deco("div", `stepper_btn stepper_${side}`, ["stepper_arrow", "stepper_stroke", "box_glow"]);
+    hoverable(b);
+    onClick(b, () => onStep(step));
+    return b;
+  };
+  const value = el("div", "stepper_center");
+  value.appendChild(el("div", "stepper_value_box")).appendChild(el("p", "stepper_value", text));
+  const s = el("div", "stepper");
+  s.append(button("l", -1), value, button("r", 1));
   return s;
 }
 
 function textInput(value, placeholder, onInput, width) {
-  const t = make("input");
-  t.classList.add("su_input");
+  const t = el("div", "su_input");
+  t.appendChild(el("input")).type = "text";
   if (width) t.style.width = width;
   const input = $("input", t);
   input.value = value;
@@ -337,7 +296,7 @@ function textInput(value, placeholder, onInput, width) {
 }
 
 function valueText(text, cls = "") {
-  return el("p", "su_value small_text_1 " + cls, text);
+  return el("p", "su_value " + cls, text);
 }
 
 /* ---------- details pane ---------- */
@@ -345,7 +304,7 @@ function valueText(text, cls = "") {
 function showDetails(d) {
   $("#d-title").textContent = d.title || "";
   $("#d-meta").textContent = d.meta || "";
-  $("#d-meta").className = "su_details_meta small_text_2" + (d.metaCls ? " " + d.metaCls : "");
+  $("#d-meta").className = "su_details_meta" + (d.metaCls ? " " + d.metaCls : "");
   $("#d-body").textContent = d.body || "";
   $("#log").hidden = !d.log;
   $(".su_details").classList.toggle("su_details_long", !!d.long);
@@ -764,23 +723,23 @@ function updateMenu() {
     else if (!st.ready) text = "Repair";
     else { text = "Reinstall"; sub = "Up to date"; }
   }
-  $(".mm_button_txt", n.btn).textContent = text;
-  const info = $(".su_mm_info", n.btn);
+  n.txt.textContent = text;
+  const info = $(".su_mm_info", n.slot);
   info.textContent = sub;
-  info.parentElement.classList.toggle("su_empty", !sub);
+  info.classList.toggle("su_empty", !sub);
   n.slot.classList.toggle("su_disabled", disabled);
 
   const u = S.nav.update;
   u.slot.hidden = !(S.update && S.update.stale);
   if (S.update) {
-    const info = $(".su_mm_info", u.btn);
+    const info = $(".su_mm_info", u.slot);
     info.textContent = S.update.new_mods.length ? `${S.update.new_mods.length} new mod${S.update.new_mods.length === 1 ? "" : "s"}` : S.update.version;
   }
   u.slot.classList.toggle("su_disabled", S.busy);
 
   const l = S.nav.launch;
   const running = !!(st && st.valid && st.running);
-  $(".mm_button_txt", l.btn).textContent = running ? "Game Running" : S.launching ? "Starting..." : "Launch Game";
+  l.txt.textContent = running ? "Game Running" : S.launching ? "Starting..." : "Launch Game";
   l.slot.classList.toggle("su_disabled", S.busy || !st || !st.valid || running || !!S.launching);
 }
 
@@ -1131,14 +1090,14 @@ function mockApi() {
   if (demo === "celebrate") setTimeout(() => celebrate(true, "In game: F6 for co-op, F7 for mod settings.", "Installed"), 600);
   if (demo === "dialog") setTimeout(() => uninstall(), 600);
   if (demo === "working") setTimeout(() => { startTask("install", "Installing"); app.onLog("Installing Python SDK 0.3 (was: none)..."); app.onLog("Installed bl4_minimap."); }, 600);
-  if (demo === "hover") setTimeout(() => { $$(".menu_options_entry")[3].classList.add("hover_effect"); S.nav.coop.btn.classList.add("hover_effect"); S.nav.coop.slot.classList.add("hover_effect"); $$(".su_btn")[0]?.classList.add("hover_effect"); }, 600);
+  if (demo === "hover") setTimeout(() => { $$(".row")[3].classList.add("hover_effect"); S.nav.coop.slot.classList.add("hover_effect"); $$(".su_btn")[0]?.classList.add("hover_effect"); }, 600);
   if (demo === "report") setTimeout(() => { showPage("system"); bugReport(); }, 600);
   // &demo=safety / safemode: the System page with that row hovered (its details pane showing)
   if (demo === "safety" || demo === "safemode") {
     const name = demo === "safety" ? "Safety" : "Safe mode";
     const hover = (tries) => {
       if (S.info && S.page !== "system") showPage("system");
-      const entry = $$(".menu_options_entry").find((e) => $(".menu_options_entry_text", e)?.textContent === name);
+      const entry = $$(".row").find((e) => $(".row_name", e)?.textContent === name);
       if (entry && S.safe) entry.dispatchEvent(new MouseEvent("mouseenter"));
       else if (tries) setTimeout(() => hover(tries - 1), 200);
     };

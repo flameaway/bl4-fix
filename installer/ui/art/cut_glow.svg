@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 46 46">
+  <!-- Hover glow: a light line with a soft halo, cut bottom-right corner (slice 14 23 23 14) -->
+  <defs><filter id="b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>
+  <path d="M8 8 H38 V26.6 L26.6 38 H8 Z" fill="none" stroke="#e4d9ce" stroke-opacity="0.7" stroke-width="3" filter="url(#b)"/>
+  <path d="M8 8 H38 V26.6 L26.6 38 H8 Z" fill="none" stroke="#efe6dc" stroke-width="1.6"/>
+</svg>

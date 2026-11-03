@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- The mark's inner part: a dark disc and the tall arch (our own drawing of a vault symbol).
+       mark_ring.svg is drawn over it and hides the arch's feet. -->
+  <defs>
+    <clipPath id="inside"><circle cx="128" cy="128" r="104"/></clipPath>
+    <linearGradient id="bronze" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#d9b77a"/>
+      <stop offset="0.35" stop-color="#a77b45"/>
+      <stop offset="0.7" stop-color="#6b4b2c"/>
+      <stop offset="1" stop-color="#3b2b1d"/>
+    </linearGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.45"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <circle cx="128" cy="128" r="104" fill="#06121a"/>
+  <g clip-path="url(#inside)">
+    <!-- The arch: two legs rising from the bottom of the ring to a rounded peak, hollow inside -->
+    <path d="M52 232 L113 46 Q128 27 143 46 L204 232 Z M93 232 L120 78 Q128 63 136 78 L163 232 Z"
+          fill-rule="evenodd" fill="url(#bronze)" stroke="#0a0c0d" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M52 232 L113 46 Q128 27 143 46 L204 232 Z M93 232 L120 78 Q128 63 136 78 L163 232 Z"
+          fill-rule="evenodd" fill="url(#shade)"/>
+    <!-- Light catching the left faces -->
+    <path d="M58 226 L115.5 50 Q128 34 140.5 50" fill="none" stroke="#f6e3b4" stroke-opacity="0.55" stroke-width="1.6"/>
+    <!-- Gold light lines down the middle of each leg, broken by plates -->
+    <g fill="none" stroke="#ffc84a" stroke-width="2.2" stroke-linecap="round" filter="url(#glow)">
+      <path d="M73 225 L90 168 M93 158 L104 121 M107 111 L116.5 62 Q128 46 139.5 62 L149 111 M152 121 L163 158 M166 168 L183 225"/>
+    </g>
+    <!-- Plates and seams across the legs -->
+    <g fill="#2a2219" stroke="#0a0c0d" stroke-width="1.2">
+      <path d="M82 166 L99 166 L96 176 L79 176 Z"/>
+      <path d="M157 166 L174 166 L177 176 L160 176 Z"/>
+      <path d="M97 116 L111 116 L109 124 L95 124 Z"/>
+      <path d="M145 116 L159 116 L161 124 L147 124 Z"/>
+    </g>
+    <g stroke="#0a0c0d" stroke-width="1.6">
+      <path d="M70 196 L104 196 M152 196 L186 196 M101 92 L119 92 M137 92 L155 92"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Hovered row control: blue outline around a black one (slice 10 19 19 10) -->
+  <path d="M1 1 H31 V19.6 L19.6 31 H1 Z" fill="none" stroke="#3f769d" stroke-width="2"/>
+  <path d="M3 3 H29 V18.8 L18.8 29 H3 Z" fill="none" stroke="#000" stroke-width="2"/>
+</svg>

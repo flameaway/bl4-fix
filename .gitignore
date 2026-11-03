@@ -44,5 +44,6 @@ oo2core_*.dll
 # mod settings and per-character data written by the mods at runtime
 settings/
 
-# Game UI files the setup page uses (tools/gen_setup_ui.py), from the dev install
+# The game's UI files older builds copied in for the setup page (it no longer uses them; build.py
+# refuses to bundle a leftover copy)
 installer/ui/game/
