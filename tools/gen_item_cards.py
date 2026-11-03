@@ -18,6 +18,8 @@ what it needs to the card at runtime (it runs through the BL4 UI Link). This wri
                              from, and the mod switches the numbers off if they change.
 - card_page/firmware.json    every firmware's three bonus tiers (pieces needed, text, the
                              attribute behind each number), evaluated in game the same way.
+- card_page/classmods.json   the most points one skill can roll on a class mod, per rarity
+                             (build_classmod_caps), for the card's "+2 (max +5)".
 
 Pak data is Oodle-compressed and Oodle is linked into the game exe, not shipped as a DLL, so this
 needs an oo2core DLL from somewhere else (other games ship one); `extract` also takes no DLL and
@@ -199,7 +201,15 @@ def _merged(base: object, patch: object) -> object:
 
 
 def _display_line(stat: dict) -> dict:
-    """A tooltip line: its text with {placeholders}, and the attribute behind each number."""
+    """
+    A tooltip line: its text with {placeholders}, and the attribute behind each number.
+
+    A shown number's "step" is the attribute of the game's "next level" preview right after it
+    ("{0} {1}"): the change per skill point. Vex and Amon name it "<attribute>_NextLevel"; the
+    other classes don't follow a pattern (Calc_Exo_..._ReloadSpeed / att_ui_Exo_..._ReloadSpeed,
+    Robo's const_ui_...), so the text's order decides. Read in game 2026-11-02: Rinse's preview
+    evaluates to -0.04 at 0 points, its 4% per rank.
+    """
     args = {}
     for pair in ((stat.get("argsmap") or {}).get("pairs") or {}).values():
         if not isinstance(pair, dict):
@@ -213,26 +223,89 @@ def _display_line(stat: dict) -> dict:
             "preview": number.get("bshowmodifierdelta") == "true",
             **{flag: number[flag] for flag in NUMBER_FLAGS if flag in number},
         }
-    return {"text": ncs_parse.loc_text(stat["formattext"]), "args": args}
+    text = ncs_parse.loc_text(stat["formattext"])
+    for key, arg in args.items():
+        if arg["preview"]:
+            continue
+        named = next((o for o in args.values() if o["preview"] and o["attribute"] == arg["attribute"] + "_NextLevel"), None)
+        at = text.find("{" + key + "}")
+        if named is None and at >= 0:
+            after = re.match(r"\s*\{(\w+)\}", text[at + len(key) + 2 :])
+            follower = args.get(after.group(1)) if after else None
+            named = follower if follower is not None and follower["preview"] else None
+        if named is not None:
+            arg["step"] = named["attribute"]
+    return {"text": text, "args": args}
+
+
+def _number_line(stat: dict) -> dict:
+    """
+    A tooltip line that is one number (NumericDisplayValue with bUseFormatText): its text has
+    "$VALUE$" where the number goes ("[secondary]Stack Duration:[/secondary] $VALUE$ seconds").
+    Made into the {placeholder} form: 359 lines, mostly durations and stack counts; the card
+    printed "$VALUE$" for them (user report 2026-11-02, Rafa's Sinergia).
+    """
+    text = ncs_parse.loc_text(stat["formattext"]).replace("$VALUE$", "{value}")
+    arg = {
+        "attribute": _deref(stat["attributedef"]),
+        "preview": False,
+        **{flag: stat[flag] for flag in NUMBER_FLAGS if flag in stat},
+    }
+    return {"text": text, "args": {"value": arg} if "{value}" in text else {}}
 
 
 def _stat_lines(tooltip: dict) -> list[dict]:
-    return [
-        _display_line(stat)
-        for stat in tooltip.get("stats") or []
-        if isinstance(stat, dict) and "formattext" in stat
-    ]
+    lines = []
+    for stat in tooltip.get("stats") or []:
+        if not isinstance(stat, dict) or "formattext" not in stat:
+            continue
+        if "attributedef" in stat and "argsmap" not in stat:
+            lines.append(_number_line(stat))
+        else:
+            lines.append(_display_line(stat))
+    return lines
+
+
+# "Passive_Grav_16_RunawayReaction", "PassiveSkill_Exo_02_LasJaras_A": class and skill number
+_PASSIVE_SKILL = re.compile(r"^(?:PassiveSkill|Passive)_([A-Za-z]+)_(\d+)_", re.IGNORECASE)
+# "tooltip_grav_passive_16_runawayreaction", "tooltip_ch_p_80_notimetothink", "tooltip_ch_39_..."
+_PASSIVE_TOOLTIP = re.compile(r"^tooltip_([a-z]+)_(?:passive_|p_)?(\d+)_")
+
+
+def _tooltip_for(skill: str, alias: str, tooltips: dict[str, dict], by_number: dict) -> dict | None:
+    """
+    SkillDef_X has ToolTip_X (Vex and Amon). The other classes' skills and tooltips only share
+    the class and the skill's number (their names drift: Passive_Robo_46_HellAndBack is "High
+    Noon"), so those match on that. Devil's Tines has a tooltip per tree, "_cl" / "_cf" / "_soh",
+    picked by its alias's " - CL".
+    """
+    tooltip = tooltips.get(("tooltip_" + skill.removeprefix("SkillDef_")).lower())
+    if tooltip is not None:
+        return tooltip
+    match = _PASSIVE_SKILL.match(skill)
+    if not match:
+        return None
+    candidates = by_number.get((match.group(1).lower(), int(match.group(2))), [])
+    if len(candidates) > 1:
+        suffix = "_" + alias.rpartition(" - ")[2].strip().lower() if " - " in alias else None
+        candidates = [key for key in candidates if suffix and key.endswith(suffix)]
+    return tooltips[candidates[0]] if len(candidates) == 1 else None
 
 
 def build_skills(paks: list[Path], oodle_dll: Path) -> tuple[dict, dict[str, str]]:
     """
     {graph name: [node, ...]} in the game's node order, where a node is {"id", "name", "max",
-    "stats"} or null for nodes that aren't skills. Tooltips are matched by name: SkillDef_X has
-    ToolTip_X (true for 170 of 178 skills; the rest are action skills and traits).
+    "stats"} or null for nodes that aren't skills. Tooltips: see _tooltip_for (all class skills
+    with ranks get one; action skills, traits and specializations mostly don't).
     """
     graphs, fingerprints = _records(paks, "progress_graph", oodle_dll)
     tooltips, tooltip_prints = _records(paks, "uitooltipdata", oodle_dll)
     fingerprints.update(tooltip_prints)
+    by_number: dict[tuple[str, int], list[str]] = {}
+    for key in sorted(tooltips):
+        match = _PASSIVE_TOOLTIP.match(key)
+        if match:
+            by_number.setdefault((match.group(1), int(match.group(2))), []).append(key)
 
     skills: dict[str, list] = {}
     for key, graph in graphs.items():
@@ -244,7 +317,7 @@ def build_skills(paks: list[Path], oodle_dll: Path) -> tuple[dict, dict[str, str
             if not skill:
                 nodes.append(None)
                 continue
-            tooltip = tooltips.get(("tooltip_" + skill.removeprefix("SkillDef_")).lower())
+            tooltip = _tooltip_for(skill, data.get("alias") or "", tooltips, by_number)
             header = tooltip.get("header") if tooltip else None
             nodes.append({
                 "id": pair.get("key", ""),
@@ -287,6 +360,62 @@ def build_firmware(paks: list[Path], oodle_dll: Path) -> tuple[dict, dict[str, s
     return out, fingerprints
 
 
+# "passive_blue_1_1_tier_3": one point in a skill, the third of its chain
+_TIER_PART = re.compile(r"^passive_(.+)_tier_(\d+)$")
+_COMP_RARITY = re.compile(r"^comp_0\d_(common|uncommon|rare|epic|legendary)$")
+
+
+def build_classmod_caps(load: object) -> tuple[dict, dict[str, str]]:
+    """
+    {"caps": {rarity: the most points one skill can roll on a class mod of that rarity}, "picks",
+    "chain"}. How a class mod rolls its skills (the `inv` data, read 2026-11-02):
+
+    - its body lists 4 skills it may boost; each skill has a chain of five +1 parts,
+      passive_<skill>_tier_1..5, each needing the one before (dependencytags)
+    - the rarity (the base ClassMod record's inv_comp) sets how many of those parts it picks
+      (passive_points partcount: common 2, uncommon 4, rare 5, epic 7, legendary 7), at most 4
+      different skills; nothing spreads them, and every tier has a weight (1, then 2 each)
+    - so one skill can get min(chain, picks). Read in game: Rafa's equipped mod was 4 + 2 + 1 = 7.
+    """
+    entries, prints = load("inv")  # type: ignore[operator]
+    records: dict[str, dict] = {}
+    for item in entries:
+        rec = records.setdefault(item["key"].lower(), {"value": None, "deps": []})
+        if isinstance(item.get("value"), dict) and rec["value"] is None:
+            rec["value"] = item["value"]
+        rec["deps"] += item.get("deps") or []
+
+    picks: dict[str, int] = {}
+    for dep in records["classmod"]["deps"]:
+        match = dep["table"] == "inv_comp" and _COMP_RARITY.match(dep["key"].lower())
+        if not match:
+            continue
+        rules = ((dep["value"].get("parttypeselectionrules") or {}).get("pairs") or {}).values()
+        for rule in rules:
+            if str(rule.get("key", "")).lower() == "passive_points":
+                count = ((rule.get("value") or {}).get("partcount") or {}).get("max")
+                if count is not None:
+                    picks[match.group(1)] = int(count)
+
+    chains: dict[tuple[str, str], int] = {}
+    for key, rec in records.items():
+        if str((rec["value"] or {}).get("basetype", "")).lower() != "inv'classmod'":
+            continue
+        for dep in rec["deps"]:
+            match = dep["table"] == "passive_points" and _TIER_PART.match(dep["key"].lower())
+            if match:
+                chain = (key, match.group(1))
+                chains[chain] = max(chains.get(chain, 0), int(match.group(2)))
+    lengths = sorted(set(chains.values()))
+    if len(lengths) != 1:
+        # Every skill had a five-tier chain; if a patch changes that, the cap needs to be per skill
+        raise SystemExit(f"class mod skill chains aren't all one length: {lengths}")
+    if set(picks) != {"common", "uncommon", "rare", "epic", "legendary"}:
+        raise SystemExit(f"class mod skill picks not found for every rarity: {picks}")
+    caps = {rarity: min(lengths[0], count) for rarity, count in sorted(picks.items())}
+    return {"caps": caps, "picks": dict(sorted(picks.items())), "chain": lengths[0]}, prints
+
+
 # endregion
 
 
@@ -323,6 +452,9 @@ def main() -> None:
     (OUT_DIR / "encore.json").write_text(json.dumps(machines, indent=1) + "\n", encoding="utf-8")
     (OUT_DIR / "drops.json").write_text(json.dumps(drops, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(f"legendary names: {len(drops)}, with a boss: {sum(1 for v in drops.values() if any(e['sources'] for e in v))}")
+    classmods, classmod_prints = build_classmod_caps(load)
+    (OUT_DIR / "classmods.json").write_text(json.dumps(classmods, indent=1) + "\n", encoding="utf-8")
+    print(f"class mod skill caps: {classmods['caps']}")
     fingerprint = {
         "path": CARD_PATH,
         "sha1": entry.sha1,
@@ -334,6 +466,8 @@ def main() -> None:
         "drop_data": drop_prints,
         # The game data firmware.json came from; firmware details turn off if any of these change
         "firmware_data": firmware_prints,
+        # The game data classmods.json came from; the "(max +N)" turns off if any of these change
+        "classmod_data": classmod_prints,
     }
     (OUT_DIR / "vanilla.json").write_text(json.dumps(fingerprint, indent=4) + "\n", encoding="utf-8")
     print(f"item card page: {entry.pak.name} ({entry.sha1})")

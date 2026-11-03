@@ -46,5 +46,10 @@
         "Engine/Content/_NCS/Nexus-Data-ui_stat0.ncs": "6b0ab5b4cdf12b80b7dcc968d1f401cacad7038a",
         "Engine/Content/_NCS/Nexus-Data-ui_stat4.ncs": "cba50f2199a42a546707b7b27f4fde4170417bc0",
         "Engine/Content/_NCS/Nexus-Data-ui_stat6.ncs": "047445ece53a502cd9094c3847e5ac90f8853d8d"
+    },
+    "classmod_data": {
+        "Engine/Content/_NCS/Nexus-Data-inv0.ncs": "da2d97092f181e248a609c4800f79848619b948a",
+        "Engine/Content/_NCS/Nexus-Data-inv4.ncs": "17fc4cf412bb48e7bb936833be5321e6b4e7f42d",
+        "Engine/Content/_NCS/Nexus-Data-inv6.ncs": "dd2778df8c7c8f2d49a8774c9f290c3e80e0369b"
     }
 }

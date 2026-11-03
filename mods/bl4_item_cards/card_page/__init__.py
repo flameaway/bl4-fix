@@ -47,7 +47,11 @@ CARD_PAGE = "item_card/item_card.html"
 LOOSE_FILES = [("bl4direct/item_cards.css", "item_cards.css"), ("bl4direct/item_cards.js", "item_cards.js")]
 # Generated game data the cards read, published only while the game data it came from is unchanged:
 # (path, asset, key of its source fingerprints in vanilla.json)
-LOOSE_DATA = [("bl4direct/drops.json", "drops.json", "drop_data")]
+LOOSE_DATA = [
+    ("bl4direct/drops.json", "drops.json", "drop_data"),
+    # The most points a class mod skill can roll, per rarity (the card's "(max +5)")
+    ("bl4direct/classmods.json", "classmods.json", "classmod_data"),
+]
 # The player's card options (size, fit to screen), which the script polls
 SETTINGS_PATH = "bl4direct/settings.json"
 SCRIPT_URL = "coui://uiresources/bl4direct/item_cards.js"

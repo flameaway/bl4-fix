@@ -7,9 +7,10 @@
 // your points, and the skill's numbers formatted for every rank (plus your UVH level). Each skill
 // is drawn as:
 //
-//     [icon] Name                    0/5  +2
-//     description
-//     Splash Damage: +21%            (or "+14% -> +35%" when you already have points in it)
+//     [icon] Name               9/5  +4 (max +5)  (your points + this mod's / the skill's max; then the
+//     description                                  most a class mod of this rarity can roll on it)
+//     Splash Damage: +14% » +35%     (option "Exact skill numbers", off by default; "+21%" when
+//                                     you have no points in it yet)
 //
 // Legendary cards get a "Drops from" block from drops.json (made from the game's loot data by
 // tools/gen_item_cards.py): each boss with its drop chance at your UVH level and its Big Encore
@@ -34,6 +35,10 @@
     var CSS_URL = BASE + "item_cards.css";
     var LIVE_URL = BASE + "skills_live.json";
     var DROPS_URL = BASE + "drops.json";
+    // {"caps": {rarity: the most points one skill can roll on a class mod of it}} (made by
+    // tools/gen_item_cards.py; only published while the game's loot data is the one it read)
+    var CLASSMODS_URL = BASE + "classmods.json";
+    var CLASSMODS_RETRY_MS = 60000;
     // The Weapondex's boss pictures (bl4_weapondex/bake.py): <id>.png, listed {id: version} in its
     // index.json. Without the Weapondex (or its pictures) the skull stays; looked for again this often
     var BOSS_PICTURES = "coui://uiresources/bl4weapondex/bosses/";
@@ -73,6 +78,9 @@
     var INSTALL_SLOW_MS = 2000;
     // Banner / red text with markup tags ("[secondary]...[/secondary]") we render ourselves
     var MARKUP_TAG = /\[\/?\w+[^\]]*\]/;
+    // "now » with this mod". The game's Industry fonts have no right arrow (U+2192 drew as a
+    // broken glyph; checked in the font files' cmap 2026-11-02); » they do have
+    var ARROW = " \u00bb ";
 
     // Survives reloads of this file
     var ns = window.bl4dItemCards;
@@ -164,7 +172,7 @@
                 var last = values.length - 1;
                 var now = values[Math.min(spent, last)];
                 var withMod = values[Math.min(spent + bonus, last)];
-                var shown = spent > 0 && now !== withMod ? now + " \u2192 " + withMod : withMod;
+                var shown = spent > 0 && now !== withMod ? now + ARROW + withMod : withMod;
                 text = text.split(placeholder).join(shown);
             }
             lines.appendChild(markupElement("bl4d_cm_stat_line", text));
@@ -172,20 +180,40 @@
         return lines;
     }
 
-    function skillRow(entry, info) {
+    // "9/5": the skill's level with this class mod (your points plus its +N; class mod points go
+    // past the max) out of the skill's normal max rank (the user's call, 2026-11-02). Action skill
+    // entries have no ranks (max 0): no rank shown
+    function rankText(info, bonus) {
+        if (!info || !(info.max > 0)) return null;
+        return info.spent === null ? "max " + info.max : (info.spent + Math.max(0, bonus)) + "/" + info.max;
+    }
+
+    // The most points this class mod's rarity can roll on one skill (classmods.json), or null
+    function rollCap(card) {
+        var data = card && card.DataModel;
+        var caps = ns.classMods && ns.classMods.caps;
+        var rarity = data && String(data.rarityident || "").toLowerCase();
+        return caps && rarity && caps[rarity] > 0 ? caps[rarity] : null;
+    }
+
+    function skillRow(entry, info, cap) {
         var row = element("div", "bl4d_cm_skill " + (entry.comparison || ""));
         var head = element("div", "bl4d_cm_skill_head");
         var icon = element("div", "bl4d_cm_skill_icon");
         if (entry.image) icon.style.backgroundImage = "url(" + entry.image + ")";
         head.appendChild(icon);
         head.appendChild(element("p", "bl4d_cm_skill_name", entry.ident));
-        if (info) {
-            head.appendChild(element("p", "bl4d_cm_skill_rank", info.spent === null ? "max " + info.max : info.spent + "/" + info.max));
-        }
+        var rank = rankText(info, points(entry));
+        if (rank) head.appendChild(element("p", "bl4d_cm_skill_rank", rank));
         head.appendChild(element("p", "bl4d_cm_skill_points", entry.value));
+        if (cap) {
+            var rolled = points(entry);
+            head.appendChild(element("p", "bl4d_cm_skill_cap" + (rolled >= cap ? " bl4d_cm_skill_cap_hit" : ""), "(max +" + cap + ")"));
+        }
         row.appendChild(head);
         if (entry.description) row.appendChild(markupElement("bl4d_cm_skill_desc", entry.description));
-        if (info && info.lines.length) row.appendChild(statLines(info, points(entry)));
+        var numbers = (ns.settings || {}).skill_numbers === true;
+        if (numbers && info && info.lines.length) row.appendChild(statLines(info, points(entry)));
         return row;
     }
 
@@ -329,8 +357,9 @@
             return;
         }
         host.innerHTML = "";
+        var cap = rollCap(card);
         for (var i = 0; i < entries.length; i++) {
-            host.appendChild(skillRow(entries[i], ns.live && ns.live[entries[i].loc_text]));
+            host.appendChild(skillRow(entries[i], ns.live && ns.live[entries[i].loc_text], cap));
         }
         // Only now hide the game's compact icon row (see item_cards.css)
         card.classList.add("bl4d_active");
@@ -338,6 +367,24 @@
 
     // endregion
     // region Drop sources
+
+    // Once per page; a missing file (data not published: another game version) is looked for again
+    // after a minute
+    function loadClassMods(done) {
+        if (ns.classMods || (ns.classModsAt && Date.now() - ns.classModsAt < CLASSMODS_RETRY_MS)) {
+            done();
+            return;
+        }
+        ns.classModsAt = Date.now();
+        get(CLASSMODS_URL, function (text) {
+            try {
+                ns.classMods = text ? JSON.parse(text) : null;
+            } catch (err) {
+                ns.classMods = null;
+            }
+            done();
+        });
+    }
 
     function loadDrops(done) {
         if (ns.drops) {
@@ -791,7 +838,7 @@
         box.innerHTML = "";
         var counts = firmwareCounts(data);
         var summary = "Equipped " + counts.now + " of " + FIRMWARE_TIERS;
-        if (counts.after !== counts.now) summary += " → " + counts.after + " with this item";
+        if (counts.after !== counts.now) summary += ARROW + counts.after + " with this item";
         box.appendChild(element("p", "bl4d_fw_summary" + (counts.after > counts.now ? " bl4d_fw_gain" : counts.after < counts.now ? " bl4d_fw_lose" : ""), summary));
         for (var i = 0; i < info.tiers.length; i++) box.appendChild(tierRow(info.tiers[i], counts));
     }
@@ -970,18 +1017,20 @@
             });
         }
         loadLive(function () {
-            loadDrops(function () {
-                if (!current()) return;
-                // never break the game's own card
-                try {
-                    render(card);
-                } catch (err) {}
-                try {
-                    renderDrops(card);
-                } catch (err) {}
-                try {
-                    renderFirmware(card);
-                } catch (err) {}
+            loadClassMods(function () {
+                loadDrops(function () {
+                    if (!current()) return;
+                    // never break the game's own card
+                    try {
+                        render(card);
+                    } catch (err) {}
+                    try {
+                        renderDrops(card);
+                    } catch (err) {}
+                    try {
+                        renderFirmware(card);
+                    } catch (err) {}
+                });
             });
         });
     };

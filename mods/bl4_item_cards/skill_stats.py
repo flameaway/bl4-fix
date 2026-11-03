@@ -18,6 +18,9 @@ skill's max rank, points spent, bonus points, and its tooltip lines. Each line i
 with "{0}"-style placeholders and, per placeholder, the number formatted for every rank from 0 to
 max + 6, so the card can show "your points -> with this class mod" without any maths of its own.
 
+Skill numbers are only worked out while the "Exact skill numbers" option is on (set_numbers);
+off, the entries still carry max rank, points and bonus points, with no lines.
+
 Firmware works the same way: card_page/firmware.json has each firmware's three tiers (how many
 equipped pieces unlock it, its text, the attribute behind each number), and the live file gets
 them under "$firmware" with the numbers filled in for your character.
@@ -96,6 +99,8 @@ class _S:
     firmware_rendered: dict[str, tuple[Any, str]] = {}
     nodes: dict[tuple[str, int], tuple[Any, str]] = {}
     plans: dict[tuple[str, ...], list[str]] = {}  # graph names -> attributes to evaluate
+    # The "Exact skill numbers" option: off = no skill attributes evaluated, entries without lines
+    numbers = False
 
 
 def _static_skills() -> dict[str, list[dict | None]]:
@@ -124,6 +129,9 @@ def _library() -> Any:
 def format_number(value: float, flags: dict[str, str]) -> str:
     if flags.get("bdisplayasoneminus") == "true":
         value = 1 - value
+    # Rank 0 worked back from your rank (0.30 - 5 x 0.06) lands a hair below 0: "0%", not "+0%"
+    if abs(value) < 1e-6:
+        value = 0.0
     # "Repkit Cooldown is reduced by +20%": the text says which way, the number is a size
     if flags.get("signstyle") == "Positive":
         value = abs(value)
@@ -143,6 +151,20 @@ def format_number(value: float, flags: dict[str, str]) -> str:
     return text + ("%" if percent else "")
 
 
+def _step_attribute(arg: dict, args: dict) -> str | None:
+    """
+    The tooltip's "next level" number for a shown one: the per-point step. skills.json names it
+    ("step", the preview right after it in the text); older data only had Vex's and Amon's
+    "<attribute>_NextLevel" naming.
+    """
+    if "step" in arg:
+        return arg["step"]
+    for other in args.values():
+        if other["preview"] and other["attribute"] == arg["attribute"] + "_NextLevel":
+            return other["attribute"]
+    return None
+
+
 def _line_values(line: dict, evaluate: Any) -> list[tuple[str, float, float, dict]] | None:
     """(placeholder, value now, change per point, flags) for each shown number, or None."""
     args = line["args"]
@@ -153,12 +175,11 @@ def _line_values(line: dict, evaluate: Any) -> list[tuple[str, float, float, dic
         value = evaluate(arg["attribute"])
         if math.isnan(value):
             return None
-        # The tooltip's "next level" number for the same stat is the per-point step
         step = 0.0
-        for other in args.values():
-            if other["preview"] and other["attribute"] == arg["attribute"] + "_NextLevel":
-                step = evaluate(other["attribute"])
-                step = 0.0 if math.isnan(step) else step
+        step_attribute = _step_attribute(arg, args)
+        if step_attribute is not None:
+            step = evaluate(step_attribute)
+            step = 0.0 if math.isnan(step) else step
         shown.append(("{" + key + "}", value, step, arg))
     return shown
 
@@ -171,11 +192,9 @@ def _line_attributes(line: dict) -> list[str]:
         if arg["preview"]:
             continue
         names.append(arg["attribute"])
-        names += [
-            other["attribute"]
-            for other in args.values()
-            if other["preview"] and other["attribute"] == arg["attribute"] + "_NextLevel"
-        ]
+        step_attribute = _step_attribute(arg, args)
+        if step_attribute is not None:
+            names.append(step_attribute)
     return names
 
 
@@ -193,10 +212,10 @@ def _render(line: dict, values: list[tuple[str, float, float, dict]], grade: int
     }
 
 
-def _render_node(node: dict, spent: int | None, bonus: int | None, evaluate: Any) -> dict:
+def _render_node(node: dict, spent: int | None, bonus: int | None, evaluate: Any, numbers: bool = True) -> dict:
     grade = (spent or 0) + (bonus or 0)
     lines = []
-    for line in node["stats"]:
+    for line in node["stats"] if numbers else ():
         values = _line_values(line, evaluate)
         if values is None:
             continue
@@ -292,6 +311,7 @@ class _Pass:
         self.skills = skills  # skill data matches the game (else no skills, as before)
         self.firmware = firmware  # firmware data matches the game
         self.firmware_fresh = firmware_fresh  # evaluate firmware this pass (else reuse the last)
+        self.numbers = _S.numbers  # skill numbers wanted (the option, as the pass started)
         self.phase = "graphs"
         self.graph_index = 0
         # (graph name, spent per node or None, bonus per node or None), in the game's order
@@ -367,7 +387,7 @@ class _Pass:
 
     def _plan(self) -> None:
         names = tuple(name for name, _, _ in self.graphs)
-        plan = _S.plans.get(names)
+        plan = _S.plans.get(names) if self.numbers else []
         if plan is None:
             skills = _static_skills()
             plan = list(dict.fromkeys(
@@ -408,6 +428,7 @@ class _Pass:
         )
         self.key = (
             self.skills,
+            self.numbers,
             tuple(self.graphs),
             tuple(_same(self.values[name]) for name in self.skill_names),
             firmware_key,
@@ -448,11 +469,12 @@ class _Pass:
         node = _static_skills()[graph_name][index]
         spent = spent_all[index] if spent_all is not None else None
         bonus = bonus_all[index] if bonus_all is not None else None
-        inputs = (spent, bonus, tuple(_same(self._evaluate(a)) for a in _node_attributes(graph_name, index)))
+        attributes = _node_attributes(graph_name, index) if self.numbers else ()
+        inputs = (spent, bonus, self.numbers, tuple(_same(self._evaluate(a)) for a in attributes))
         key = f"{graph_name},{node['id']}"
         cached = _S.nodes.get((graph_name, index))
         if cached is None or cached[0] != inputs:
-            cached = (inputs, _piece(key, _render_node(node, spent, bonus, self._evaluate)))
+            cached = (inputs, _piece(key, _render_node(node, spent, bonus, self._evaluate, self.numbers)))
             _S.nodes[(graph_name, index)] = cached
         # A dict, like collect(): a graph listed twice keeps its first place and its last numbers
         self.out[key] = cached[1]
@@ -650,6 +672,13 @@ def tick(game_dir: Path) -> None:
         return
     _S.last_check = now
     _start_pass(game_dir, now)
+
+
+def set_numbers(on: bool) -> None:
+    """The "Exact skill numbers" option. A change shows on the next pass, started at once."""
+    if on != _S.numbers:
+        _S.numbers = on
+        _S.last_pass = -math.inf  # a pass already running finishes as it was planned; the next one follows
 
 
 def refresh_now(game_dir: Path) -> None:

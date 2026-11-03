@@ -1,0 +1,17 @@
+{
+ "caps": {
+  "common": 2,
+  "epic": 5,
+  "legendary": 5,
+  "rare": 5,
+  "uncommon": 4
+ },
+ "picks": {
+  "common": 2,
+  "epic": 7,
+  "legendary": 7,
+  "rare": 5,
+  "uncommon": 4
+ },
+ "chain": 5
+}

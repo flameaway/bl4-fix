@@ -69,6 +69,18 @@
     color: #a0aeb1;
 }
 
+/* "(max +5)" after the mod's "+2": the most this rarity can roll on one skill; brighter once it's hit */
+.bl4d_cm_skill_cap {
+    font-family: Industry-Medium;
+    font-size: 1.4rem;
+    color: #7d8a8d;
+    margin: 0rem 0rem 0rem 0.6rem;
+}
+
+.bl4d_cm_skill_cap.bl4d_cm_skill_cap_hit {
+    color: #e4d9ce;
+}
+
 .bl4d_cm_skill_desc {
     /* The game's markup renders each paragraph as its own <p>; stack them inside the card */
     flex-direction: column;

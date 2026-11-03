@@ -1,8 +1,8 @@
 """
 Detailed item cards for Borderlands 4.
 
-- Class mods: each skill's name, your rank, the mod's +N, its description and its numbers as
-  "now -> with this mod".
+- Class mods: each skill's name, your rank out of the most it can reach with the mod (its max plus
+  the mod's +N), its description and, as an option, its exact numbers as "now -> with this mod".
 - Secondary stats get their names, and banner/flavour text renders properly.
 - Firmware: every bonus tier with its numbers, which tiers you have now, and which this item would
   unlock or cost you if you equipped it.
@@ -155,6 +155,7 @@ def card_settings(
     firmware: bool | None = None,
     slot_names: bool | None = None,
     full_names: bool | None = None,
+    skill_numbers: bool | None = None,
 ) -> dict:
     return {
         "scale": (scale_option.value if scale is None else scale) / 100,
@@ -162,6 +163,7 @@ def card_settings(
         "firmware": firmware_option.value if firmware is None else firmware,
         "slot_names": slot_names_option.value if slot_names is None else slot_names,
         "full_names": full_names_option.value if full_names is None else full_names,
+        "skill_numbers": skill_numbers_option.value if skill_numbers is None else skill_numbers,
     }
 
 
@@ -191,6 +193,22 @@ fit_option = BoolOption(
         " scrolls with the mouse wheel in menus (on the HUD it shows its top part)."
     ),
     on_change_while_enabled=lambda _, value: publish_settings(card_settings(fit=value)),
+)
+
+def set_skill_numbers(on: bool) -> None:
+    skill_stats.set_numbers(on)
+    publish_settings(card_settings(skill_numbers=on))
+
+
+skill_numbers_option = BoolOption(
+    "Exact skill numbers",
+    False,
+    description=(
+        "Under each class mod skill, lists its exact numbers (\"Gun Damage: +14% -> +35%\"): what"
+        " your points give now and what they'd give with this class mod. Off, the card shows the"
+        " skill, your rank and its max with the mod, and the description."
+    ),
+    on_change_while_enabled=lambda _, value: set_skill_numbers(value),
 )
 
 firmware_option = BoolOption(
@@ -230,9 +248,14 @@ status_button = ButtonOption(
 )
 
 
+# A mod with no settings file loads switched off (a manual install, issue #5): start on
+from .firston import ensure_on  # noqa: E402
+
+ensure_on(__name__)
+
 mod = build_mod(
-    options=[scale_option, fit_option, firmware_option, slot_names_option, full_names_option, waypoint_key, travel_key, status_button],
+    options=[scale_option, fit_option, skill_numbers_option, firmware_option, slot_names_option, full_names_option, waypoint_key, travel_key, status_button],
     hooks=[tick, encore_waypoint_from_inventory, encore_waypoint_from_hud],
-    on_enable=lambda: (sync_page(True), publish_settings(card_settings())),
+    on_enable=lambda: (sync_page(True), skill_stats.set_numbers(skill_numbers_option.value), publish_settings(card_settings())),
     on_disable=lambda: (sync_page(False), publish_settings(None), encore_waypoint.cancel_trip()),
 )
