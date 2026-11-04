@@ -21,9 +21,10 @@ put together from tiles with a few Canvas draws.
   when the ECHO map is opened; the mask maps straight onto world X/Y, measured). When that PNG
   changes, only tiles whose part of the mask changed are filmed again.
 
-Colour round trips (measured, byte-exact): a capture writes into a target with TargetGamma 1/2.2;
-its PNG imported (an sRGB texture) and drawn into a target with TargetGamma 2.2 gives the same bytes
-back; target-to-target draws are exact into a target with TargetGamma 1 (the composed picture).
+Colour round trips (measured, byte-exact): a capture writes into a target with TargetGamma 1 (the
+ECHO map's bytes); its PNG imported (an sRGB texture) and drawn into a target with TargetGamma 2.2
+gives the same bytes back; target-to-target draws are exact into a target with TargetGamma 1 (the
+composed picture).
 
 Every target is held by an idle SceneCapture2D's TextureTarget (Unreal's GC doesn't see Python
 references); Python keeps WeakPointers only.
@@ -84,17 +85,17 @@ SHARP_STEP = 8  # px: the coarse gradient's distance (a lowest-mip picture is sm
 SHARP_ROW_EVERY = 4  # rows sampled for the gradients (every row is unfiltered)
 SHARP_MIN_PAIRS = 400  # fewer lit pixel pairs than this: no map art to judge (always fine)
 RETRY_GAPS_S = (15.0, 60.0, 180.0)  # refilms of a blurry tile per visit, this long after each score
-GAMMA_CAPTURE = scene.TARGET_GAMMA
 GAMMA_LOADED = 2.2
 BLEND_OPAQUE = 0
-# Page mode (the minimap drawn in the HUD page, page.py). The page shows a PNG's bytes as they are,
-# where UMG sRGB-encodes a texture's values first, so the UMG tiles (TargetGamma 1/2.2) came out
-# much darker there (mean (11,22,14) vs ~(64,84,65) on screen). Page tiles are filmed with TargetGamma
-# 1 (the big map's own linear values, what the ECHO menu shows) into their own folder (PAGE_SUFFIX
-# on the fog key). They're written with the engine's async image writer (ImageWriteBlueprintLibrary
-# .ExportToDisk: ~0.1 ms on the game thread, the readback on the render thread, the PNG on a worker;
-# byte-exact with ExportRenderTarget, 2026-11-02), so a fresh tile reaches the page during play: a
-# preview after PREVIEW_AFTER captures (under fresh/), the final one after the last settle capture.
+# Both modes film tiles with TargetGamma 1 (the big map's own values, what the ECHO menu shows) into
+# the same folders (PAGE_SUFFIX on the fog key): the HUD page shows a PNG's bytes as they are, and
+# the UMG widget turns its picture into linear light first (widget.py). Until 0.1.11 the UMG tiles
+# were filmed with TargetGamma 1/2.2 into folders without the suffix (no longer read). Page mode
+# writes its tiles with the engine's async image writer (ImageWriteBlueprintLibrary.ExportToDisk:
+# ~0.1 ms on the game thread, the readback on the render thread, the PNG on a worker; byte-exact with
+# ExportRenderTarget, 2026-11-02), so a fresh tile reaches the page during play: a preview after
+# PREVIEW_AFTER captures (under fresh/), the final one after the last settle capture. UMG mode saves
+# them while paused (_save_one).
 GAMMA_PAGE = 1.0
 PAGE_SUFFIX = "_g1"
 PAGE_FILM_SLOTS = 16
@@ -306,12 +307,12 @@ class Tiles:
             return 0.0
 
     @classmethod
-    def _open(cls, session: tuple) -> None:
+    def _open(cls, session: tuple, *, page: bool) -> None:
         """Switches to this character/world/fog/north: drops loaded tiles, reads its index."""
         cls.drop()
         cls.session = session
         char, world, fog_key, north, tile_world = session
-        cls.page = fog_key.endswith(PAGE_SUFFIX)
+        cls.page = page
         cls.versions, cls.fresh, cls.pending = {}, {}, {}
         cls.page_rev += 1
         cls.north, cls.world = north, tile_world
@@ -534,7 +535,7 @@ class Tiles:
         limit = (PAGE_FILM_SLOTS if cls.page else FILM_SLOTS) if kind == "film" else LOAD_SLOTS
         if len(mine) < limit:
             size = TILE_PX
-            gamma = (GAMMA_PAGE if cls.page else GAMMA_CAPTURE) if kind == "film" else GAMMA_LOADED
+            gamma = GAMMA_PAGE if kind == "film" else GAMMA_LOADED
             capture, target = scene.Scene.make_capture(pc, size, gamma)
             slot = _Slot(capture, target, kind)
             cls.slots.append(slot)
@@ -698,10 +699,12 @@ class Tiles:
             if cls.session is not None:
                 cls.drop()
             return
-        fog_key = f"fog{round(strength * 100)}" if fog_on else "nofog"
+        # The same tiles as page mode (filmed with TargetGamma 1: the ECHO map's own values; the
+        # widget linearizes its picture for UMG, widget.py)
+        fog_key = (f"fog{round(strength * 100)}" if fog_on else "nofog") + PAGE_SUFFIX
         session = (char, world.lower(), fog_key, round(north, 1), tile_world)
-        if session != cls.session:
-            cls._open(session)
+        if session != cls.session or cls.page:
+            cls._open(session, page=False)
         cls._check_fog(char, world.lower(), fog_on)
         if cls.check_results:
             cls._apply_checks()
@@ -832,8 +835,8 @@ class Tiles:
             return
         fog_key = (f"fog{round(strength * 100)}" if fog_on else "nofog") + PAGE_SUFFIX
         session = (char, world.lower(), fog_key, round(north, 1), tile_world)
-        if session != cls.session:
-            cls._open(session)
+        if session != cls.session or not cls.page:
+            cls._open(session, page=True)
         cls._check_fog(char, world.lower(), fog_on)
         if cls.check_results:
             cls._apply_checks()

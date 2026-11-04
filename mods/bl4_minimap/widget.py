@@ -40,7 +40,16 @@ SQUARE_CLIP_INSET = 4.0
 CLIP_TO_BOUNDS = 1
 DISPLAY_SIZE = 512  # px of the display render target
 RTF_RGBA8 = 2
-BLEND_OPAQUE = 0
+RTF_RGBA16F = 6
+BLEND_OPAQUE, BLEND_ADDITIVE, BLEND_MODULATE = 0, 3, 4
+# The picture holds the ECHO map's own bytes (filmed with TargetGamma 1); UMG treats a texture's
+# values as linear light and gamma-encodes them for the screen. So the picture is turned into linear
+# light first, sRGB-decoded with the usual cubic (decode(c) ~ A c + B c^2 + C c^3, within ~1 screen
+# byte: measured 55 -> 54, 49 -> 48, 140 -> 140 on screen, game 25844 2026-11-03) out of canvas draws
+# (opaque, modulate, additive) into half-float targets, once each time the picture changes. No
+# TargetGamma does it: below 1 its curve isn't a power one (0.2 -> 0.005, 0.5 -> 0.21 at 1/2.2).
+DECODE = (0.012522878, 0.682171111, 0.305306011)
+LINEAR_AFTER = 2  # frames the picture is linearized again after it changed (the render thread's lag)
 OVERSCAN = 2**0.5  # the square map image's size / the frame's (so its turned corners still cover it)
 # The frame: a bright blue line (the game's HUD blue) with a dark rim outside it, like the
 # Borderlands 3 minimap. UMG colours are linear.
@@ -174,6 +183,10 @@ class Minimap:
     shown = False
     square = False
     display = WeakPointer()  # the display render target (held by the image's brush)
+    # The linearized picture and its two helpers (c^2, c^3): half-float targets held by hidden images
+    linear: tuple[WeakPointer, ...] = ()
+    linear_of = WeakPointer()  # the picture they were made from
+    linear_frames = 0  # frames left to make them again (LINEAR_AFTER)
     size = 0.0
     icon_scale = 1.0
     arrow_angle = 0.0
@@ -235,7 +248,19 @@ class Minimap:
             frame.AddChild(image)
         krl = unrealsdk.find_class("KismetRenderingLibrary").ClassDefaultObject
         black = unrealsdk.make_struct("LinearColor", R=0, G=0, B=0, A=1)
-        display = krl.CreateRenderTarget2D(pc, DISPLAY_SIZE, DISPLAY_SIZE, RTF_RGBA8, black, False, False)
+        # Half float: it holds linear light (the darks need the precision 8 bits don't have)
+        display = krl.CreateRenderTarget2D(pc, DISPLAY_SIZE, DISPLAY_SIZE, RTF_RGBA16F, black, False, False)
+        linear = []
+        for _ in range(3):
+            target = krl.CreateRenderTarget2D(pc, scene.RT_SIZE, scene.RT_SIZE, RTF_RGBA16F, black, False, False)
+            holder = _new("/Script/UMG.Image", tree)  # holds the target (GC doesn't see Python's references)
+            frame.AddChild(holder)
+            holder_brush = unrealsdk.make_struct("SlateBrush")
+            holder_brush.ResourceObject = target
+            holder.SetBrush(holder_brush)
+            holder.SetVisibility(COLLAPSED)
+            linear.append(WeakPointer(target))
+        cls.linear, cls.linear_of, cls.linear_frames = tuple(linear), WeakPointer(), 0
         brush = unrealsdk.make_struct("SlateBrush")
         brush.ResourceObject = display
         brush.ImageSize.X = brush.ImageSize.Y = DISPLAY_SIZE
@@ -633,7 +658,22 @@ class Minimap:
         return font
 
     @classmethod
-    def set_view(cls, u: float, v: float, half: float, angle: float, *, force: bool = False) -> None:
+    def snap(cls, u: float, v: float, half: float) -> tuple[float, float]:
+        """
+        (u, v) moved to the whole display pixel set_view draws the map around (it moves the window
+        in whole pixels: a redraw costs a Canvas pass). The caller places the icons around the same
+        point, so they and the map move together: placed around where you exactly are, they slid
+        up to half a display pixel against the map and back as you walked (user report 2026-11-03).
+        """
+        cover = half * (OVERSCAN if cls.square else 1.0)
+        step = 2 * cover / DISPLAY_SIZE
+        if step <= 0:
+            return u, v
+        return round(u / step) * step, round(v / step) * step
+
+    @classmethod
+    def set_view(cls, u: float, v: float, half: float, angle: float, *, force: bool = False,
+                 changed: bool = False) -> None:
         """
         Shows the part of the picture centred on (u, v) (0..1), `half` of the picture wide each way,
         turned by `angle` degrees clockwise.
@@ -652,11 +692,20 @@ class Minimap:
         if step > 0:
             u, v = round(u / step) * step, round(v / step) * step
         view = (round(u, 6), round(v, 6), round(cover, 6))
-        if view == cls.view and turn == cls.image_angle and not force:
+        if view == cls.view and turn == cls.image_angle and not force and not changed and cls.linear_frames <= 0:
             return  # (before any pointer check: this is most frames)
         display, pc = cls.display(), cls.owner()
         picture = scene.Scene.target()
         if display is None or pc is None or picture is None or cls.map_image is None:
+            return
+        if changed or cls.linear_of() is not picture:
+            cls.linear_frames = LINEAR_AFTER + 1
+        if cls.linear_frames > 0:
+            cls.linear_frames -= 1
+            cls._linearize(pc, picture)
+            force = True
+        source = cls.linear[2]() if cls.linear else None
+        if source is None:
             return
         if turn != cls.image_angle:
             cls.map_image.SetRenderTransformAngle(turn)
@@ -676,10 +725,34 @@ class Minimap:
         if args.get("cover") != cover:
             args["cover"], args["uv_size"] = cover, _vec2(2 * cover, 2 * cover)
         canvas.K2_DrawTexture(
-            picture, args["pos"], args["size"], _vec2(u - cover, v - cover), args["uv_size"], args["tint"],
+            source, args["pos"], args["size"], _vec2(u - cover, v - cover), args["uv_size"], args["tint"],
             BLEND_OPAQUE, 0.0, args["pivot"],
         )  # fmt: skip
         krl.EndDrawCanvasToRenderTarget(pc, ctx)
+
+    @classmethod
+    def _linearize(cls, pc: UObject, picture: UObject) -> None:
+        """The picture (the ECHO map's bytes) as linear light, for UMG: three canvas passes."""
+        if len(cls.linear) < 3:
+            return
+        sq, cube, linear = (t() for t in cls.linear)
+        if sq is None or cube is None or linear is None:
+            return
+        krl = cls.krl or unrealsdk.find_class("KismetRenderingLibrary").ClassDefaultObject
+        cls.krl = krl
+        full = _vec2(scene.RT_SIZE, scene.RT_SIZE)
+        zero, one, mid = _vec2(0, 0), _vec2(1, 1), _vec2(0.5, 0.5)
+        a, b, c = DECODE
+        for target, draws in (
+            (sq, ((picture, 1.0, BLEND_OPAQUE), (picture, 1.0, BLEND_MODULATE))),
+            (cube, ((sq, 1.0, BLEND_OPAQUE), (picture, 1.0, BLEND_MODULATE))),
+            (linear, ((picture, a, BLEND_OPAQUE), (sq, b, BLEND_ADDITIVE), (cube, c, BLEND_ADDITIVE))),
+        ):
+            _, canvas, _, ctx = krl.BeginDrawCanvasToRenderTarget(pc, target, None, IGNORE_STRUCT, IGNORE_STRUCT)
+            for src, k, blend in draws:
+                canvas.K2_DrawTexture(src, zero, full, zero, one, _color((k, k, k, 1.0)), blend, 0.0, mid)
+            krl.EndDrawCanvasToRenderTarget(pc, ctx)
+        cls.linear_of = WeakPointer(picture)
 
     @classmethod
     def remove(cls) -> None:
@@ -692,6 +765,7 @@ class Minimap:
         cls.north_pos = None
         cls.north_set = ()
         cls.display = WeakPointer()
+        cls.linear, cls.linear_of, cls.linear_frames = (), WeakPointer(), 0
         cls.layers = {}
         cls.pools = {}
         cls.used_by = {}

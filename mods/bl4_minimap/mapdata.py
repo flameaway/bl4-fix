@@ -76,7 +76,7 @@ OBJECTIVE_ICON = re.compile(
 GIVER_ICON = re.compile(r"^ico_(\w+_mission_npc(_dlc)?|dlc_mission_giver_\w+)$", re.IGNORECASE)
 # Rift events and the other world events (they come and go): Cowbell's ico_rift_boss /
 # ico_dlc_rift_boss_totem, Harmonica's Digi-Rifts, and ico_world_events (world boss "Rift Champion"
-# events, caravans, migrations: NCS missiontype Event). Shown only with "Always show rift events".
+# events, caravans, migrations: NCS missiontype Event). Shown within range like any icon, or always with "Always show rift events" (on by default).
 RIFT_ICON = re.compile(r"^ico_(rift_boss|dlc_rift_boss_\w+|world_events)$", re.IGNORECASE)
 # Drawn live by the minimap (your pin: markers.py, players), so the map's copies would be stale doubles
 LIVE_ICON = re.compile(r"^(ico_Custom_Waypoint_PlayerOwned|player_class_\w+)$", re.IGNORECASE)

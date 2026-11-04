@@ -127,7 +127,7 @@ zoom_out_key = KeybindOption(
     description="Zooms the minimap out (longer range); hold it to keep zooming. The keypad's - works too.",
 )
 size_option = SliderOption(
-    "Size (px)", 240, 120, 480, 10, True, description="How wide the minimap is on screen.",
+    "Size (px)", 480, 120, 960, 10, True, description="How wide the minimap is on screen.",
 )  # fmt: skip
 range_option = SliderOption(
     "Range (m)",
@@ -140,7 +140,7 @@ range_option = SliderOption(
 )
 icon_size_option = SliderOption(
     "Icon size (%)",
-    100,
+    150,
     50,
     250,
     10,
@@ -175,11 +175,10 @@ contracts_option = BoolOption(
 )
 rifts_option = BoolOption(
     "Always show rift events",
-    False,
+    True,
     description=(
-        "Shows rift events (Rift Champions, rift bosses, Digi-Rifts) and the other world events"
-        " whenever there are any, even when you aren't tracking them, on the rim when they're out of"
-        " range. A tracked one always shows."
+        "Off: rift events (Rift Champions, rift bosses, Digi-Rifts) and the other world events show"
+        " like any map icon, within range. On: they always show, on the rim when they're out of range."
     ),
 )
 loot_option = BoolOption(
@@ -735,24 +734,30 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
         shown, tracked = _live_objectives(live) if not live.broken else ([], [])
         icons = data.icons_near(lx, ly, radius * 1.5) if icons_option.value else []
         rifts = bool(rifts_option.value)
+        slack = ROUTE_END_SLACK**2
+
+        def doubled(i: dict[str, Any]) -> bool:
+            """A rift / world event icon a live objective marker already stands for."""
+            return any((i["x"] - x) ** 2 + (i["y"] - y) ** 2 <= slack for x, y, _, _ in shown)
+
+        # Rift / world events (Rift Champions: ico_world_events) aren't in the game's live waypoint
+        # list (World_P 2026-10-29: two ico_world_events on the map, only contracts listed). Off,
+        # they stay ordinary map icons, shown within range; on, they become markers below.
         icons = [
             i for i in icons
             if not mapdata.is_objective(i["texture"]) and not mapdata.is_live(i["texture"])
-            and not mapdata.is_rift(i["texture"])
+            and not (mapdata.is_rift(i["texture"]) and (rifts or doubled(i)))
         ]  # fmt: skip
         if rifts:
-            # Rift / world events aren't in the game's live waypoint list (World_P 2026-10-29: two
-            # ico_world_events on the map, only contracts listed), so the map's icons become markers
-            # that stay on the rim like objectives (they showed only within range before). Not the
-            # ones a live marker already stands for.
+            # The map's icons become markers that stay on the rim like objectives. Not the ones a
+            # live marker already stands for.
             if State.events_version != data.version:
                 State.events_version = data.version
                 State.events = [i for i in data.icons if mapdata.is_rift(i["texture"])]
-            slack = ROUTE_END_SLACK**2
             extra += [
                 markers.Marker("event", i["x"], i["y"], True, i.get("z"), i["texture"])
                 for i in State.events
-                if not any((i["x"] - x) ** 2 + (i["y"] - y) ** 2 <= slack for x, y, _, _ in shown)
+                if not doubled(i)
             ]  # fmt: skip
         if icons_option.value and not live.broken and live.read_ok:
             icons = _givers(icons, lx, ly, radius * 1.5)
@@ -915,21 +920,28 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
     margin = (float(margin_x_option.value) / ui, float(margin_y_option.value) / ui)
     Minimap.show(pc, True, float(size_option.value) / ui, margin, yaw - map_yaw, icon_size_option.value / 100,
                  square=square, pixel=1 / ui)  # fmt: skip
-    Minimap.set_view(0.5 + right / (2 * picture), 0.5 - up / (2 * picture), radius / (2 * picture), turn,
-                     force=filmed or scene.Scene.settling())  # fmt: skip
+    mu, mv = Minimap.snap(0.5 + right / (2 * picture), 0.5 - up / (2 * picture), radius / (2 * picture))
+    Minimap.set_view(mu, mv, radius / (2 * picture), turn, force=filmed or scene.Scene.settling(), changed=filmed)
+    # The point the map is drawn around: you, moved to the display pixel the map moved by. Icons,
+    # markers, the route and the north badge are placed around it too, so they don't slide against
+    # the map between its pixel steps
+    cx, cy = lx, ly
+    if shot is not None:
+        s_right, s_up = (mu - 0.5) * 2 * picture, (0.5 - mv) * 2 * picture
+        cx, cy = shot[0] + s_up * c - s_right * s, shot[1] + s_up * s + s_right * c
     north_at = None
     if north_option.value:
         # A point far to the north, pulled onto the rim
         far = radius * 4
         n = math.radians(north)
-        north_at = markers.project(lx + far * math.cos(n), ly + far * math.sin(n), lx, ly, map_yaw, radius,
+        north_at = markers.project(cx + far * math.cos(n), cy + far * math.sin(n), cx, cy, map_yaw, radius,
                                    clamp=True, square=square)  # fmt: skip
     Minimap.set_north(north_at)
     _gather(pc, pawn, world, full, slow, paused, lx, ly, lz, radius)
 
     # Icons only need moving when the view moved or what's shown changed (an update that found the
     # same markers, icons and route places nothing: the four layers cost ~50 us even with no call)
-    view_key = (round(lx), round(ly), round(map_yaw, 1), radius, square, Minimap.size, Minimap.icon_scale,
+    view_key = (round(cx, 1), round(cy, 1), round(map_yaw, 1), radius, square, Minimap.size, Minimap.icon_scale,
                 Minimap.builds)  # fmt: skip
     if view_key == State.view_key and not (full or slow):
         return
@@ -939,7 +951,7 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
     State.view_key, State.shown_content = view_key, content
 
     def place(x: float, y: float, clamp: bool = False) -> tuple[float, float] | None:
-        return markers.project(x, y, lx, ly, map_yaw, radius, clamp=clamp, square=square)
+        return markers.project(x, y, cx, cy, map_yaw, radius, clamp=clamp, square=square)
 
     def vertical(z: float | None) -> int:
         """1 well above you, -1 well below, else 0 (the compass's chevrons)."""
@@ -963,13 +975,13 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
     rc, rs = math.cos(math.radians(map_yaw)), math.sin(math.radians(map_yaw))
     route_items, route_fixed = [], []
     for (x, y), fixed in zip(route, cache[2]):
-        dx, dy = x - lx, y - ly
+        dx, dy = x - cx, y - cy
         u, v = (-dx * rs + dy * rc) / radius, -(dx * rc + dy * rs) / radius
         if (max(abs(u), abs(v)) if square else math.hypot(u, v)) <= 1.0:
             route_items.append((DOT_TEXTURE, ROUTE_DOT_SIZE, color, u, v, 0))
             route_fixed.append(fixed)
     Minimap.set_turned("route", route_items, route_fixed, north - map_yaw,
-                       markers.offset(ref[0], ref[1], lx, ly, map_yaw, radius))  # fmt: skip
+                       markers.offset(ref[0], ref[1], cx, cy, map_yaw, radius))  # fmt: skip
     icon_items = []
     for icon in State.icons:
         where = place(icon["x"], icon["y"])
@@ -1035,6 +1047,8 @@ def _vertical(z: float | None, lz: float) -> int:
         return 0
     dz = z - lz
     return 1 if dz > VERTICAL_GAP else -1 if dz < -VERTICAL_GAP else 0
+
+
 
 
 def _page_sample() -> None:

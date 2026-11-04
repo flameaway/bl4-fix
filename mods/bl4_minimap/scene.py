@@ -47,11 +47,13 @@ PICTURE_SCALE = 2.5
 RT_SIZE = 1024  # about 400 px across the minimap's view
 RTF_RGBA8 = 2
 # The big map's camera writes into a linear target (display gamma 1) and the ECHO menu shows those
-# values as they are, which is the dark, saturated look. UMG instead treats a texture's values as
-# linear light and gamma-encodes them for the screen, which washed ours out (with RGBA8 and with
-# RGBA8_SRGB alike). So our camera writes with display gamma 1/2.2: UMG's encoding undoes it and the
-# screen gets the same values the ECHO map shows.
-TARGET_GAMMA = 1 / 2.2
+# values as they are. Our pictures and tiles are filmed the same way (TargetGamma 1: the ECHO map's
+# own bytes, the same tiles as page mode). UMG treats a texture's values as linear light and
+# gamma-encodes them for the screen, so the widget turns its picture into linear light first
+# (widget.py, Minimap._linearize). Until 0.1.11 we filmed with TargetGamma 1/2.2 instead, for UMG's
+# encoding to undo, but that curve isn't a power one in its darks: 67 of 255 came out as ~18 on
+# screen, the minimap's dark greens and teals nearly black (2026-11-03).
+TARGET_GAMMA = 1.0
 ORTHOGRAPHIC = 1
 CAPTURE_SOURCE_FINAL_LDR = 2
 PRIMITIVE_RENDER_SHOW_ONLY = 2
@@ -257,7 +259,7 @@ class Scene:
     def _new_entry(cls, pc: UObject, kind: str = "film") -> _Entry:
         """A camera and render target for one cached picture (a composed one: TargetGamma 1, so
         tile-to-picture draws are byte-exact; a filmed one: the capture's gamma)."""
-        capture, target = cls.make_capture(pc, RT_SIZE, TARGET_GAMMA if kind == "film" else 1.0)
+        capture, target = cls.make_capture(pc, RT_SIZE, TARGET_GAMMA)
         entry = _Entry(capture, target, kind)
         cls.entries.append(entry)
         return entry

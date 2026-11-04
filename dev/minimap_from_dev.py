@@ -10,7 +10,7 @@ from pathlib import Path
 
 import mods_base.mod_list
 DEV = Path(globals().get("REPO") or Path.home() / "Documents" / "projects" / "bl4-direct") / "mods" / "bl4_minimap"
-SUB = ("health", "health.notice", "scene", "tiles", "fog", "mapdata", "services", "loot", "objectives", "breadcrumbs", "markers", "widget")
+SUB = ("health", "health.notice", "scene", "tiles", "fog", "mapdata", "services", "loot", "objectives", "breadcrumbs", "markers", "widget", "page")
 old = sys.modules["bl4_minimap"]
 print("was:", old.__file__, "enabled:", old.mod.is_enabled)
 was_on = old.mod.is_enabled
