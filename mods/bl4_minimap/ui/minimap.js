@@ -25,7 +25,11 @@
     // region Look (UI units of widget.py; px = units * cfg.ui)
 
     var RING = 5, RIM = 5, SQUARE_CORNER = 6, SQUARE_CLIP_INSET = 4;
-    var ARROW = 44, ICON = 36, ROUTE_DOT = 14, CHEVRON = 16, CHEVRON_ASPECT = 0.8;
+    var ARROW = 44, ICON = 36, ROUTE_LINE = 6, CHEVRON = 16, CHEVRON_ASPECT = 0.8;
+    // The route: a see-through line with bright dashes flowing along it towards the goal, like the
+    // ECHO map's path (MI_Map_EchoPath: its LineColor at half alpha, a segment running along it).
+    // One dash per dot spacing, moving one spacing every ROUTE_FLOW_MS (a CSS animation: no work a frame)
+    var ROUTE_FLOW_MS = 900, ROUTE_BASE_ALPHA = 0.45;
     var NORTH = 26, NORTH_OUTLINE = 2, NORTH_TEXT_PT = 14;
     var RING_COLOR = "rgb(101,206,255)";       // linear (0.13, 0.62, 1.0)
     var RIM_COLOR = "rgba(0,18,39,0.85)";      // linear (0, 0.006, 0.02, 0.85)
@@ -79,6 +83,10 @@
     var rot = div(clip, "width:0;height:0;");
     var map = div(rot, "width:0;height:0;");
     var routeLayer = div(map, "width:0;height:0;");
+    // (inside root: it goes with it when the page is replaced)
+    var flowStyle = document.createElement("style");
+    flowStyle.textContent = "@keyframes bl4MinimapFlow{from{transform:translateX(-50%)}to{transform:translateX(0)}}";
+    root.appendChild(flowStyle);
     // Fog of war: the game's explored grid as one image (unexplored tinted), over the tiles and
     // under the route, placed in the map layer by a matrix from its world square (placeFog)
     // Two images: a new revision loads into the hidden one and they swap once it has loaded (one
@@ -478,29 +486,54 @@
         next.src = src;
     }
 
-    // The route's dots: round, so they sit in the turned map layer at their world places (placed
-    // again only when the route or the scale changes)
+    // The route's line: a piece from each dot to the next (they're one spacing apart along the route,
+    // from you on; a longer gap starts another line), in the turned map layer at their world places
+    // (placed again only when the route or the scale changes). Each dot is a whole number of
+    // spacings along its route, so every piece starts its dashes at the same point of the pattern
+    // and they run on from piece to piece; all pieces share one clock (the negative delay), so a
+    // piece added later is in step with the rest.
     function placeRoute(cfg, scale) {
         var slow = st.slow;
         var key = st.revs.slow + "|" + scale.toFixed(6) + "|" + (st.anchor ? st.anchor.up + "," + st.anchor.right : "");
         if (key === st.routeKey || !st.anchor) return;
         st.routeKey = key;
-        var dots = slow && slow.route ? slow.route.d : [];
-        var size = ROUTE_DOT * cfg.icon * cfg.ui, color = slow && slow.route ? slow.route.c : "#fff";
-        var kids = routeLayer.childNodes, n = 0;
+        var route = slow && slow.route, dots = route ? route.d : [];
+        var color = route ? route.c : "#fff", spacing = route && route.s ? route.s : 0;
+        var width = ROUTE_LINE * cfg.icon * cfg.ui, period = spacing * scale;
+        var dash = "linear-gradient(to right,transparent 0%," + color + " 80%,transparent 100%)";  // (one a spacing)
+        var delay = -(Date.now() % ROUTE_FLOW_MS) + "ms";
+        var kids = routeLayer.childNodes, n = 0, prev = null;
         for (var i = 0; i < dots.length; i++) {
             var f = northFrame(cfg, dots[i][0], dots[i][1]);
-            var el = kids[n] || div(routeLayer, "background-color:" + color + ";mask-size:100% 100%;-webkit-mask-size:100% 100%;" +
-                "mask-image:url(" + DOT_URL + ");-webkit-mask-image:url(" + DOT_URL + ");");
-            var s = el.style;
-            s.visibility = "visible";
-            s.backgroundColor = color;
-            s.width = s.height = size.toFixed(2) + "px";
-            s.transform = "translate(" + ((f.right - st.anchor.right) * scale - size / 2).toFixed(2) + "px," +
-                ((st.anchor.up - f.up) * scale - size / 2).toFixed(2) + "px)";
-            n++;
+            var x = (f.right - st.anchor.right) * scale, y = (st.anchor.up - f.up) * scale;
+            if (prev && spacing) {
+                var dx = x - prev.x, dy = y - prev.y, len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0 && len <= period * 1.5) {
+                    var el = kids[n], flow;
+                    if (!el) {
+                        el = div(routeLayer, "overflow:hidden;transform-origin:0 50%;");
+                        div(el, "width:100%;height:100%;opacity:" + ROUTE_BASE_ALPHA + ";");
+                        flow = div(el, "height:100%;background-size:50% 100%;background-repeat:repeat-x;" +
+                            "animation:bl4MinimapFlow " + ROUTE_FLOW_MS + "ms linear infinite;");
+                        flow.style.animationDelay = delay;
+                    }
+                    var s = el.style;
+                    s.display = "";
+                    s.width = len.toFixed(2) + "px";
+                    s.height = width.toFixed(2) + "px";
+                    s.borderRadius = (width / 2).toFixed(2) + "px";
+                    s.transform = "translate(" + prev.x.toFixed(2) + "px," + (prev.y - width / 2).toFixed(2) + "px) rotate(" +
+                        (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(3) + "deg)";
+                    el.firstChild.style.backgroundColor = color;
+                    flow = el.lastChild.style;
+                    flow.width = (2 * period).toFixed(2) + "px";
+                    if (flow.backgroundImage !== dash) flow.backgroundImage = dash;
+                    n++;
+                }
+            }
+            prev = { x: x, y: y };
         }
-        for (; n < kids.length; n++) kids[n].style.visibility = "hidden";
+        for (; n < kids.length; n++) kids[n].style.display = "none";
     }
 
     // markers.project: (u, v) in -1..1 of the half-size, x right, y down, `yaw` up

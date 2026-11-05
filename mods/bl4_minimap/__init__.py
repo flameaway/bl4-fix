@@ -1291,7 +1291,8 @@ def _page_frame(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bo
         page.set_section("slow", {
             "icons": [[page.art_url(i["texture"]), round(i["x"]), round(i["y"]), _vertical(i.get("z"), lz)]
                       for i in State.icons],
-            "route": {"c": page.css_color(State.route_color), "d": [[round(x), round(y)] for x, y in State.route]},
+            "route": {"c": page.css_color(State.route_color), "d": [[round(x), round(y)] for x, y in State.route],
+                      "s": round(radius / ROUTE_DOTS_PER_RANGE)},
         })  # fmt: skip
 
 
