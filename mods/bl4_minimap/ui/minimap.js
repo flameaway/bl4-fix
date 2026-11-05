@@ -54,7 +54,7 @@
     // region State
 
     var st = {
-        port: 0, token: "", q: 0, revs: {}, cfg: null, tiles: null, slow: null, fast: null,
+        port: 0, token: "", q: 0, revs: {}, cfg: null, tiles: null, slow: null, fast: null, fog: null, fogKey: "",
         samples: [], vis: false, lastAnswer: 0, xhr: null, asking: false, timer: null,
         compass: [], fix: [], fixValue: 0, anchor: null, scale: 0, placed: {}, tileKey: "",
         routeKey: "", frameKey: "", shown: null
@@ -76,6 +76,18 @@
     var rot = div(clip, "width:0;height:0;");
     var map = div(rot, "width:0;height:0;");
     var routeLayer = div(map, "width:0;height:0;");
+    // Fog of war: the game's explored grid as one image (unexplored tinted), over the tiles and
+    // under the route, placed in the map layer by a matrix from its world square (placeFog)
+    // Two images: a new revision loads into the hidden one and they swap once it has loaded (one
+    // image changing its src shows nothing until the new picture is in: the map blinked)
+    var fogImgs = [], fogShown = 0;
+    for (var fi = 0; fi < 2; fi++) {
+        var fimg = document.createElement("img");
+        fimg.style.cssText = "position:absolute;left:0;top:0;transform-origin:0 0;display:none;";
+        map.insertBefore(fimg, routeLayer);
+        fogImgs.push(fimg);
+    }
+    var fogImg = fogImgs[0];  // (tiles go under both)
     var ring = div(root, "box-sizing:border-box;background:transparent;");
     var frameEl = div(root);  // icons, markers and the arrow (clips when square, like the UMG frame)
     var iconLayer = div(frameEl, "width:0;height:0;");
@@ -219,7 +231,7 @@
     function ask() {
         if (me.stopped || st.asking) return;
         st.asking = true;
-        var r = [st.revs.cfg || 0, st.revs.tiles || 0, st.revs.slow || 0, st.revs.fast || 0].join(".");
+        var r = [st.revs.cfg || 0, st.revs.tiles || 0, st.revs.slow || 0, st.revs.fast || 0, st.revs.fog || 0].join(".");
         var xhr = new XMLHttpRequest(), chain = st.chain;
         st.xhr = xhr;
         xhr.onreadystatechange = function () {
@@ -271,7 +283,7 @@
                 compassPair(p);
             }
         }
-        var names = ["cfg", "tiles", "slow", "fast"];
+        var names = ["cfg", "tiles", "slow", "fast", "fog"];
         for (var i = 0; i < names.length; i++) {
             var sec = m[names[i]];
             if (sec) {
@@ -279,6 +291,7 @@
                 st[names[i]] = sec.v;
                 if (names[i] === "tiles") st.tileKey = "";
                 if (names[i] === "slow" || names[i] === "cfg") st.routeKey = "";
+                if (names[i] === "fog" || names[i] === "cfg") st.fogKey = "";
             }
         }
     }
@@ -406,7 +419,7 @@
         if (!st.anchor || Math.abs(here.up - st.anchor.up) > 4 * W || Math.abs(here.right - st.anchor.right) > 4 * W ||
             st.anchor.folder !== t.folder) {
             st.anchor = { up: Math.ceil(here.up / W) * W, right: Math.floor(here.right / W) * W, folder: t.folder };
-            st.tileKey = st.routeKey = "";
+            st.tileKey = st.routeKey = st.fogKey = "";
             for (var k0 in st.placed) if (Object.prototype.hasOwnProperty.call(st.placed, k0)) map.removeChild(st.placed[k0].el);
             st.placed = {};
         }
@@ -428,7 +441,7 @@
                 if (!have) {
                     var img = document.createElement("img");
                     img.style.cssText = "position:absolute;";
-                    map.insertBefore(img, routeLayer);
+                    map.insertBefore(img, fogImg);
                     have = st.placed[name] = { el: img, src: "", geo: "" };
                 }
                 var geo = side.toFixed(3) + "|" + ((j * W - st.anchor.right) * scale - m).toFixed(2) + "|" + ((st.anchor.up - (i + 1) * W) * scale - m).toFixed(2);
@@ -451,6 +464,44 @@
                 delete st.placed[k];
             }
         }
+    }
+
+    // The fog layer: grid pixel (u, v) is world (X, Y) = (ox + u * ex / w, oy + v * ey / h); the map
+    // layer puts world (X, Y) at ((right - anchor.right), (anchor.up - up)) * scale (northFrame)
+    function placeFog(cfg, scale) {
+        var f = st.fog;
+        if (!f || !st.anchor) {
+            if (st.fogKey !== "none") { fogImgs[0].style.display = fogImgs[1].style.display = "none"; st.fogKey = "none"; }
+            return;
+        }
+        var key = f.rev + "|" + scale.toFixed(6) + "|" + cfg.nyaw + "|" + st.anchor.up + "," + st.anchor.right;
+        if (key === st.fogKey) return;
+        st.fogKey = key;
+        var n = cfg.nyaw * Math.PI / 180, c = Math.cos(n), s = Math.sin(n);
+        var ox = f.sq[0], oy = f.sq[1], kx = f.sq[2] / f.w, ky = f.sq[3] / f.h;
+        var m = [-scale * s * kx, -scale * c * kx, scale * c * ky, -scale * s * ky,
+            scale * (-ox * s + oy * c - st.anchor.right), scale * (st.anchor.up - ox * c - oy * s)];
+        var transform = "matrix(" + m.map(function (v) { return v.toFixed(6); }).join(",") + ")";
+        for (var k = 0; k < 2; k++) {
+            var style = fogImgs[k].style;
+            style.width = f.w + "px";
+            style.height = f.h + "px";
+            style.transform = transform;
+        }
+        var src = "http://127.0.0.1:" + st.port + "/f.png?t=" + st.token + "&v=" + f.rev;
+        var shown = fogImgs[fogShown], next = fogImgs[1 - fogShown];
+        if (shown.getAttribute("src") === src) {
+            shown.style.display = "block";
+            return;
+        }
+        if (next.getAttribute("src") === src) return;  // (still loading)
+        next.onload = function () {
+            if (next.getAttribute("src") !== src) return;
+            next.style.display = "block";
+            shown.style.display = "none";
+            fogShown = 1 - fogShown;
+        };
+        next.src = src;
     }
 
     // The route's dots: round, so they sit in the turned map layer at their world places (placed
@@ -553,6 +604,7 @@
         var here = northFrame(cfg, p.x, p.y);
         placeTiles(cfg, here, scale);
         placeRoute(cfg, scale);
+        placeFog(cfg, scale);
         if (st.anchor) {
             map.style.transform = "translate(" + (-(here.right - st.anchor.right) * scale).toFixed(2) + "px," +
                 (-(st.anchor.up - here.up) * scale).toFixed(2) + "px)";

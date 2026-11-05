@@ -140,6 +140,12 @@ class _Live:
     @classmethod
     def grid(cls, world: str, paused: bool, placement: dict[str, Any]) -> bytes | None:
         """The explored grid, if it's there and covers this world's fog plane (else None)."""
+        found = cls.read(world, paused, placement)
+        return found[0] if found is not None else None
+
+    @classmethod
+    def read(cls, world: str, paused: bool, placement: dict[str, Any]) -> tuple[bytes, tuple[float, ...]] | None:
+        """The explored grid and the world square it covers (X, Y corner, X, Y size), or None."""
         manager = cls._find(world, paused)
         if manager is None or not cls.vtable:
             return None
@@ -158,7 +164,8 @@ class _Live:
         expect = (loc[0] * 100 - span / 2, loc[1] * 100 - span / 2, span, span)
         if any(abs(a - b) > span * 0.01 for a, b in zip((ox, oy, ex, ey), expect)):
             return None
-        return _read(cells, count)
+        cells_raw = _read(cells, count)
+        return (cells_raw, (ox, oy, ex, ey)) if cells_raw is not None else None
 
 
 class Fog:

@@ -571,7 +571,13 @@ class Tiles:
         rot = unrealsdk.make_struct("Rotator", Pitch=-90.0, Yaw=cls.north, Roll=0.0)
         capture.K2_SetActorLocationAndRotation(where, rot, False, unrealsdk.make_struct("HitResult"), True)
         comp = capture.CaptureComponent2D
-        comp.ShowOnlyActors = scene.Scene.shown_actors()  # the fog plane may have come or gone
+        # The fog plane may have come or gone. Page mode films without it: the page lays the live
+        # fog over the tiles itself (page.set_fog), so tiles never need filming again for fog.
+        shown = scene.Scene.shown_actors()
+        if cls.page:
+            fog_plane = scene.Scene.extra()
+            shown = [a for a in shown if a is not fog_plane]
+        comp.ShowOnlyActors = shown
         comp.OrthoWidth = cls.world * TILE_PX / (TILE_PX - 2 * MARGIN_PX) * scene.MAP_SCALE
         comp.CaptureScene()
         tile.slot.used = time.monotonic()

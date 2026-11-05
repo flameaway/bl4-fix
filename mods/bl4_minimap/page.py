@@ -40,8 +40,10 @@ import re
 import secrets
 import select
 import socket
+import struct
 import threading
 import time
+import zlib
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -56,9 +58,13 @@ UI_DIR = "OakGame/Content/uiresources/bl4minimap"
 UI_FILES = ("minimap.js",)
 PUBLISH_S = 1.0  # dev: how often the page files are compared with the source
 WAIT_S = 0.5  # a long-poll waits at most this long for something new
-SECTIONS = ("cfg", "tiles", "slow", "fast")
+SECTIONS = ("cfg", "tiles", "slow", "fast", "fog")
 MAX_HEAD = 8192
 TILE_NAME = re.compile(r"^/t/(-?\d{1,4}_-?\d{1,4})\.png$")
+FOG_ROUTE = "/f.png"
+PNG_SIGNATURE = bytes((0x89,)) + b"PNG" + bytes((13, 10, 26, 10))
+# The fog layer's colour (unexplored land: this, at the fog strength's opacity, over the map)
+FOG_RGB = (6, 16, 30)
 
 
 class Feed:
@@ -76,6 +82,10 @@ class Feed:
     data: dict[str, bytes] = {}  # noqa: RUF012
     last: dict[str, Any] = {}  # noqa: RUF012  # the objects data was made from (compare before dumping)
     folder: Path | None = None  # the tile session's folder
+    # Fog of war: (revision, explored grid, width, height, opacity 0-1) from the game thread; the
+    # worker makes the PNG when the page asks for that revision (`_fog`)
+    fog: tuple[int, bytes, int, int, float] | None = None
+    fog_png: tuple[int, bytes] | None = None  # (revision, PNG) the worker made last
     # Long-polls waiting for news: socket -> [since, q, revs]. Taken out under `lock` by whichever
     # thread answers: the game thread when it stores a sample (one small non-blocking send, no
     # hand-over to the worker), the worker when one has waited WAIT_S or a request has news at once
@@ -238,6 +248,55 @@ def _tile(conn: socket.socket, name: str, fresh: bool) -> None:
         _send(conn, 200, body, b"image/png", b"max-age=86400")
 
 
+def _png_rgba(width: int, height: int, pixels: bytes) -> bytes:
+    """An 8-bit RGBA PNG (unfiltered rows)."""
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    stride = width * 4
+    rows = b"".join(b"\x00" + pixels[r * stride:(r + 1) * stride] for r in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return PNG_SIGNATURE + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows, 1)) + chunk(b"IEND", b"")
+
+
+def _fog(conn: socket.socket) -> None:
+    """Worker: the fog layer for the current explored grid (unexplored = FOG_RGB at the strength's
+    opacity, explored = clear). Its URL carries the revision, so each revision is fetched once."""
+    fog = Feed.fog
+    if fog is None:
+        _send(conn, 404, b"", b"text/plain", b"no-store")
+        return
+    rev, grid, width, height, opacity = fog
+    made = Feed.fog_png
+    if made is None or made[0] != rev:
+        r, g, b = FOG_RGB
+        alpha = bytes(round((255 - v) * opacity) for v in range(256))
+        pixels = bytearray(width * height * 4)
+        pixels[0::4] = bytes((r,)) * (width * height)
+        pixels[1::4] = bytes((g,)) * (width * height)
+        pixels[2::4] = bytes((b,)) * (width * height)
+        pixels[3::4] = grid.translate(alpha)
+        made = Feed.fog_png = (rev, _png_rgba(width, height, bytes(pixels)))
+    _send(conn, 200, made[1], b"image/png", b"max-age=86400")
+
+
+def set_fog(grid: bytes | None, width: int, height: int, opacity: float, square: tuple[float, ...] | None) -> None:
+    """Game thread: the explored grid for the page's fog layer (None: no fog). Only a changed grid
+    (or strength, or square) makes a new revision."""
+    if grid is None or square is None:
+        if Feed.fog is not None:
+            Feed.fog = None
+            set_section("fog", None)
+        return
+    old = Feed.fog
+    if old is not None and old[1] == grid and old[4] == opacity and (Feed.last.get("fog") or {}).get("sq") == list(square):
+        return
+    rev = (old[0] + 1) if old is not None else 1
+    Feed.fog = (rev, grid, width, height, opacity)
+    set_section("fog", {"rev": rev, "w": width, "h": height, "sq": list(square)})
+
+
 def _serve(srv: socket.socket) -> None:
     buffers: dict[socket.socket, bytes] = {}  # open connections -> bytes received, not a whole request yet
     wake = Feed.wake_r
@@ -349,6 +408,9 @@ def _request(conn: socket.socket, head: bytes) -> bool:
         else:
             with Feed.lock:
                 Feed.waiting[conn] = [time.monotonic(), q, revs]
+        return True
+    if route == FOG_ROUTE:
+        _fog(conn)
         return True
     match = TILE_NAME.match(route)
     if match:

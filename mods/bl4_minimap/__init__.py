@@ -30,7 +30,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
-from . import breadcrumbs, fog, frametick, gamekeys, health, loot, mapdata, markers, objectives, page, scene, services, tiles, uilink
+from . import breadcrumbs, fog, frametick, gamekeys, health, loot, mapdata, mapwaypoints, markers, objectives, page, scene, services, tiles, uilink
 from .widget import DOT_TEXTURE, EDGE_LAYER, MARKER_LOOKS, OVERSCAN, Minimap
 
 __version__ = "0.1.1"
@@ -384,6 +384,7 @@ class State:
     ui_next = 0.0  # when the UI scale is read again (UI_SCALE_S)
     shown_content: tuple[Any, ...] = ()  # (markers, icons, route, route colour) last placed
     tiles_next = 0.0  # when tick_tiles is due again (TILES_GAP_S / the tile loader's next action)
+    fog_next = 0.0  # page mode: when the live fog grid is read again (PAGE_FOG_S)
     teleport_since = 0.0  # when the game said a teleport (fast travel portal) starts; 0: none
     cursor_since = 0.0  # when the mouse cursor came up; 0: it's hidden
     hide_next = 0.0  # when the hide checks are due again (HIDE_CHECK_S)
@@ -400,7 +401,7 @@ class State:
     route_cache: tuple[Any, Any, list[tuple[float, float]]] = (None, None, [])  # noqa: RUF012
     hidden_until = 0.0  # hidden: on_frame skips the frames until then (HIDDEN_POLL_S)
     events_version = -1  # the map data version `events` was made from
-    events: list[dict[str, Any]] = []  # noqa: RUF012  # the ECHO map's rift / world event icons
+    events: list[dict[str, Any]] = []  # noqa: RUF012  # rift / world events: live (mapwaypoints.py), or the ECHO map's copies
     # Page mode (page.py): the minimap drawn in the HUD page
     page_on = False
     page_vis = False  # the last sample told the page to show it
@@ -740,20 +741,34 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
             """A rift / world event icon a live objective marker already stands for."""
             return any((i["x"] - x) ** 2 + (i["y"] - y) ** 2 <= slack for x, y, _, _ in shown)
 
-        # Rift / world events (Rift Champions: ico_world_events) aren't in the game's live waypoint
-        # list (World_P 2026-10-29: two ico_world_events on the map, only contracts listed). Off,
-        # they stay ordinary map icons, shown within range; on, they become markers below.
+        # Rift / world events (Rift Champions: ico_world_events) are read live, with the ECHO map's
+        # own rules (mapwaypoints.py: the HUD's waypoint list has only the ones near you). The map's
+        # saved copies are only the fallback: they stay until the map is opened again, long after
+        # the event is over. Off, events are ordinary icons shown within range; on, markers below.
+        waypoints = mapwaypoints.MapWaypoints
+        waypoints.update(pawn, paused=paused, new_world=new_world)
+        live_events = not waypoints.broken and waypoints.read_ok
         icons = [
             i for i in icons
             if not mapdata.is_objective(i["texture"]) and not mapdata.is_live(i["texture"])
-            and not (mapdata.is_rift(i["texture"]) and (rifts or doubled(i)))
+            and not (mapdata.is_rift(i["texture"]) and (live_events or rifts or doubled(i)))
         ]  # fmt: skip
+        if live_events:
+            State.events_version = -1
+            State.events = [
+                {"x": x, "y": y, "z": z, "texture": MISSION_TYPE_ICONS[t]}
+                for x, y, z, t in waypoints.points
+                if t in MISSION_TYPE_ICONS and mapdata.is_rift(MISSION_TYPE_ICONS[t])
+            ]  # fmt: skip
+        elif State.events_version != data.version:
+            State.events_version = data.version
+            State.events = [i for i in data.icons if mapdata.is_rift(i["texture"])]
+        if not rifts and live_events and icons_option.value:
+            r2 = (radius * 1.5) ** 2
+            icons += [i for i in State.events if (i["x"] - lx) ** 2 + (i["y"] - ly) ** 2 <= r2 and not doubled(i)]
         if rifts:
-            # The map's icons become markers that stay on the rim like objectives. Not the ones a
-            # live marker already stands for.
-            if State.events_version != data.version:
-                State.events_version = data.version
-                State.events = [i for i in data.icons if mapdata.is_rift(i["texture"])]
+            # Markers that stay on the rim like objectives. Not the ones a live objective marker
+            # already stands for.
             extra += [
                 markers.Marker("event", i["x"], i["y"], True, i.get("z"), i["texture"])
                 for i in State.events
@@ -1013,6 +1028,7 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
 # Tiles kept around you in page mode, in ranges: the turned square view reaches sqrt(2) ranges into
 # its corners, plus a little to have the next tile before it shows
 PAGE_TILE_REACH = 1.6
+PAGE_FOG_S = 0.5  # page mode: how often the live fog grid is read for the page (16 KB, one memory read)
 
 
 def _hide_all(pc: UObject) -> None:
@@ -1038,7 +1054,7 @@ def _page_switch() -> None:
     tiles.Tiles.drop()  # the other mode's tile session (film slots, the folder)
     State.view_key, State.shown_content = (), ()
     State.page_force, State.page_vis, State.page_tiles_rev = True, False, -1
-    State.tiles_next = 0.0
+    State.tiles_next = State.fog_next = 0.0
 
 
 def _vertical(z: float | None, lz: float) -> int:
@@ -1086,8 +1102,21 @@ def _page_frame(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bo
     if State.page_pawn() is not pawn:
         State.page_pawn = WeakPointer(pawn)
     page.set_sample(time.time(), lx, ly, lz, yaw, True)
+    if now >= State.fog_next:
+        # Fog of war, live: the game's explored grid straight to the page, which lays it over the
+        # tiles (filmed without fog). Before, fog was filmed into the tiles: a change showed once
+        # fog.py had written it (every 4 s), tiles.py had read it (2 s) and the tiles under it had
+        # been filmed again (up to 2.5 s each).
+        State.fog_next = now + PAGE_FOG_S
+        found = None
+        name = _world_name(world)
+        if fog_option.value and fog.Fog.placement is not None and fog.Fog.key is not None and fog.Fog.key[1] == name.lower():
+            found = fog._Live.read(name, paused, fog.Fog.placement)  # noqa: SLF001
+        size = fog.MASK_SIZE
+        page.set_fog(found[0] if found else None, size, size, fog_strength_option.value / 100, found[1] if found else None)
     if now >= State.tiles_next:
-        tiles.Tiles.page_tick(pc, lx, ly, radius * PAGE_TILE_REACH, north, fog_on=bool(fog_option.value),
+        # (fog_on=False: page tiles are filmed without the fog plane; the page draws the live fog)
+        tiles.Tiles.page_tick(pc, lx, ly, radius * PAGE_TILE_REACH, north, fog_on=False,
                               strength=fog_strength_option.value / 100, paused=False)  # fmt: skip
         State.tiles_next = now + (TILES_IDLE_GAP_S if tiles.Tiles.idle else tiles.ACTION_GAP_S)
         page.Feed.folder = tiles.Tiles.folder
@@ -1216,7 +1245,7 @@ def _enable() -> None:
     State.turn_ref = None
     State.viewport = WeakPointer()
     State.pc = WeakPointer()
-    State.tiles_next = 0.0
+    State.tiles_next = State.fog_next = 0.0
     State.name_world, State.world_name, State.ui_next, State.shown_content = WeakPointer(), "", 0.0, ()
     State.teleport_since = 0.0
     State.hide_next, State.hide_cue, State.paused, State.hidden = 0.0, (), False, False
@@ -1237,6 +1266,7 @@ def _disable() -> None:
     scene.Scene.destroy()
     loot.Loot.clear()
     objectives.Objectives.clear()
+    mapwaypoints.MapWaypoints.clear()
     breadcrumbs.Breadcrumbs.clear()
 
 
