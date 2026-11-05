@@ -83,6 +83,11 @@ MISSION_TYPE_ICONS = {
 }  # fmt: skip
 # Mission types of rift events (a world boss "Rift Champion" is an Event, like the other world events)
 RIFT_TYPES = frozenset({"riftboss", "digispaceboss", "event"})
+# Missions: shown from the HUD's list (tracked / untracked, "Always show contracts"). The other
+# types the ECHO map shows (activities: crawlers, ...; world events: airships, ...) are its icons.
+MISSIONS = frozenset({"contract", "sidemission", "micromission", "dlc_sidemission", "dlc_micromission",
+                           "dlc_mainstory", "factionmission"})  # fmt: skip
+ACTIVITY_TYPES = frozenset(MISSION_TYPE_ICONS) - MISSIONS - RIFT_TYPES
 TELEPORT_GRACE_S = 3.0  # a teleport notice counts this long even before movement input stops
 # A shown cursor means a menu is up for this long; after that only while BL4 Mod Menu's page (it
 # runs only while one of the game's menus shows, polling every 1 s) has polled within MENU_POLL_S
@@ -773,9 +778,18 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
         elif State.events_version != data.version:
             State.events_version = data.version
             State.events = [i for i in data.icons if mapdata.is_rift(i["texture"])]
-        if not rifts and live_events and icons_option.value:
+        if live_events and icons_option.value:
+            # Activities and world events as the map shows them (the HUD's list has only those
+            # near you), within range like its other icons
             r2 = (radius * 1.5) ** 2
-            icons += [i for i in State.events if (i["x"] - lx) ** 2 + (i["y"] - ly) ** 2 <= r2 and not doubled(i)]
+            activities = [
+                {"x": x, "y": y, "z": z, "texture": MISSION_TYPE_ICONS[t]}
+                for x, y, z, t in waypoints.points
+                if t in ACTIVITY_TYPES and (x - lx) ** 2 + (y - ly) ** 2 <= r2
+            ]  # fmt: skip
+            icons += [i for i in activities if not doubled(i)]
+            if not rifts:
+                icons += [i for i in State.events if (i["x"] - lx) ** 2 + (i["y"] - ly) ** 2 <= r2 and not doubled(i)]
         if rifts:
             # Markers that stay on the rim like objectives. Not the ones a live objective marker
             # already stands for.
