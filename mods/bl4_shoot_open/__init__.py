@@ -43,8 +43,8 @@ try:
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: local player only
     coop = None
 
-__version__ = "0.1.2"
-__version_info__ = (0, 1, 2)
+__version__ = "0.1.4"
+__version_info__ = (0, 1, 4)
 
 # A player pressing / releasing fire: RPCs from their game, which reach the host's hooks
 FIRE_START_FUNC = "/Script/GbxWeapon.Weapon:ServerStartUsing"
@@ -92,8 +92,9 @@ class Gun:
 
     def __init__(self) -> None:
         self.weapon = WeakPointer()
-        self.ammo_behavior = WeakPointer()
-        self.loaded = -1
+        # One ammo pool per fire mode (a gun with an underbarrel has two): each pool and its count
+        self.pools: list[WeakPointer] = []
+        self.loaded: list[int] = []
         # Host, for another player: their fire button, from the RPCs their game sends
         self.held_since = 0.0  # 0 = not held
         self.pressed = False  # a press not traced yet (a tap can start and stop in one frame)
@@ -124,29 +125,36 @@ class Gun:
         weapon = slots[0].Weapon if len(slots) else None
         if weapon is None:
             self.weapon = WeakPointer()
-            self.ammo_behavior = WeakPointer()
+            self.pools = []
+            self.loaded = []
             return
         if weapon is not self.weapon():
-            # Swapped guns (or picked one up): start counting from this one
+            # Swapped guns (or picked one up): start counting from this one. Every fire mode's pool
+            # is watched: the first one listed can be the underbarrel's (UM1_*), not the primary's
             self.weapon = WeakPointer(weapon)
-            behavior = next((b for b in weapon.behaviors if b and b.Class.Name == AMMO_BEHAVIOR), None)
-            self.ammo_behavior = WeakPointer(behavior)
-            self.loaded = behavior.LoadedAmmo if behavior else -1
+            pools = [b for b in weapon.behaviors if b and b.Class.Name == AMMO_BEHAVIOR]
+            self.pools = [WeakPointer(b) for b in pools]
+            self.loaded = [b.LoadedAmmo for b in pools]
 
     def ammo_dropped(self) -> bool:
-        """True if the cached gun's loaded ammo went down since last frame."""
-        behavior = self.ammo_behavior()
-        if behavior is None:
-            return False
-        previous, self.loaded = self.loaded, behavior.LoadedAmmo
-        return self.loaded < previous
+        """True if any of the cached gun's ammo pools went down since last frame."""
+        dropped = False
+        for i, pool in enumerate(self.pools):
+            behavior = pool()
+            if behavior is None:
+                continue
+            loaded = behavior.LoadedAmmo
+            if loaded < self.loaded[i]:
+                dropped = True
+            self.loaded[i] = loaded
+        return dropped
 
     def shots_fired(self, pawn: UObject, now: float) -> bool:
         """True if the loaded ammo went down since last frame (the gun looked up every RESOLVE_S)."""
         if now - self.resolved_at >= RESOLVE_S:
-            before = self.ammo_behavior()
+            before = self.weapon()
             self.resolve(pawn, now)
-            if self.ammo_behavior() is not before:
+            if self.weapon() is not before:
                 return False  # a new gun: counted from now
         return self.ammo_dropped()
 
