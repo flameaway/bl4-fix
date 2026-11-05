@@ -46,7 +46,7 @@ from typing import Any
 
 from unrealsdk import logging
 
-VERSION = 4
+VERSION = 5
 HUB = "_bl4_health"
 _tick_errors: set[str] = set()  # owner tick errors already logged (this copy)
 # Probes are read this often; the import scan and the notice wait for the game to settle first
@@ -159,6 +159,8 @@ PROBES: dict[str, list[tuple[str, bool, Callable[[], str | None]]]] = {
     "bl4_minimap": [
         ("objectives", False, _set("bl4_minimap.objectives", "Objectives.broken", "live objectives are off")),
         ("route", False, _set("bl4_minimap.breadcrumbs", "Breadcrumbs.broken", "the live route is off")),
+        ("events", False, _set("bl4_minimap.mapwaypoints", "MapWaypoints.broken", "rift events and activities show as the ECHO map last did")),
+        ("icons", False, _set("bl4_minimap.discovery", "Discovery.broken", "map icons show as the ECHO map last did")),
     ],
     "bl4_third_person": [("camera", True, _called("bl4_third_person.camera_defs", "Finder.gave_up", "the camera modes moved in this game version"))],
     "bl4_backpack_size": [("lost_loot", False, _set("bl4_backpack_size.limits", "_lost_loot_bad", "the Lost Loot limit is left alone"))],
