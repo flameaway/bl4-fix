@@ -86,6 +86,15 @@ _NUM_OPCODE = b"\x39\x15"
 _CHUNKS_INSN = 0xC8A32B  # mov r9, qword ptr [rip+disp32]
 _CHUNKS_OPCODE = b"\x4c\x8b\x0d"
 
+# The HUD's provider, not the ECHO map's: opening the map makes more providers of this class (for
+# the map's viewer), destroyed when it closes. The providers' sync tells the viewers apart (code at
+# _VIEWER_INSN: [[provider+0x30]+0x120] - 1 < 2 is a viewer that keeps only what's near or tracked:
+# the HUD's, 2); the map's keeps everything. Taking the map's (a search while it was open) lost the
+# objectives and the route once it closed, until the next pause (2026-11-05).
+_VIEWER_INSN = 0x4A036B1
+_VIEWER_CODE = bytes.fromhex("488b433031ed4885c00f84971d00008b8020010000ffc883f8020f92c0")
+PROVIDER_VIEWER, VIEWER_KIND = 0x30, 0x120
+
 _k32 = ctypes.PyDLL("kernel32")
 _k32.GetCurrentProcess.restype = ctypes.c_void_p
 _k32.GetModuleHandleW.restype = ctypes.c_void_p
@@ -257,8 +266,13 @@ class Objectives:
         if not first and not new_world and (not paused or now < cls.next_search):
             return None
         cls.next_search = now + SEARCH_INTERVAL
+        if _read(_k32.GetModuleHandleW(None) + _VIEWER_INSN, len(_VIEWER_CODE)) != _VIEWER_CODE:
+            cls._fail("game code changed (a patch?)")
+            return None
         for found in unrealsdk.find_all("GbxDiscoveryProvider_OakMissionWaypoints", exact=True):
-            if "Default__" not in found._path_name():  # noqa: SLF001
+            viewer = _u64(found._get_address() + PROVIDER_VIEWER)  # noqa: SLF001
+            kind = _read(viewer + VIEWER_KIND, 4) if viewer else None
+            if kind is not None and 0 <= struct.unpack("<i", kind)[0] - 1 < 2:  # noqa: PLR2004
                 cls.provider = WeakPointer(found)
                 return found
         return None
