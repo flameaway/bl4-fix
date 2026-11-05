@@ -35,16 +35,19 @@
     var DOT_URL = RADAR + "enemy_radar_circle_friendly.png";
     var CHEVRON_URL = "coui://uiresources/compass/assets/UI_Art_Assets/compass_vertical_indicator.png";
 
-    // The HUD compass's heading: scrollposx = C_SLOPE * yaw + C_ZERO, wrapping (fit 2026-11-02);
-    // the offset is checked against our samples' yaw and corrected (compassPair). It's a frame
-    // behind the camera, so the map turns COMPASS_LEAD of its last frame's change further. Off the
-    // camera's yaw, p50 / p90 in degrees, frames you turned / frames a turn slowed or stopped (game
-    // 33460, 2026-11-02): the compass as is 1.50 / 7.52, 0.46 / 4.85; half a frame ahead 0.78 / 5.32,
+    // The HUD compass's heading: scrollposx = C_SLOPE * yaw + C_ZERO, wrapping over 201 (-50..151).
+    // Fit to 3180 frames against the yaw of the frame it shows: p50 0.0005 deg, p90 0.0012 (game
+    // 32892, 2026-11-04). The old fit (0.557, 50.9) was up to 1.1 deg off, depending on the heading,
+    // and a median of compass-vs-sample pairs taken while the view was still corrected it: after a
+    // turn the map sat off and slid back over about a second. It's a frame behind the camera (the
+    // game collects it before the camera updates; our samples land a frame late too: Gameface hands
+    // an answer over at its next frame), so the map turns COMPASS_LEAD of its last frame's change
+    // further. Off the camera's yaw, p50 / p90 in degrees, frames you turned / frames a turn slowed
+    // or stopped (game 33460, 2026-11-02, with the old fit): the compass as is 1.50 / 7.52, 0.46 / 4.85; half a frame ahead 0.78 / 5.32,
     // 0.49 / 3.93; 3/4 frame 0.67 / 5.16, 0.90 / 7.19. Our samples predicted forward were best while
     // turning (0.71 / 3.89) but overshot on stops (1.15 / 6.14): the map ran ahead and snapped back.
-    var C_SLOPE = 0.557, C_ZERO = 50.9;
+    var C_SLOPE = 201 / 360, C_ZERO = 50.5;
     var COMPASS_LEAD = 0.5;
-    var STILL_MS = 40, STILL_DEG = 0.05;  // the view counts as still: the yaw within this over this long
     var COMPASS_GAP = 40;  // ms: a compass reading older than this isn't "the last frame's" (no lead)
     var MAX_AHEAD = 150;  // ms a position may be predicted past its sample
     var MAX_SPAN = 250;   // two samples further apart than this: no prediction
@@ -56,7 +59,7 @@
     var st = {
         port: 0, token: "", q: 0, revs: {}, cfg: null, tiles: null, slow: null, fast: null, fog: null, fogKey: "",
         samples: [], vis: false, lastAnswer: 0, xhr: null, asking: false, timer: null,
-        compass: [], fix: [], fixValue: 0, anchor: null, scale: 0, placed: {}, tileKey: "",
+        compassWarned: false, anchor: null, scale: 0, placed: {}, tileKey: "",
         routeKey: "", frameKey: "", shown: null
     };
 
@@ -280,7 +283,6 @@
             if (!s.length || s[s.length - 1].t !== p.t) {
                 s.push(p);
                 if (s.length > 8) s.shift();
-                compassPair(p);
             }
         }
         var names = ["cfg", "tiles", "slow", "fast", "fog"];
@@ -312,36 +314,6 @@
 
     function rawCompassYaw(c) {
         return (c - C_ZERO) / C_SLOPE;
-    }
-
-    // A sample's yaw against the compass in the frame it was taken (both clocks are wall time):
-    // the median difference corrects the fit's offset. Only while the view is still: the compass is
-    // a frame behind, so pairs from a turn put the turn's last frame into the offset. "Under 1 deg
-    // since the last sample" let slow turns in once samples came every frame, and the map then ran
-    // ahead after a turn until the median caught up and snapped it back (2026-11-02).
-    function compassPair(p) {
-        var buf = st.compass, best = null, bestGap = 9;
-        for (var i = buf.length - 1; i >= 0; i--) {
-            var gap = Math.abs(buf[i][0] - p.t);
-            if (gap < bestGap) { bestGap = gap; best = buf[i]; }
-            if (buf[i][0] < p.t - 20) break;
-        }
-        var s = st.samples;
-        if (!best) return;
-        for (var j = s.length - 2; ; j--) {
-            if (j < 0 || Math.abs(wrap180(s[j].yaw - p.yaw)) > STILL_DEG) return;
-            if (p.t - s[j].t >= STILL_MS) break;
-        }
-        var fix = st.fix;
-        fix.push(wrap180(rawCompassYaw(best[1]) - p.yaw));
-        if (fix.length > 61) fix.shift();
-        if (fix.length >= 9) {
-            var sorted = fix.slice().sort(function (a, b) { return a - b; });
-            var mid = sorted[sorted.length >> 1];
-            // A median far off (another fit after a game patch, the compass hidden): don't use it
-            st.fixValue = Math.abs(mid) < 20 ? mid : 0;
-            st.compassOk = Math.abs(mid) < 20;
-        }
     }
 
     function predict(now) {
@@ -555,10 +527,6 @@
         var c0 = compassValue();
         st.compassPrev = st.compassNow;  // (the last frame's reading, for draw's lead)
         st.compassNow = c0 !== null ? [now, c0] : null;
-        if (c0 !== null) {
-            st.compass.push([now, c0]);
-            if (st.compass.length > 90) st.compass.splice(0, 30);
-        }
         // No answer for STALE_MS (the server answers a long-poll within 0.5 s): the chain is dead or
         // the feed moved. Start over, at most every STALE_MS (restart())
         // (backing off to every 30 s while nothing answers: each restart may leave another request
@@ -592,8 +560,14 @@
         var p = predict(now);
         var yaw = p.yaw;
         var lead = 0;
-        if (c0 !== null && st.compassOk) {
-            yaw = rawCompassYaw(c0) - st.fixValue;
+        // The compass shows the frame our newest sample is from (or the one after, if that sample
+        // came late): off by more than that frame's turn, it's not the heading (a game patch, the
+        // compass hidden), and the samples' heading is used
+        var sm = st.samples, turn = sm.length > 1 ? Math.abs(wrap180(sm[sm.length - 1].yaw - sm[sm.length - 2].yaw)) : 0;
+        var ok = c0 !== null && Math.abs(wrap180(rawCompassYaw(c0) - p.yaw)) <= 1 + 2 * turn;
+        if (!ok && c0 !== null && !st.compassWarned) { st.compassWarned = true; ns.log("minimap: the compass doesn't match the heading"); }
+        if (ok) {
+            yaw = rawCompassYaw(c0);
             var prev = st.compassPrev;
             if (prev && now - prev[0] < COMPASS_GAP) lead = wrap180(rawCompassYaw(c0) - rawCompassYaw(prev[1])) * COMPASS_LEAD;
             yaw += lead;
