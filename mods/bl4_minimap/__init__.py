@@ -30,7 +30,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
-from . import breadcrumbs, fog, frametick, gamekeys, health, loot, mapdata, mapwaypoints, markers, objectives, page, scene, services, tiles, uilink
+from . import breadcrumbs, discovery, fog, frametick, gamekeys, health, loot, mapdata, mapwaypoints, markers, objectives, page, scene, services, tiles, uilink
 from .widget import DOT_TEXTURE, EDGE_LAYER, MARKER_LOOKS, OVERSCAN, Minimap
 
 __version__ = "0.1.1"
@@ -734,6 +734,16 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
         # ECHO map's copies (those only change when the map is opened); the copies are the fallback.
         shown, tracked = _live_objectives(live) if not live.broken else ([], [])
         icons = data.icons_near(lx, ly, radius * 1.5) if icons_option.value else []
+        # The map's fixed icons (fast travel, echo logs, collectables, ...) are read live
+        # (discovery.py): its saved copy kept an echo log blue after you picked it up. The saved
+        # icons standing on a live entry are dropped; the rest (givers, vendors, ...) stay.
+        places = discovery.Discovery
+        if new_world:
+            places.clear()  # (its cached positions are by address: another level's)
+        if icons_option.value:
+            places.update(lx, ly, radius * 1.5, paused=paused, new_world=new_world)
+            if not places.broken and places.read_ok:
+                icons = [i for i in icons if not places.covers(i)] + places.near(lx, ly, radius * 1.5)
         rifts = bool(rifts_option.value)
         slack = ROUTE_END_SLACK**2
 
@@ -1267,6 +1277,7 @@ def _disable() -> None:
     loot.Loot.clear()
     objectives.Objectives.clear()
     mapwaypoints.MapWaypoints.clear()
+    discovery.Discovery.clear()
     breadcrumbs.Breadcrumbs.clear()
 
 
