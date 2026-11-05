@@ -128,8 +128,14 @@ def _character(pc: UObject) -> str | None:
 
 
 def _icons_of(actor: UObject, poi_component: UObject) -> list[dict[str, Any]]:
-    """The visible icons of one of the open map's icon actors."""
+    """
+    The visible icons of one of the open map's icon actors, at the actor's place: the icon itself is
+    moved off it when icons stand close together (Cowbell_P: a bank 1.5 m; saved copies of a bank,
+    a golden chest and a respec station 17 to 38 m off their spots), which the live icons
+    (discovery.py) aren't.
+    """
     icons = []
+    loc = actor.K2_GetActorLocation()
     for comp in actor.K2_GetComponentsByClass(poi_component):
         if not comp.bVisible or comp.K2_GetComponentScale().X <= 0:
             continue  # an old one from an earlier opening, on its way out
@@ -137,7 +143,6 @@ def _icons_of(actor: UObject, poi_component: UObject) -> list[dict[str, Any]]:
         texture = textures.get(str(comp.MaterialTextureParamName))
         if texture is None or scalars.get(str(comp.MaterialIsHiddenParamName), 0.0) > 0.5:
             continue
-        loc = comp.K2_GetComponentLocation()
         icons.append({
             "x": round(loc.X * MAP_TO_WORLD, 1),
             "y": round(loc.Y * MAP_TO_WORLD, 1),
