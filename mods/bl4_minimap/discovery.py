@@ -19,8 +19,11 @@ The layout (this build; the vtables are checked, so a patch that moves them turn
 
 What the map shows, checked in Cowbell_P against a snapshot of the map taken the same day: the
 entries that have a presentation with an icon, exactly (5 of 129; none of the 116 not yet found,
-none of the 4 found ones with an empty icon). Every icon of the map's saved copy that came from
-this provider sits on its entry's position (within 0.5 m), which is how `covers` tells them apart.
+none of the 4 found ones with an empty icon). An icon of the map's saved copy that came from this
+provider sits on its entry's position (within 0.5 m in Cowbell_P), or near it with the same picture:
+the map moves icons that stand close together apart (World_P, 2026-11-05: three vending machines
+within 7 m, saved 1.3 to 5.9 m from their entries, so the minimap drew Munitions and Resupply
+twice). Either way `covers` drops it for the live one.
 """
 
 from __future__ import annotations
@@ -52,6 +55,7 @@ DATA_SIZE = 0xD0
 DATA_LOCATION = 0xB8
 SAME_ICON = 100.0  # world units (1 m): a saved icon this close to an entry is that entry's
 CELL = SAME_ICON  # grid for `covers`
+SAME_KIND = 1000.0  # world units (10 m): a saved icon this close to an entry with its picture is that entry's
 BUCKET = 10000.0  # world units (100 m): grid of the fixed entries, so a read only visits those in range
 READ_SLACK = 5000.0  # world units (50 m) read beyond the shown range: what comes into it next
 
@@ -61,6 +65,11 @@ Place = tuple[float, float, float]
 
 def _cell(x: float, y: float, size: float) -> tuple[int, int]:
     return int(x // size), int(y // size)
+
+
+def _kind(texture: str) -> str:
+    """An icon's picture, the same found or not (ico_collectables_echo_log[_completed])."""
+    return texture.rsplit(".", 1)[-1].lower().removesuffix("_completed")
 
 
 class Discovery:
@@ -77,12 +86,13 @@ class Discovery:
     others: list[Key] = []  # noqa: RUF012  # entries not placed yet (their actor isn't loaded): tried each read
     fixed_cells: set[tuple[int, int]] = set()  # noqa: RUF012  # `cells` of the grid
     cells: set[tuple[int, int]] = set()  # noqa: RUF012  # CELL squares holding any entry (found or not)
+    kinds: set[tuple[str, int, int]] = set()  # noqa: RUF012  # (picture, SAME_KIND square) of each icon read
     icons: list[dict[str, Any]] = []  # noqa: RUF012  # what the map shows in range: {"x", "y", "z", "texture"}
     read_ok = False  # the last read went through (icons and cells are this level's, not just empty)
 
     @classmethod
     def _none(cls) -> None:
-        cls.icons, cls.cells, cls.read_ok = [], set(), False
+        cls.icons, cls.cells, cls.kinds, cls.read_ok = [], set(), set(), False
 
     @classmethod
     def _fail(cls, why: str) -> None:
@@ -258,12 +268,19 @@ class Discovery:
         if placed:
             cls.entries = b""  # (into the grid with the next read)
         cls.icons, cls.cells, cls.read_ok = icons, cls.fixed_cells, True
+        cls.kinds = {(_kind(i["texture"]), *_cell(i["x"], i["y"], SAME_KIND)) for i in icons}
 
     @classmethod
     def covers(cls, icon: dict[str, Any]) -> bool:
-        """A saved ECHO map icon that stands on one of this provider's entries (drawn live instead)."""
+        """A saved ECHO map icon that is one of this provider's entries (drawn live instead): on an
+        entry, or near one with the same picture. Only icons within the last read's range are known
+        by picture; the caller asks about those."""
         cx, cy = _cell(icon["x"], icon["y"], CELL)
-        return any((cx + dx, cy + dy) in cls.cells for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+        if any((cx + dx, cy + dy) in cls.cells for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+            return True
+        kind = _kind(icon["texture"])
+        kx, ky = _cell(icon["x"], icon["y"], SAME_KIND)
+        return any((kind, kx + dx, ky + dy) in cls.kinds for dx in (-1, 0, 1) for dy in (-1, 0, 1))
 
     @classmethod
     def near(cls, x: float, y: float, reach: float) -> list[dict[str, Any]]:
