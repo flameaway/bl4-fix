@@ -786,9 +786,11 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
             and not (mapdata.is_rift(i["texture"]) and (live_events or rifts or doubled(i)))
         ]  # fmt: skip
         if live_events:
+            # The map's own picture for each type (mapwaypoints.py: the game's rule; a Cowbell_P Rift
+            # Champion is a totem, not ico_rift_boss); the table only until the game has filled it in
             State.events_version = -1
             State.events = [
-                {"x": x, "y": y, "z": z, "texture": MISSION_TYPE_ICONS[t]}
+                {"x": x, "y": y, "z": z, "texture": waypoints.pictures.get(t) or MISSION_TYPE_ICONS[t]}
                 for x, y, z, t in waypoints.points
                 if t in MISSION_TYPE_ICONS and mapdata.is_rift(MISSION_TYPE_ICONS[t])
             ]  # fmt: skip
@@ -800,7 +802,7 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
             # near you), within range like its other icons
             r2 = (radius * 1.5) ** 2
             activities = [
-                {"x": x, "y": y, "z": z, "texture": MISSION_TYPE_ICONS[t]}
+                {"x": x, "y": y, "z": z, "texture": waypoints.pictures.get(t) or MISSION_TYPE_ICONS[t]}
                 for x, y, z, t in waypoints.points
                 if t in ACTIVITY_TYPES and (x - lx) ** 2 + (y - ly) ** 2 <= r2
             ]  # fmt: skip

@@ -36,6 +36,15 @@ of the 20 DynamicEvents, not the Rift Champion just finished (flag bit 2).
 
 Every code site this relies on is checked against the bytes it had when this was written; if any
 differ (a game patch), `broken` is set and the minimap uses the ECHO map's saved icons as before.
+
+The picture the map gives a waypoint is the game's too (`pictures`). `OakDiscoveryGlobals`, a static
+struct (RVA below), maps a mission kind to a discovery location type
+(MissionWaypointLocationType_Default_SubTypes: {kind FName, GbxDefPtr {name, struct, def}} entries);
+the location type's DiscoveryStatePresentations[2] (found) is a presentation def with the icon (the
+layout discovery.py reads). Cowbell_P 2026-11-05: riftboss -> DiscoveryLocation_Primary_RiftBossWaypoint
+-> ico_dlc_rift_boss_totem, the ECHO map's icon. A GbxDefPtr's def is filled in when the game first
+uses it (6 of the 31 kinds then, every kind with a waypoint among them); until then there's no picture.
+The struct pointers in the GbxDefPtrs are checked, so a patch that moves the struct turns this off.
 """
 
 from __future__ import annotations
@@ -46,7 +55,7 @@ import time
 import unrealsdk
 from unrealsdk.unreal import UObject, WeakPointer
 
-from . import objectives
+from . import discovery, objectives
 from .objectives import _data_location, _read, _u64
 
 READ_INTERVAL = 0.5  # s between reads (like objectives.READ_INTERVAL)
@@ -69,6 +78,11 @@ KIND_ENTRY = 0x18
 # Globals the level lookup (0x60EDEE) uses: an FName number to skip, the "no level" default
 NAME_SKIP, NAME_DEFAULT, NAME_DEFAULT_NUMBER, NAME_SPECIAL = 0xC948000, 0xC948618, 0xC948620, 0xC948034
 MAX_SLOTS = 100000  # a sanity bound on sparse array sizes
+DISCOVERY_GLOBALS = 0xCBC83A8  # the static OakDiscoveryGlobals
+SUBTYPE_ENTRY = 0x28  # a kind -> location type entry: {kind FName, GbxDefPtr {name, struct, def}, hash link}
+DEF_PTR = 0x18  # a GbxDefPtr: {name FName, struct, def}
+FOUND = 2  # the discovery state whose presentation the map shows for a waypoint
+MAX_KINDS = 64
 
 # (RVA, bytes) of the code this follows, as they were in this build (see the docstring)
 CODE = (
@@ -134,6 +148,9 @@ class MapWaypoints:
     # What the map shows: (x, y, z, mission type: lowercase objectives.MISSION_TYPES, "" unknown)
     points: list[tuple[float, float, float, str]] = []  # noqa: RUF012
     read_ok = False  # the last read went through (points is the map's list, not just empty)
+    pictures: dict[str, str] = {}  # noqa: RUF012  # mission type -> the map's picture for its waypoints
+    picture_broken = ""  # why pictures are off ("" = working or not set up yet)
+    picture_layout: tuple[int, int, frozenset[int]] | None = None  # (subtypes map, found presentation, structs)
 
     @classmethod
     def _fail(cls, why: str) -> None:
@@ -151,6 +168,55 @@ class MapWaypoints:
                 return False
         cls.checked = True
         return True
+
+    @classmethod
+    def _picture_setup(cls) -> bool:
+        """The offsets of the picture lookup, from reflection; the static struct checked by its pointers."""
+        globals_struct = unrealsdk.find_object("ScriptStruct", "/Script/OakGame.OakDiscoveryGlobals")
+        location = unrealsdk.find_object("ScriptStruct", "/Script/OakGame.OakDiscoveryLocationTypeDef")
+        gbx_location = unrealsdk.find_object("ScriptStruct", "/Script/GbxGame.GbxDiscoveryLocationTypeDef")
+        default = globals_struct._find_prop("MissionWaypointLocationType_Default").Offset_Internal  # noqa: SLF001
+        subtypes = globals_struct._find_prop("MissionWaypointLocationType_Default_SubTypes").Offset_Internal  # noqa: SLF001
+        states = location._find_prop("DiscoveryStatePresentations")  # noqa: SLF001
+        structs = frozenset(s._get_address() for s in (location, gbx_location))  # noqa: SLF001
+        head = _read(cls.base + DISCOVERY_GLOBALS + default, DEF_PTR)
+        if states.ArrayDim <= FOUND or head is None or struct.unpack_from("<Q", head, 8)[0] not in structs:
+            cls.picture_broken = "discovery globals not where expected (a patch?)"
+            unrealsdk.logging.warning(f"[Minimap] waypoint pictures off: {cls.picture_broken}")
+            return False
+        cls.picture_layout = (subtypes, states.Offset_Internal + FOUND * states.ElementSize, structs)
+        return True
+
+    @classmethod
+    def _read_pictures(cls, wanted: set[str]) -> None:
+        """The pictures of the mission types in `wanted` that the game has filled in (each read once)."""
+        if cls.picture_layout is None and (cls.picture_broken or not cls._picture_setup()):
+            return
+        assert cls.picture_layout is not None
+        subtypes, found, structs = cls.picture_layout
+        subtypes_at = cls.base + DISCOVERY_GLOBALS + subtypes
+        slots = _slots(subtypes_at)
+        data = _u64(subtypes_at)
+        entries = _read(data, (max(slots) + 1) * SUBTYPE_ENTRY) if data and slots and max(slots) < MAX_KINDS else None
+        if entries is None:
+            return
+        names = objectives.Objectives.type_names
+        name_of = discovery.Discovery._name  # noqa: SLF001
+        presentation_vtable = cls.base + discovery.PRESENTATION_VTABLE
+        for i in (slot * SUBTYPE_ENTRY for slot in slots):
+            kind = names.get(entries[i : i + 8])
+            if kind not in wanted:
+                continue
+            location_struct, location = struct.unpack_from("<QQ", entries, i + 16)
+            if location_struct not in structs or not location:
+                continue  # (not filled in by the game yet)
+            presentation = _u64(location + found + 16)
+            look = _read(presentation, discovery.PRESENTATION_SIZE) if presentation else None
+            if look is None or struct.unpack_from("<Q", look, 0)[0] != presentation_vtable:
+                continue
+            asset = look[discovery.ICON_ASSET : discovery.ICON_ASSET + 8]
+            if any(asset):
+                cls.pictures[kind] = f"{name_of(look[discovery.ICON_PACKAGE : discovery.ICON_PACKAGE + 8])}.{name_of(asset)}"
 
     @classmethod
     def _source(cls, paused: bool, new_world: bool) -> int | None:
@@ -272,6 +338,9 @@ class MapWaypoints:
                     if point is not None and not any(objectives._near(point[:3], p[:3]) for p in points):  # noqa: SLF001
                         points.append(point)
         cls.points, cls.read_ok = points, True
+        wanted = {p[3] for p in points if p[3]} - cls.pictures.keys()
+        if wanted:
+            cls._read_pictures(wanted)
 
     @classmethod
     def _point(cls, data_at: int, data_vtable: int, hidden: tuple[int, ...]) -> tuple[float, float, float, str] | None:
