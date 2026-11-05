@@ -77,6 +77,7 @@ MISSION_TYPES = (
 WAYPOINT_FLAGS = 0x44
 FLAG_TRACKED = 0x20
 MAX_COORD = 2e7  # world units: anything further out isn't a position
+WORLD_SEARCH = 0x400  # bytes of a scene component searched for its world position (_find_world_off)
 SAME_SPOT = 500.0  # waypoints closer than this (5 m) show as one
 
 # Where GUObjectArray's fields are referenced (RVAs in this build), and the bytes we expect there
@@ -136,7 +137,7 @@ class Objectives:
     chunks_addr = 0
     waypoint_vtable = 0
     giver_vtable = 0  # address of the giver/poster data's vtable
-    root_off = attach_off = location_off = 0
+    root_off = world_off = 0
     points: list[tuple[float, float, float]] = []  # noqa: RUF012  # world positions
     types: list[str] = []  # noqa: RUF012  # each point's mission type (lowercase MISSION_TYPES, "" unknown)
     untracked: list[bool] = []  # noqa: RUF012  # each point: from a mission you aren't tracking
@@ -183,10 +184,42 @@ class Objectives:
             tag = unrealsdk.make_struct("GameplayTag", TagName=name)
             cls.type_names[ctypes.string_at(tag._get_address(), 8)] = name.lower()  # noqa: SLF001
         cls.root_off = _offset("Actor", "RootComponent")
-        cls.attach_off = _offset("SceneComponent", "AttachParent")
-        cls.location_off = _offset("SceneComponent", "RelativeLocation")
+        world_off = cls._find_world_off(pawn)
+        if world_off is None:
+            return False  # (not on foot, e.g. in a vehicle: checked again next read)
+        if not world_off:
+            cls._fail("component world transform not found")
+            return False
+        cls.world_off = world_off
         cls.checked = True
         return True
+
+    @staticmethod
+    def _find_world_off(pawn: UObject) -> int | None:
+        """
+        Where a scene component keeps its world position: the translation of its ComponentToWorld
+        (native, not reflected), which the engine keeps current, attached or not. Found as the only
+        place in our pawn's mesh (attached to its capsule) holding what K2_GetComponentLocation
+        says, checked on the capsule too (+0x260 in this build: the transform at +0x240, the
+        rotation quaternion first). 0 if not found, None if this pawn has no attached mesh.
+        """
+        mesh = getattr(pawn, "Mesh", None)
+        root = pawn.RootComponent
+        if mesh is None or root is None or mesh.AttachParent is None:
+            return None
+        found = []
+        for comp in (mesh, root):
+            where = comp.K2_GetComponentLocation()
+            want = (where.X, where.Y, where.Z)
+            raw = _read(comp._get_address(), WORLD_SEARCH)  # noqa: SLF001
+            if raw is None:
+                return 0
+            found.append({
+                off for off in range(0, WORLD_SEARCH - 24, 8)
+                if all(abs(a - b) < 0.01 for a, b in zip(struct.unpack_from("<3d", raw, off), want, strict=True))
+            })  # fmt: skip
+        both = found[0] & found[1]
+        return both.pop() if len(both) == 1 else 0
 
     @classmethod
     def _object_at(cls, index: int) -> tuple[int, int] | None:
@@ -203,11 +236,16 @@ class Objectives:
 
     @classmethod
     def _location(cls, actor: int) -> tuple[float, float, float] | None:
+        """The actor's world position: its root's ComponentToWorld (attached ones too: a grapple
+        grate on a mesh was the main mission's target, Cowbell_P 2026-11-05)."""
         root = _u64(actor + cls.root_off)
-        if not root or _u64(root + cls.attach_off):
-            return None  # attached: its relative location isn't the world's
-        raw = _read(root + cls.location_off, 24)
-        return struct.unpack("<3d", raw) if raw else None
+        raw = _read(root + cls.world_off, 24) if root else None
+        if raw is None:
+            return None
+        where = struct.unpack("<3d", raw)
+        if not all(math.isfinite(v) and abs(v) < MAX_COORD for v in where) or not any(where):
+            return None  # (not registered yet: no transform)
+        return where
 
     @classmethod
     def _find_provider(cls, paused: bool, new_world: bool) -> UObject | None:
@@ -283,7 +321,7 @@ class Objectives:
             if target is not None and target[1] == serial and target[0]:
                 where = cls._location(target[0])
             if where is None:
-                where = _data_location(data)  # no actor (go to an area), or it's attached
+                where = _data_location(data)  # no actor (go to an area), or it isn't loaded
             if giver:
                 seen[waypoint, entry_id] = where
                 if where is not None:
