@@ -3,7 +3,7 @@
 // learn its port and token from the link's state, then long-poll it for position samples and for
 // what to draw (sections cfg / tiles / slow / fast, each sent again only when it changed). Every
 // frame we place everything ourselves: the map from tile PNGs (served by the mod), turned with the
-// HUD compass's heading (half a frame ahead: it's a frame behind the camera), moved to the position
+// HUD compass's heading (a frame behind the camera, like the compass itself), moved to the position
 // predicted from the last two samples; the icons projected around it. Mirrors widget.py's look.
 // Hot reload: a new copy stops the old one (window.bl4Minimap, ever higher generations).
 (function () {
@@ -39,16 +39,16 @@
     // Fit to 3180 frames against the yaw of the frame it shows: p50 0.0005 deg, p90 0.0012 (game
     // 32892, 2026-11-04). The old fit (0.557, 50.9) was up to 1.1 deg off, depending on the heading,
     // and a median of compass-vs-sample pairs taken while the view was still corrected it: after a
-    // turn the map sat off and slid back over about a second. It's a frame behind the camera (the
-    // game collects it before the camera updates; our samples land a frame late too: Gameface hands
-    // an answer over at its next frame), so the map turns COMPASS_LEAD of its last frame's change
-    // further. Off the camera's yaw, p50 / p90 in degrees, frames you turned / frames a turn slowed
-    // or stopped (game 33460, 2026-11-02, with the old fit): the compass as is 1.50 / 7.52, 0.46 / 4.85; half a frame ahead 0.78 / 5.32,
-    // 0.49 / 3.93; 3/4 frame 0.67 / 5.16, 0.90 / 7.19. Our samples predicted forward were best while
-    // turning (0.71 / 3.89) but overshot on stops (1.15 / 6.14): the map ran ahead and snapped back.
+    // turn the map sat off and slid back over about a second.
+    // It's a frame behind the camera (the game collects it before the camera updates; our samples
+    // land a frame late too: Gameface hands an answer over at its next frame), and the map turns
+    // with it as is. Turned further by half its last frame's change, the map ran ahead whenever a
+    // turn slowed, then came back: momentum and a jiggle after a flick (3170 frames, game 32892,
+    // 2026-11-04: ahead of the camera by over 0.5 deg in 36 frames, up to 13.2 deg, and 20 frames
+    // off by over 1 deg the other way from the frame before; as is: never ahead by more than
+    // 0.3 deg, 2 such flips, at p50 1.41 / p90 6.10 deg behind while turning instead of 0.71 / 3.56).
+    // Our samples predicted forward overshot on stops too (2026-11-02).
     var C_SLOPE = 201 / 360, C_ZERO = 50.5;
-    var COMPASS_LEAD = 0.5;
-    var COMPASS_GAP = 40;  // ms: a compass reading older than this isn't "the last frame's" (no lead)
     var MAX_AHEAD = 150;  // ms a position may be predicted past its sample
     var MAX_SPAN = 250;   // two samples further apart than this: no prediction
     var STALE_MS = 2000;  // no answer from the feed for this long: hide, find it again
@@ -525,8 +525,6 @@
         requestAnimationFrame(frame);
         var now = Date.now();
         var c0 = compassValue();
-        st.compassPrev = st.compassNow;  // (the last frame's reading, for draw's lead)
-        st.compassNow = c0 !== null ? [now, c0] : null;
         // No answer for STALE_MS (the server answers a long-poll within 0.5 s): the chain is dead or
         // the feed moved. Start over, at most every STALE_MS (restart())
         // (backing off to every 30 s while nothing answers: each restart may leave another request
@@ -559,7 +557,6 @@
         layout(cfg);
         var p = predict(now);
         var yaw = p.yaw;
-        var lead = 0;
         // The compass shows the frame our newest sample is from (or the one after, if that sample
         // came late): off by more than that frame's turn, it's not the heading (a game patch, the
         // compass hidden), and the samples' heading is used
@@ -568,9 +565,6 @@
         if (!ok && c0 !== null && !st.compassWarned) { st.compassWarned = true; ns.log("minimap: the compass doesn't match the heading"); }
         if (ok) {
             yaw = rawCompassYaw(c0);
-            var prev = st.compassPrev;
-            if (prev && now - prev[0] < COMPASS_GAP) lead = wrap180(rawCompassYaw(c0) - rawCompassYaw(prev[1])) * COMPASS_LEAD;
-            yaw += lead;
         }
         var mapYaw = cfg.rotate ? yaw : cfg.nyaw;
         var half = cfg.size / 2, radius = cfg.radius, scale = half / radius;
