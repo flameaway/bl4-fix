@@ -42,6 +42,7 @@ import select
 import socket
 import threading
 import time
+import zlib
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -406,9 +407,11 @@ class Page:
     published_at = 0.0
     packed = False
     registered = False
-    # Dev: bumped when the script's source changes. The link runs a script again only when its URL
-    # changes unless its owner copy is a dev one, so a changed script is registered again with ?v=
-    script_rev = 0
+    # The script's URL carries a hash of its text (?v=). The link runs a script again only when its
+    # URL changes unless its owner copy is a dev one, and the owner is often another mod's release
+    # copy: with a plain URL, a page that ran the installed script kept it after the repo's was
+    # loaded (no spread, no live fog; 2026-11-05)
+    script_hash = ""
 
 
 def state() -> dict[str, Any]:
@@ -426,7 +429,7 @@ def register() -> None:
 
 
 def _register() -> None:
-    url = SCRIPT_URL if not Page.script_rev else f"{SCRIPT_URL}?v={Page.script_rev}"
+    url = f"{SCRIPT_URL}?v={Page.script_hash}"
     uilink.register(KEY, url, state, lambda _action: None, views=(uilink.HUD,), mod="Minimap")
 
 
@@ -458,6 +461,8 @@ def publish(*, force: bool = False) -> None:
                     continue
                 Page.published[name] = stamp
             content = source.read_bytes()
+            if name == UI_FILES[0]:
+                Page.script_hash = f"{zlib.crc32(content):08x}"
             target = Page.game_dir / UI_DIR / name
             try:
                 if target.read_bytes() == content:
@@ -473,7 +478,6 @@ def publish(*, force: bool = False) -> None:
             Page.published.pop(name, None)
             logging.dev_warning(f"[Minimap] couldn't publish {name}: {ex}")
     if changed and from_source and not force and Page.registered:
-        Page.script_rev += 1
         _register()
 
 
