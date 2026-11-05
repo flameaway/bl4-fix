@@ -78,8 +78,7 @@ class Discovery:
     places: dict[Key, Place] = {}  # noqa: RUF012  # the entries' positions (read once: they don't move)
     buckets: dict[tuple[int, int], list[tuple[Key, Place]]] = {}  # noqa: RUF012  # BUCKET squares -> placed entries
     others: list[Key] = []  # noqa: RUF012  # entries not placed yet (their actor isn't loaded): tried each read
-    fixed_cells: set[tuple[int, int]] = set()  # noqa: RUF012  # `cells` of the grid
-    cells: set[tuple[int, int]] = set()  # noqa: RUF012  # CELL squares holding any entry (found or not)
+    cells: set[tuple[int, int]] = set()  # noqa: RUF012  # CELL squares holding an icon of the last read
     icons: list[dict[str, Any]] = []  # noqa: RUF012  # what the map shows in range: {"x", "y", "z", "texture"}
     read_ok = False  # the last read went through (icons and cells are this level's, not just empty)
 
@@ -179,7 +178,6 @@ class Discovery:
             places[key] = place
             buckets.setdefault(_cell(place[0], place[1], BUCKET), []).append((key, place))
         cls.entries, cls.places, cls.buckets, cls.others = entries, places, buckets, others
-        cls.fixed_cells = {_cell(p[0], p[1], CELL) for p in places.values()}
         return True
 
     @classmethod
@@ -260,11 +258,18 @@ class Discovery:
             return
         if placed:
             cls.entries = b""  # (into the grid with the next read)
-        cls.icons, cls.cells, cls.read_ok = icons, cls.fixed_cells, True
+        cls.icons, cls.read_ok = icons, True
+        cls.cells = {_cell(i["x"], i["y"], CELL) for i in icons}
 
     @classmethod
     def covers(cls, icon: dict[str, Any]) -> bool:
-        """A saved ECHO map icon that is one of this provider's entries (drawn live instead)."""
+        """
+        A saved ECHO map icon that one of this provider's icons is drawn on instead. Only a drawn one:
+        an entry of a place you come back to is back in the list at once but gets its icon seconds
+        later (Cowbell_P, after a fast travel: vending machines 2 s, the bank 7 s, lost loot 22 s),
+        and its saved icon, on the same spot, fills in until then. The caller only asks about icons
+        within the last read's range.
+        """
         cx, cy = _cell(icon["x"], icon["y"], CELL)
         return any((cx + dx, cy + dy) in cls.cells for dx in (-1, 0, 1) for dy in (-1, 0, 1))
 
@@ -276,6 +281,6 @@ class Discovery:
     @classmethod
     def clear(cls) -> None:
         cls.provider = WeakPointer()
-        cls.entries, cls.places, cls.buckets, cls.others, cls.fixed_cells = b"", {}, {}, [], set()
+        cls.entries, cls.places, cls.buckets, cls.others = b"", {}, {}, []
         cls._none()
         cls.next_read = 0.0
