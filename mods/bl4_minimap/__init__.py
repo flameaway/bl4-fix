@@ -30,8 +30,8 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
-from . import breadcrumbs, discovery, fog, frametick, gamekeys, health, loot, mapdata, mapwaypoints, markers, objectives, page, scene, services, tiles, uilink
-from .widget import DOT_TEXTURE, EDGE_LAYER, MARKER_LOOKS, OVERSCAN, Minimap
+from . import breadcrumbs, discovery, fog, frametick, gamekeys, health, loot, mapdata, mapwaypoints, markers, objectives, page, scene, services, spread, tiles, uilink
+from .widget import DOT_TEXTURE, EDGE_LAYER, MARKER_LOOKS, OVERSCAN, RING_WIDTH, Minimap
 
 __version__ = "0.1.1"
 __version_info__ = (0, 1, 1)
@@ -196,6 +196,17 @@ vertical_option = BoolOption(
     True,
     description="Like the compass: a small arrow on markers that are well above or below you.",
 )
+spread_option = BoolOption(
+    "Spread out stacked icons",
+    False,
+    description=(
+        "Icons that would sit on top of each other are moved apart so none overlap, each with a thin"
+        " line back to where it really is, like the ECHO map does when you hover a stack of icons."
+        " Enemies and teammates stay where they are."
+    ),
+)
+# Markers that spread with the map's icons (they stand still); enemies and teammates move about
+SPREAD_KINDS = frozenset(("objective", "waypoint", "event", "legendary", "pearl"))
 square_option = BoolOption(
     "Square minimap",
     False,
@@ -415,6 +426,11 @@ class State:
     page_pawn = WeakPointer()  # the pawn the last whole pass sampled (_page_sample, the frames between)
     page_last: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # (x, y, z, yaw) last sent
     page_tiles_rev = -1  # tiles.Tiles.page_rev the page's tile list was made from
+    # Widget mode, "Spread out stacked icons": the spots laid out, for which (range, half-size, icon
+    # scale), and the groups that spread: (spot, world x, y, moved x, y, base size, edge) each
+    spread_spots: list[tuple[float, float, float, str]] = []  # noqa: RUF012
+    spread_zoom: tuple[float, ...] = ()
+    spread_groups: list[list[tuple[Any, ...]]] = []  # noqa: RUF012
 
 
 def _north_yaw(pc: UObject) -> float:
@@ -827,6 +843,64 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
         breadcrumbs.Breadcrumbs.preload(pc, _world_name(world))
 
 
+def _spread_places(update: bool, cx: float, cy: float, yaw: float, radius: float,
+                   square: bool) -> dict[int, tuple[float, float]]:  # fmt: skip
+    """
+    Widget mode, "Spread out stacked icons": where the moved icons and markers go (-1..1 of the
+    half-size; keyed by their place in State.icons, then among the spreading markers of
+    State.markers), and their lines (Minimap.set_leaders). Laid out again (spread.layout) only when
+    they or the zoom changed: looked at when an update brought new ones (`update`), not each frame
+    you move or turn. Each frame only the groups that spread are projected (ui/minimap.js: spreadPlace).
+    """
+    half, scale = Minimap.size / 2, Minimap.icon_scale
+    if half <= 0:
+        return {}
+    zoom = (radius, half, scale)
+    if update or zoom != State.spread_zoom:
+        foot = spread.FOOTPRINT / 2 * scale * radius / half  # world units per UI unit of base size
+        spots = [(i["x"], i["y"], ICON_SIZE * foot, i["texture"]) for i in State.icons]
+        spots += [(m.x, m.y, MARKER_LOOKS[m.kind][1] * foot, m.texture or m.kind)
+                  for m in State.markers if m.kind in SPREAD_KINDS]  # fmt: skip
+        if spots != State.spread_spots or zoom != State.spread_zoom:
+            State.spread_spots, State.spread_zoom = spots, zoom
+            offsets, groups = spread.layout(spots)
+            State.spread_groups = []
+            for group in groups:
+                members = []
+                for k in group:
+                    x, y, r, _ = spots[k]
+                    base = r / foot
+                    edge = max(0.0, half - base * scale / 2 - RING_WIDTH) / half  # (how far out it fits)
+                    members.append((k, x, y, x + offsets[k][0], y + offsets[k][1], base, edge))
+                State.spread_groups.append(members)
+    # markers.project, with the turn worked out once
+    kc, ks = math.cos(math.radians(yaw)) / radius, math.sin(math.radians(yaw)) / radius
+    moved: dict[int, tuple[float, float]] = {}
+    lines = []
+    for group in State.spread_groups:
+        points, shown, out = [], [], False
+        for k, x, y, mx, my, base, edge in group:
+            dx, dy = x - cx, y - cy
+            tu, tv = -dx * ks + dy * kc, -(dx * kc + dy * ks)
+            if (max(abs(tu), abs(tv)) if square else tu * tu + tv * tv) > 1.0:
+                continue  # (not shown)
+            dx, dy = mx - cx, my - cy
+            u, v = -dx * ks + dy * kc, -(dx * kc + dy * ks)
+            out = out or (max(abs(u), abs(v)) > edge if square else u * u + v * v > edge * edge)
+            points.append((u, v, edge))
+            shown.append((k, tu, tv, base))
+        if not points:
+            continue
+        tx, ty = spread.fit(points, square=square) if out else (0.0, 0.0)
+        for (u, v, _), (k, tu, tv, base) in zip(points, shown, strict=True):
+            if not out and u == tu and v == tv:
+                continue  # (the one left on its spot: placed as usual, no line)
+            moved[k] = (u + tx, v + ty)
+            lines.append((u + tx, v + ty, tu, tv, base))
+    Minimap.set_leaders(lines)
+    return moved
+
+
 def _frame(pc: UObject, full: bool, slow: bool) -> None:
     """
     Every frame: move and turn the picture and the markers. `full`: also look up the moving markers
@@ -1021,13 +1095,21 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
             route_fixed.append(fixed)
     Minimap.set_turned("route", route_items, route_fixed, north - map_yaw,
                        markers.offset(ref[0], ref[1], cx, cy, map_yaw, radius))  # fmt: skip
+    moved: dict[int, tuple[float, float]] = {}
+    if spread_option.value:
+        moved = _spread_places(full or slow, cx, cy, map_yaw, radius, square)
+    else:
+        State.spread_zoom = ()  # (laid out again when it's back on)
+        if Minimap.leaders:
+            Minimap.set_leaders([])
     icon_items = []
-    for icon in State.icons:
-        where = place(icon["x"], icon["y"])
+    for k, icon in enumerate(State.icons):
+        where = moved.get(k) or place(icon["x"], icon["y"])
         if where is not None:
             icon_items.append((icon["texture"], ICON_SIZE, (1, 1, 1, 1), where[0], where[1], vertical(icon.get("z"))))
     Minimap.set_layer("icon", icon_items)
     marker_items, edge_items = [], []
+    rank = len(State.icons)  # (the spreading markers' places in the layout)
     for marker in State.markers:
         path, base, tint = MARKER_LOOKS[marker.kind]
         texture = marker.texture
@@ -1036,6 +1118,9 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
             if marker.kind == markers.FRIEND_CLASS:
                 path, base, tint = MARKER_LOOKS[markers.FRIEND]
         where = place(marker.x, marker.y)
+        if marker.kind in SPREAD_KINDS:
+            where = moved.get(rank, where)
+            rank += 1
         items = marker_items
         if where is None and marker.clamp:
             # Out of range: on the ring itself, so it doesn't look close
@@ -1180,7 +1265,7 @@ def _page_frame(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bo
             "size": float(size_option.value), "mx": float(margin_x_option.value), "my": float(margin_y_option.value),
             "square": bool(square_option.value), "rotate": bool(rotate_option.value),
             "north": bool(north_option.value), "icon": icon_size_option.value / 100, "ui": State.ui,
-            "radius": radius, "nyaw": north,
+            "radius": radius, "nyaw": north, "spread": bool(spread_option.value),
         })  # fmt: skip
     if not (full or slow):
         return
@@ -1197,6 +1282,7 @@ def _page_frame(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bo
             items.append([
                 page.art_url(texture or path), base, "" if tint == (1, 1, 1, 1) else page.css_color(tint),
                 round(marker.x), round(marker.y), _vertical(marker.z, lz), 1 if marker.clamp else 0,
+                1 if marker.kind in SPREAD_KINDS else 0,
             ])  # fmt: skip
         page.set_section("fast", items)
     if slow:
@@ -1299,6 +1385,7 @@ def _enable() -> None:
     State.teleport_since = 0.0
     State.hide_next, State.hide_cue, State.paused, State.hidden = 0.0, (), False, False
     State.giver_key = ()
+    State.spread_zoom = ()
     State.givers = []
     State.covered = set()
     Keys.was_down.clear()
@@ -1328,7 +1415,7 @@ mod = build_mod(
     options=[
         toggle_key, zoom_in_key, zoom_out_key, size_option, range_option, icon_size_option, icons_option, route_option, contracts_option,
         rifts_option, loot_option,
-        vertical_option, square_option, rotate_option, north_option, rate_option, fog_option, fog_strength_option,
+        vertical_option, spread_option, square_option, rotate_option, north_option, rate_option, fog_option, fog_strength_option,
         margin_x_option, margin_y_option, page_option, saved_on_option,
     ],
     hooks=[on_frame, on_teleport],

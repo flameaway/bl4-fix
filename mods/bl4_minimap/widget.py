@@ -28,7 +28,7 @@ from typing import Any
 import unrealsdk
 from unrealsdk.unreal import IGNORE_STRUCT, UObject, WeakPointer, WrappedStruct
 
-from . import scene
+from . import scene, spread
 
 Z_ORDER = -5  # under the game's menus
 COLLAPSED, HIT_TEST_INVISIBLE = 1, 3
@@ -90,7 +90,13 @@ MARKER_LOOKS = {
     "legendary": (_DISCOVERY + "ico_misc_legendaries.ico_misc_legendaries", 34.0, (1, 1, 1, 1)),
     "pearl": ("/Game/DLC/Common/uiresources/dlc_rarity_pips/assets/ico_misc_pearl.ico_misc_pearl", 34.0, (1, 1, 1, 1)),
 }
-LAYERS = ("route", "icon", "marker")  # bottom to top, under the arrow
+LAYERS = ("route", "leader", "icon", "marker")  # bottom to top, under the arrow
+# "Spread out stacked icons": a moved icon's line back to a dot on its true spot (set_leaders), in
+# the ring's blue. The line is an image with no texture (a plain box), turned.
+LEADER_LAYER = "leader"
+LEADER_WIDTH = 2.0  # UI units
+LEADER_DOT = 8.0  # UI units at 100% icon size
+LEADER_COLOR = RING_COLOR
 EDGE_LAYER = "edge"  # out-of-range markers, on the ring (over everything, the "N" included)
 # Under the route layer: the route's dots well inside the rim, placed once in a fixed frame and
 # moved and turned all together with the layer's render transform (set_turned)
@@ -204,6 +210,7 @@ class Minimap:
     turned_items: tuple[Any, ...] = ()  # (icon scale, items) the turned layer was filled with
     image_angle = 0.0  # the round map image's own turn
     builds = 0  # widgets built so far (a new one has empty pools: everything must be placed again)
+    leaders = 0  # lines set_leaders shows
     north_set: tuple[Any, ...] = ()  # the north badge box's slot SetPosition
     krl: Any = None  # KismetRenderingLibrary's default object
     # set_view's draw arguments that don't change from one frame to the next
@@ -399,7 +406,7 @@ class Minimap:
         while len(pool) <= index:
             image = _new("/Script/UMG.Image", cls.widget().WidgetTree)
             cls.layers[layer].AddChild(image)
-            texture = cls._texture(path)
+            texture = cls._texture(path) if path else None  # (no path: a plain box, set_leaders' lines)
             if texture is not None:
                 image.SetBrushFromTexture(texture, False)
             _place(image, (0.5, 0.5), (0.5, 0.5), (0, 0), (base, base))
@@ -483,6 +490,43 @@ class Minimap:
                 if entry.shown:
                     entry.image.SetVisibility(COLLAPSED)
                     entry.shown = False
+
+    @classmethod
+    def set_leaders(cls, lines: list[tuple[float, float, float, float, float]]) -> None:
+        """
+        "Spread out stacked icons": for each moved icon (x, y, true x, true y, base size; -1..1 of
+        the half-size like set_layer's items), a thin line from its edge back to a dot on its true
+        spot. Lines and dots are pooled like icons; unchanged ones cost no call.
+        """
+        if cls.widget() is None:
+            return
+        half, step, scale = cls.size / 2, cls.step, cls.icon_scale
+        dot = LEADER_DOT * scale
+        edge = max(0.0, half - dot / 2 - RING_WIDTH)  # the dot pulled in to fit, like set_layer's icons
+        n = 0
+        for x, y, tx, ty, base in lines:
+            px, py, qx, qy = x * half, y * half, tx * half, ty * half
+            if cls.square:
+                qx, qy = max(-edge, min(edge, qx)), max(-edge, min(edge, qy))
+            else:
+                d = (qx * qx + qy * qy) ** 0.5
+                if d > edge:
+                    qx, qy = qx * edge / d, qy * edge / d
+            dx, dy = qx - px, qy - py
+            d = (dx * dx + dy * dy) ** 0.5
+            start = base * scale / 2 * spread.FOOTPRINT
+            if d <= start:
+                continue  # (its true spot is under it)
+            sx, sy = px + dx / d * start, py + dy / d * start
+            mid = (round((sx + qx) / 2 / step) * step, round((sy + qy) / 2 / step) * step)
+            angle = round(math.degrees(math.atan2(dy, dx)), 1)
+            cls._put(LEADER_LAYER, "", n, LEADER_WIDTH, (round(d - start, 1), LEADER_WIDTH), LEADER_COLOR, mid, angle)
+            cls._put(LEADER_LAYER, DOT_TEXTURE, n, LEADER_DOT, (dot, dot), LEADER_COLOR,
+                     (round(qx / step) * step, round(qy / step) * step))  # fmt: skip
+            n += 1
+        for path in ("", DOT_TEXTURE):
+            cls._hide_pool(cls.pools.get((LEADER_LAYER, path), [])[n:])
+        cls.leaders = n
 
     @classmethod
     def set_turned(cls, layer: str, items: list[Item], fixed: list[tuple[float, float]], angle: float,
@@ -810,6 +854,7 @@ class Minimap:
         cls.layers = {}
         cls.pools = {}
         cls.used_by = {}
+        cls.leaders = 0
         cls.view = ()
         cls.turned, cls.turned_items = (0.0, 0.0, 0.0), ()
         cls.image_angle = 0.0
