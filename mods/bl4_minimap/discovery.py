@@ -20,10 +20,12 @@ The layout (this build; the vtables are checked, so a patch that moves them turn
 What the map shows, checked in Cowbell_P against a snapshot of the map taken the same day: the
 entries that have a presentation with an icon, exactly (5 of 129; none of the 116 not yet found,
 none of the 4 found ones with an empty icon). An icon of the map's saved copy that came from this
-provider sits on its entry's position (within 0.5 m in Cowbell_P), or near it with the same picture:
-the map moves icons that stand close together apart (World_P, 2026-11-05: three vending machines
-within 7 m, saved 1.3 to 5.9 m from their entries, so the minimap drew Munitions and Resupply
-twice). Either way `covers` drops it for the live one.
+provider sits on its entry's position (within 0.5 m in Cowbell_P), or away from it when the map moved
+icons that stand close together apart (Cowbell_P, 2026-11-05: the bank, respec station, golden chest
+and firmware station saved 17 to 38 m from their entries, a point of interest 62 m; so no distance
+says which saved icon is which entry). What does: every saved icon with a picture the provider uses
+is one of its entries (Cowbell_P: per picture, as many saved icons as live ones, or fewer: the copy
+is older). `covers` drops those for the live ones.
 """
 
 from __future__ import annotations
@@ -53,9 +55,7 @@ ICON_PACKAGE, ICON_ASSET = 0x20, 0x28
 DATA_VTABLE = 0xB127A60
 DATA_SIZE = 0xD0
 DATA_LOCATION = 0xB8
-SAME_ICON = 100.0  # world units (1 m): a saved icon this close to an entry is that entry's
-CELL = SAME_ICON  # grid for `covers`
-SAME_KIND = 1000.0  # world units (10 m): a saved icon this close to an entry with its picture is that entry's
+CELL = 100.0  # world units (1 m): a saved icon this close to an entry is that entry's (grid for `covers`)
 BUCKET = 10000.0  # world units (100 m): grid of the fixed entries, so a read only visits those in range
 READ_SLACK = 5000.0  # world units (50 m) read beyond the shown range: what comes into it next
 
@@ -68,8 +68,8 @@ def _cell(x: float, y: float, size: float) -> tuple[int, int]:
 
 
 def _kind(texture: str) -> str:
-    """An icon's picture, the same found or not (ico_collectables_echo_log[_completed])."""
-    return texture.rsplit(".", 1)[-1].lower().removesuffix("_completed")
+    """An icon's picture, the same found or not (ico_collectables_echo_log[_completed], ..._dahl_cache[_complete])."""
+    return texture.rsplit(".", 1)[-1].lower().removesuffix("_completed").removesuffix("_complete")
 
 
 class Discovery:
@@ -86,13 +86,13 @@ class Discovery:
     others: list[Key] = []  # noqa: RUF012  # entries not placed yet (their actor isn't loaded): tried each read
     fixed_cells: set[tuple[int, int]] = set()  # noqa: RUF012  # `cells` of the grid
     cells: set[tuple[int, int]] = set()  # noqa: RUF012  # CELL squares holding any entry (found or not)
-    kinds: set[tuple[str, int, int]] = set()  # noqa: RUF012  # (picture, SAME_KIND square) of each icon read
+    pictures: set[str] = set()  # noqa: RUF012  # `_kind` of every icon of the level's entries seen so far
     icons: list[dict[str, Any]] = []  # noqa: RUF012  # what the map shows in range: {"x", "y", "z", "texture"}
     read_ok = False  # the last read went through (icons and cells are this level's, not just empty)
 
     @classmethod
     def _none(cls) -> None:
-        cls.icons, cls.cells, cls.kinds, cls.read_ok = [], set(), set(), False
+        cls.icons, cls.cells, cls.read_ok = [], set(), False
 
     @classmethod
     def _fail(cls, why: str) -> None:
@@ -180,6 +180,9 @@ class Discovery:
                 if cls.broken:
                     return False
                 place = cls._fixed(obj) if obj is not None else None
+                icon = cls._icon(obj, (0.0, 0.0, 0.0)) if obj is not None else None
+                if icon is not None:
+                    cls.pictures.add(_kind(icon["texture"]))  # (read once per entry: the rest come with reads)
             if place is None:
                 others.append(key)
                 continue
@@ -268,19 +271,16 @@ class Discovery:
         if placed:
             cls.entries = b""  # (into the grid with the next read)
         cls.icons, cls.cells, cls.read_ok = icons, cls.fixed_cells, True
-        cls.kinds = {(_kind(i["texture"]), *_cell(i["x"], i["y"], SAME_KIND)) for i in icons}
+        cls.pictures.update(_kind(i["texture"]) for i in icons)
 
     @classmethod
     def covers(cls, icon: dict[str, Any]) -> bool:
-        """A saved ECHO map icon that is one of this provider's entries (drawn live instead): on an
-        entry, or near one with the same picture. Only icons within the last read's range are known
-        by picture; the caller asks about those."""
-        cx, cy = _cell(icon["x"], icon["y"], CELL)
-        if any((cx + dx, cy + dy) in cls.cells for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+        """A saved ECHO map icon that is one of this provider's entries (drawn live instead): one with
+        a picture the provider uses, or one standing on an entry."""
+        if _kind(icon["texture"]) in cls.pictures:
             return True
-        kind = _kind(icon["texture"])
-        kx, ky = _cell(icon["x"], icon["y"], SAME_KIND)
-        return any((kind, kx + dx, ky + dy) in cls.kinds for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+        cx, cy = _cell(icon["x"], icon["y"], CELL)
+        return any((cx + dx, cy + dy) in cls.cells for dx in (-1, 0, 1) for dy in (-1, 0, 1))
 
     @classmethod
     def near(cls, x: float, y: float, reach: float) -> list[dict[str, Any]]:
@@ -291,5 +291,6 @@ class Discovery:
     def clear(cls) -> None:
         cls.provider = WeakPointer()
         cls.entries, cls.places, cls.buckets, cls.others, cls.fixed_cells = b"", {}, {}, [], set()
+        cls.pictures = set()
         cls._none()
         cls.next_read = 0.0
