@@ -389,7 +389,8 @@ class State:
     ui_next = 0.0  # when the UI scale is read again (UI_SCALE_S)
     shown_content: tuple[Any, ...] = ()  # (markers, icons, route, route colour) last placed
     tiles_next = 0.0  # when tick_tiles is due again (TILES_GAP_S / the tile loader's next action)
-    fog_next = 0.0  # page mode: when the live fog grid is read again (PAGE_FOG_S)
+    fog_next = 0.0  # when the live fog grid is read again (FOG_S)
+    fog_drawn: tuple[Any, ...] | None = None  # widget mode: (grid, strength, square) its fog texture shows
     teleport_since = 0.0  # when the game said a teleport (fast travel portal) starts; 0: none
     cursor_since = 0.0  # when the mouse cursor came up; 0: it's hidden
     hide_next = 0.0  # when the hide checks are due again (HIDE_CHECK_S)
@@ -875,14 +876,12 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
         State.hidden_until = now + HIDDEN_POLL_S
         _hide_all(pc)
         return
-    # Before the pause check: the game pauses while the map is open, and that's when we copy its fog
+    # Before the pause check: the game pauses while the map is open, and that's when we read where
+    # its fog goes
     if slow:
         mapdata.MapData.sync(pc, _world_name(world))
         if fog_option.value:
-            fog.Fog.sync(pc, _world_name(world), fog_strength_option.value / 100, paused)
-            scene.Scene.show_also(fog.Fog.actor())
-        else:
-            scene.Scene.show_also(None)
+            fog.Fog.sync(pc, _world_name(world), paused)
     if mapdata.MapData.job is not None:
         mapdata.MapData.run()  # a read of the open ECHO map, a piece a frame (behind the paused menu)
     if breadcrumbs.Breadcrumbs.job is not None:
@@ -921,9 +920,8 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
         dx, dy = lx - shot[0], ly - shot[1]
         up, right = dx * c + dy * s, -dx * s + dy * c
     room = picture - view * (1 + REFILM_MARGIN)  # how far the view can slide before it runs off
-    if scene.Scene.fresh or fog.Fog.changed:
-        scene.Scene.invalidate()  # the cached pictures were filmed with the old fog
-        fog.Fog.changed = False
+    if scene.Scene.fresh:
+        scene.Scene.invalidate()  # (a new map)
     if (
         shot is None or shot[3] != picture or shot[2] != north or scene.Scene.needs_film(alive=slow)
         or abs(up) > room or abs(right) > room
@@ -941,8 +939,7 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
     # The loader does at most one action per ACTION_GAP_S, so it's asked when that's due, else every
     # TILES_GAP_S for its other checks (it cost ~50-60 us every frame, game 25456)
     if now >= State.tiles_next or filmed:
-        if scene.Scene.tick_tiles(pc, lx, ly, north, picture, room, fog_on=bool(fog_option.value),
-                                  strength=fog_strength_option.value / 100, paused=False):  # fmt: skip
+        if scene.Scene.tick_tiles(pc, lx, ly, north, picture, room, paused=False):
             shot = scene.Scene.shot
             dx, dy = lx - shot[0], ly - shot[1]
             up, right = dx * c + dy * s, -dx * s + dy * c
@@ -959,6 +956,9 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
     margin = (float(margin_x_option.value) / ui, float(margin_y_option.value) / ui)
     Minimap.show(pc, True, float(size_option.value) / ui, margin, yaw - map_yaw, icon_size_option.value / 100,
                  square=square, pixel=1 / ui)  # fmt: skip
+    if now >= State.fog_next:
+        State.fog_next = now + FOG_S
+        _widget_fog(pc, world, paused)  # (after show: a new widget has no fog texture yet)
     mu, mv = Minimap.snap(0.5 + right / (2 * picture), 0.5 - up / (2 * picture), radius / (2 * picture))
     Minimap.set_view(mu, mv, radius / (2 * picture), turn, force=filmed or scene.Scene.settling(), changed=filmed)
     # The point the map is drawn around: you, moved to the display pixel the map moved by. Icons,
@@ -1052,7 +1052,7 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
 # Tiles kept around you in page mode, in ranges: the turned square view reaches sqrt(2) ranges into
 # its corners, plus a little to have the next tile before it shows
 PAGE_TILE_REACH = 1.6
-PAGE_FOG_S = 0.5  # page mode: how often the live fog grid is read for the page (16 KB, one memory read)
+FOG_S = 0.5  # how often the live fog grid is read (16 KB, one memory read)
 
 
 def _hide_all(pc: UObject) -> None:
@@ -1079,6 +1079,7 @@ def _page_switch() -> None:
     State.view_key, State.shown_content = (), ()
     State.page_force, State.page_vis, State.page_tiles_rev = True, False, -1
     State.tiles_next = State.fog_next = 0.0
+    State.fog_drawn = None
 
 
 def _vertical(z: float | None, lz: float) -> int:
@@ -1112,6 +1113,38 @@ def _page_sample() -> None:
     page.set_sample(time.time(), lx, ly, lz, yaw, True)
 
 
+def _live_fog(world: UObject, paused: bool) -> tuple[bytes, tuple[float, ...]] | None:
+    """
+    Fog of war, live: the game's explored grid and the world square it covers (fog.py), drawn over
+    the map (both modes; the map is filmed without fog). Before, fog was filmed into the map: a
+    change showed once fog.py had written it (every 4 s), tiles.py had read it (2 s) and the tiles
+    under it had been filmed again (up to 2.5 s each).
+    """
+    name = _world_name(world)
+    key = fog.Fog.key
+    if not fog_option.value or fog.Fog.placement is None or key is None or key[1] != name.lower():
+        return None
+    return fog._Live.read(name, paused, fog.Fog.placement)  # noqa: SLF001
+
+
+def _widget_fog(pc: UObject, world: UObject, paused: bool) -> None:
+    """Widget mode: the live grid as the minimap's fog texture, made again only when it changed
+    (an in-memory PNG, ~0.25 ms, imported ~0.5 ms; the grid compare is a memcmp)."""
+    found = _live_fog(world, paused)
+    strength = fog_strength_option.value / 100
+    drawn = (found[0], strength, found[1]) if found is not None else None
+    if drawn == State.fog_drawn and (drawn is None or Minimap.fog() is not None):
+        return
+    State.fog_drawn = drawn
+    texture = None
+    if found is not None:
+        size = fog.MASK_SIZE
+        if Minimap.krl is None:
+            Minimap.krl = unrealsdk.find_class("KismetRenderingLibrary").ClassDefaultObject  # (never unloaded)
+        texture = Minimap.krl.ImportBufferAsTexture2D(pc, fog.layer_png(found[0], size, size, strength))[0]
+    Minimap.set_fog(texture, found[1] if texture is not None else None)
+
+
 def _page_frame(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, paused: bool, now: float,
                 me: tuple[float, float, float], yaw: float, north: float, radius: float) -> None:  # fmt: skip
     """
@@ -1127,21 +1160,12 @@ def _page_frame(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bo
         State.page_pawn = WeakPointer(pawn)
     page.set_sample(time.time(), lx, ly, lz, yaw, True)
     if now >= State.fog_next:
-        # Fog of war, live: the game's explored grid straight to the page, which lays it over the
-        # tiles (filmed without fog). Before, fog was filmed into the tiles: a change showed once
-        # fog.py had written it (every 4 s), tiles.py had read it (2 s) and the tiles under it had
-        # been filmed again (up to 2.5 s each).
-        State.fog_next = now + PAGE_FOG_S
-        found = None
-        name = _world_name(world)
-        if fog_option.value and fog.Fog.placement is not None and fog.Fog.key is not None and fog.Fog.key[1] == name.lower():
-            found = fog._Live.read(name, paused, fog.Fog.placement)  # noqa: SLF001
+        State.fog_next = now + FOG_S
+        found = _live_fog(world, paused)
         size = fog.MASK_SIZE
         page.set_fog(found[0] if found else None, size, size, fog_strength_option.value / 100, found[1] if found else None)
     if now >= State.tiles_next:
-        # (fog_on=False: page tiles are filmed without the fog plane; the page draws the live fog)
-        tiles.Tiles.page_tick(pc, lx, ly, radius * PAGE_TILE_REACH, north, fog_on=False,
-                              strength=fog_strength_option.value / 100, paused=False)  # fmt: skip
+        tiles.Tiles.page_tick(pc, lx, ly, radius * PAGE_TILE_REACH, north, paused=False)
         State.tiles_next = now + (TILES_IDLE_GAP_S if tiles.Tiles.idle else tiles.ACTION_GAP_S)
         page.Feed.folder = tiles.Tiles.folder
         if tiles.Tiles.page_rev != State.page_tiles_rev:
@@ -1270,6 +1294,7 @@ def _enable() -> None:
     State.viewport = WeakPointer()
     State.pc = WeakPointer()
     State.tiles_next = State.fog_next = 0.0
+    State.fog_drawn = None
     State.name_world, State.world_name, State.ui_next, State.shown_content = WeakPointer(), "", 0.0, ()
     State.teleport_since = 0.0
     State.hide_next, State.hide_cue, State.paused, State.hidden = 0.0, (), False, False
@@ -1285,8 +1310,7 @@ def _disable() -> None:
         page.unregister()
         State.page_on = State.page_vis = False
     Minimap.remove()
-    fog.Fog.destroy()
-    fog.Fog.key = None
+    fog.Fog.clear()
     scene.Scene.destroy()
     loot.Loot.clear()
     objectives.Objectives.clear()

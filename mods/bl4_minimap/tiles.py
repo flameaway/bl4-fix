@@ -9,17 +9,14 @@ put together from tiles with a few Canvas draws.
 
 - Tiles sit on a grid in the north-up frame (the same frame as the pictures). Tile (i, j) covers
   `up` in [i, i+1) * world and `right` in [j, j+1) * world (`Tiles.world`, per level).
-- A tile is filmed with the fog plane in it (the ECHO map's look; Canvas can't draw the fog
-  material with its transparency), and re-filmed while its texture detail streams in
-  (SETTLE_AT_S, measured: 6-8 captures over 2-3 s).
+- A tile is filmed without fog (the minimap draws the live fog over it: widget.py, the HUD
+  page), and re-filmed while its texture detail streams in (SETTLE_AT_S, measured: 6-8 captures
+  over 2-3 s).
 - Saved only while the game is paused (the export reads the target back from the GPU: a hitch),
-  per character, map, fog setting and north; wiped when the game's exe changes (a patch may change
+  per character, map and north; wiped when the game's exe changes (a patch may change
   the art).
 - Loaded ahead of the player: `ImportFileAsTexture2D` of a 512^2 PNG is ~5 ms on the game thread,
   so at most one load or capture every ACTION_GAP_S.
-- Fog of war: each tile remembers a digest of the fog mask under it (from the fog PNG fog.py saves
-  when the ECHO map is opened; the mask maps straight onto world X/Y, measured). When that PNG
-  changes, only tiles whose part of the mask changed are filmed again.
 
 Colour round trips (measured, byte-exact): a capture writes into a target with TargetGamma 1 (the
 ECHO map's bytes); its PNG imported (an sRGB texture) and drawn into a target with TargetGamma 2.2
@@ -32,7 +29,6 @@ references); Python keeps WeakPointers only.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import os
@@ -52,7 +48,6 @@ from unrealsdk.unreal import IGNORE_STRUCT, UObject, WeakPointer
 from . import scene
 
 FOLDER: Path = SETTINGS_DIR / "minimap_tiles"
-FOG_FOLDER: Path = SETTINGS_DIR / "minimap_fog"
 FORMAT = 2  # bump to drop every saved tile (2: tiles carry a MARGIN_PX border)
 TILE_PX = 512
 TILE_WORLD = 51200.0  # world units a tile stands for: 512 m (1 m a pixel), for art ~1 m a texel
@@ -70,7 +65,6 @@ LOAD_SLOTS = 12  # tiles loaded from disk
 SETTLE_AT_S = (0.15, 0.35, 0.6, 0.9, 1.3, 1.8, 2.5)  # captures after the first, while detail streams in
 ACTION_GAP_S = 0.05  # at most one tile load or capture per this
 SAVE_GAP_S = 0.25  # while paused: one tile export per this
-FOG_CHECK_S = 2.0  # how often to look whether fog.py saved a new mask
 CHAR_CHECK_S = 1.0  # how often the character's id is read again while a session is open
 # Blurry tiles: the map art sometimes doesn't stream in at all while a tile settles (World_P,
 # Cowbell_P and Vault_Mountains_P tiles were saved at the lowest mip after all 8 captures, and
@@ -88,7 +82,7 @@ RETRY_GAPS_S = (15.0, 60.0, 180.0)  # refilms of a blurry tile per visit, this l
 GAMMA_LOADED = 2.2
 BLEND_OPAQUE = 0
 # Both modes film tiles with TargetGamma 1 (the big map's own values, what the ECHO menu shows) into
-# the same folders (PAGE_SUFFIX on the fog key): the HUD page shows a PNG's bytes as they are, and
+# the same folders (PAGE_SUFFIX): the HUD page shows a PNG's bytes as they are, and
 # the UMG widget turns its picture into linear light first (widget.py). Until 0.1.11 the UMG tiles
 # were filmed with TargetGamma 1/2.2 into folders without the suffix (no longer read). Page mode
 # writes its tiles with the engine's async image writer (ImageWriteBlueprintLibrary.ExportToDisk:
@@ -98,6 +92,9 @@ BLEND_OPAQUE = 0
 # them while paused (_save_one).
 GAMMA_PAGE = 1.0
 PAGE_SUFFIX = "_g1"
+# Tiles are filmed without fog. Their folders keep the "nofog" part of the name they had when fog
+# could be filmed into tiles (0.1.12 and before), so tiles saved then are still used.
+NOFOG = "nofog"
 PAGE_FILM_SLOTS = 16
 PREVIEW_AFTER = 2  # settle captures before the preview export
 EXPORT_CHECK_S = 0.15  # how often a written PNG is looked at until its size holds
@@ -106,54 +103,6 @@ PNG_FORMAT = 0  # EDesiredImageFormat.PNG
 
 def _v2(x: float, y: float) -> Any:
     return unrealsdk.make_struct("Vector2D", X=x, Y=y)
-
-
-def _png_channel(path: Path) -> tuple[int, int, bytes]:
-    """The first channel of an 8-bit PNG (gray, RGB or RGBA): (width, height, w*h bytes).
-    Pure Python, for the 128x128 fog mask; run it on a worker (it yields between rows)."""
-    data = path.read_bytes()
-    pos, idat = 8, bytearray()
-    width = height = channels = 0
-    while pos < len(data):
-        length, kind = struct.unpack_from(">I4s", data, pos)
-        body = data[pos + 8:pos + 8 + length]
-        if kind == b"IHDR":
-            width, height, depth, color = struct.unpack_from(">IIBB", body)
-            if depth != 8:
-                raise ValueError(f"{depth}-bit PNG")
-            channels = {0: 1, 2: 3, 4: 2, 6: 4}[color]
-        elif kind == b"IDAT":
-            idat += body
-        pos += 12 + length
-    raw = zlib.decompress(bytes(idat))
-    stride = width * channels
-    prev = bytearray(stride)
-    out = bytearray(width * height)
-    for row in range(height):
-        start = row * (stride + 1)
-        kind, line = raw[start], bytearray(raw[start + 1:start + 1 + stride])
-        if kind == 1:
-            for i in range(channels, stride):
-                line[i] = (line[i] + line[i - channels]) & 0xFF
-        elif kind == 2:
-            for i in range(stride):
-                line[i] = (line[i] + prev[i]) & 0xFF
-        elif kind == 3:
-            for i in range(stride):
-                left = line[i - channels] if i >= channels else 0
-                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 0xFF
-        elif kind == 4:
-            for i in range(stride):
-                a = line[i - channels] if i >= channels else 0
-                b, c = prev[i], prev[i - channels] if i >= channels else 0
-                p = a + b - c
-                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
-                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 0xFF
-        out[row * width:(row + 1) * width] = line[0::channels]
-        prev = line
-        if row % 8 == 7:
-            time.sleep(0.001)  # let the game thread have the GIL (sleep(0) starves it)
-    return width, height, bytes(out)
 
 
 def _sharpness(path: Path) -> float | None:
@@ -245,16 +194,15 @@ class _Slot:
 
 
 class _Tile:
-    def __init__(self, key: tuple[int, int], slot: _Slot, digest: str):
+    def __init__(self, key: tuple[int, int], slot: _Slot):
         self.key = key
         self.slot = slot
-        self.digest = digest  # the fog mask under it when it was filmed
         self.settle: list[float] = []  # when to film it again
         self.saved = False
 
 
 class Tiles:
-    session: tuple | None = None  # (character, world, fog key, north, tile world)
+    session: tuple | None = None  # (character, world, north, tile world)
     world = TILE_WORLD  # world units a tile of this session stands for
     world_for: tuple[str, float] = ("", TILE_WORLD)  # (level, its tile world): `_tile_world`, once per level
     folder: Path | None = None
@@ -265,16 +213,9 @@ class Tiles:
     north = 0.0
     next_action = 0.0
     # The last tick found every wanted tile there and none still sharpening (the caller may then ask
-    # less often: nothing changes until you move a long way or the fog changes)
+    # less often: nothing changes until you move a long way)
     idle = False
     next_save = 0.0
-    next_fog_check = 0.0
-    # Fog mask (from fog.py's PNG): bytes of its first channel, its size and placement
-    mask: tuple[int, int, bytes] | None = None
-    mask_stamp: float | None = None
-    placement: dict[str, Any] | None = None
-    worker: threading.Thread | None = None
-    worker_result: tuple[float, tuple[int, int, bytes] | None, dict[str, Any] | None] | None = None
     # Sharpness checks (see SHARP_LOW): (folder, tile name) waiting / scored, on their own worker
     checker: threading.Thread | None = None
     check_queue: list[tuple[Path, str]] = []
@@ -308,16 +249,16 @@ class Tiles:
 
     @classmethod
     def _open(cls, session: tuple, *, page: bool) -> None:
-        """Switches to this character/world/fog/north: drops loaded tiles, reads its index."""
+        """Switches to this character/world/north: drops loaded tiles, reads its index."""
         cls.drop()
         cls.session = session
-        char, world, fog_key, north, tile_world = session
+        char, world, north, tile_world = session
         cls.page = page
         cls.versions, cls.fresh, cls.pending = {}, {}, {}
         cls.page_rev += 1
         cls.north, cls.world = north, tile_world
         size = "" if tile_world == TILE_WORLD else f"_t{round(tile_world / 100)}"
-        cls.folder = FOLDER / f"{char}_{world}_{fog_key}_n{round(north)}{size}"
+        cls.folder = FOLDER / f"{char}_{world}_{NOFOG}{PAGE_SUFFIX}_n{round(north)}{size}"
         cls.index = {"format": FORMAT, "exe": cls._exe_stamp(), "tiles": {}}
         path = cls.folder / "index.json"
         try:
@@ -330,9 +271,6 @@ class Tiles:
                     png.unlink(missing_ok=True)
         except (OSError, ValueError):
             pass
-        cls.mask = cls.placement = None
-        cls.mask_stamp = None
-        cls.next_fog_check = 0.0
         cls.check_queue, cls.checking, cls.low, cls.tries = [], set(), {}, {}
         cls.index.pop("detail", None)  # the old score (unfit for mostly-black tiles): judged again on load
         # Tiles still blurry from an earlier visit: filmed again once wanted (the art may stream now)
@@ -370,99 +308,6 @@ class Tiles:
         cls.page = False
         cls.versions, cls.fresh, cls.pending = {}, {}, {}
         cls.page_rev += 1
-
-    # endregion
-    # region Fog digests
-
-    @classmethod
-    def _check_fog(cls, char: str, world: str, fog_on: bool) -> None:
-        """Starts reading fog.py's saved mask when it changed; applies a finished read."""
-        if cls.worker_result is not None:
-            stamp, mask, placement = cls.worker_result
-            cls.worker_result = None
-            cls.mask, cls.placement, cls.mask_stamp = mask, placement, stamp
-            cls._refresh_digests()
-        if not fog_on or cls.worker is not None:
-            return
-        now = time.monotonic()
-        if now < cls.next_fog_check:
-            return
-        cls.next_fog_check = now + FOG_CHECK_S
-        png = FOG_FOLDER / f"{char}_{world}.png"
-        try:
-            stamp = png.stat().st_mtime
-        except OSError:
-            return
-        if stamp == cls.mask_stamp:
-            return
-
-        def read() -> None:
-            try:
-                mask = _png_channel(png)
-                placement = json.loads(png.with_suffix(".json").read_text(encoding="utf-8"))
-                cls.worker_result = (stamp, mask, placement)
-            except Exception as ex:  # noqa: BLE001
-                scene.log(f"tiles: couldn't read the fog mask: {ex!r}")
-                cls.worker_result = (stamp, None, None)
-            finally:
-                cls.worker = None
-
-        cls.worker = threading.Thread(target=read, name="bl4_minimap tiles fog", daemon=True)
-        cls.worker.start()
-
-    @classmethod
-    def digest(cls, key: tuple[int, int]) -> str:
-        """The fog mask under tile `key` (plus a texel around it): what it was filmed with."""
-        if cls.mask is None or cls.placement is None:
-            return "-"
-        width, height, data = cls.mask
-        c, s = math.cos(math.radians(cls.north)), math.sin(math.radians(cls.north))
-        xs, ys = [], []
-        for du in (0, 1):
-            for dr in (0, 1):
-                up, right = (key[0] + du) * cls.world, (key[1] + dr) * cls.world
-                xs.append(up * c - right * s)
-                ys.append(up * s + right * c)
-        span = 100 * cls.placement["scale"][0]
-        loc = cls.placement["loc"]
-
-        def texel(world: float, centre: float, size: int) -> float:
-            return ((world * scene.MAP_SCALE - centre) / span + 0.5) * size
-
-        c0 = max(0, int(texel(min(xs), loc[0], width)) - 1)
-        c1 = min(width, int(texel(max(xs), loc[0], width)) + 2)
-        r0 = max(0, int(texel(min(ys), loc[1], height)) - 1)
-        r1 = min(height, int(texel(max(ys), loc[1], height)) + 2)
-        if c0 >= c1 or r0 >= r1:
-            return "out"
-        h = hashlib.blake2s(digest_size=8)
-        for row in range(r0, r1):
-            h.update(data[row * width + c0:row * width + c1])
-        return h.hexdigest()
-
-    @classmethod
-    def _refresh_digests(cls) -> None:
-        """New fog mask: tiles whose part of it changed are dropped (filmed again when needed)."""
-        stale = 0
-        for name, old in list(cls.index["tiles"].items()):
-            i, j = (int(n) for n in name.split("_"))
-            if cls.digest((i, j)) != old:
-                del cls.index["tiles"][name]
-                cls.index.get("sharp", {}).pop(name, None)
-                cls.low.pop(name, None)
-                if cls.folder is not None:
-                    (cls.folder / f"{name}.png").unlink(missing_ok=True)
-                stale += 1
-        for key, tile in list(cls.tiles.items()):
-            if tile.digest != cls.digest(key):
-                tile.slot.key = None
-                del cls.tiles[key]
-                stale += 1
-        if stale:
-            cls._write_index()
-            cls.version += 1
-            cls.page_rev += 1
-            scene.log(f"tiles: fog changed under {stale} tile(s)")
 
     # endregion
     # region Sharpness checks
@@ -571,13 +416,7 @@ class Tiles:
         rot = unrealsdk.make_struct("Rotator", Pitch=-90.0, Yaw=cls.north, Roll=0.0)
         capture.K2_SetActorLocationAndRotation(where, rot, False, unrealsdk.make_struct("HitResult"), True)
         comp = capture.CaptureComponent2D
-        # The fog plane may have come or gone. Page mode films without it: the page lays the live
-        # fog over the tiles itself (page.set_fog), so tiles never need filming again for fog.
-        shown = scene.Scene.shown_actors()
-        if cls.page:
-            fog_plane = scene.Scene.extra()
-            shown = [a for a in shown if a is not fog_plane]
-        comp.ShowOnlyActors = shown
+        comp.ShowOnlyActors = scene.Scene.shown_actors()
         comp.OrthoWidth = cls.world * TILE_PX / (TILE_PX - 2 * MARGIN_PX) * scene.MAP_SCALE
         comp.CaptureScene()
         tile.slot.used = time.monotonic()
@@ -600,7 +439,7 @@ class Tiles:
         canvas.K2_DrawTexture(texture, _v2(0, 0), _v2(TILE_PX, TILE_PX), _v2(0, 0), _v2(1, 1), white, BLEND_OPAQUE,
                               0.0, _v2(0.5, 0.5))  # fmt: skip
         krl.EndDrawCanvasToRenderTarget(pc, ctx)
-        tile = _Tile(key, slot, cls.index["tiles"][f"{key[0]}_{key[1]}"])
+        tile = _Tile(key, slot)
         tile.saved = True
         slot.key, slot.used = key, time.monotonic()
         cls.tiles[key] = tile
@@ -627,7 +466,7 @@ class Tiles:
         krl = unrealsdk.find_class("KismetRenderingLibrary").ClassDefaultObject
         krl.ExportRenderTarget(pc, target, str(cls.folder), f"{name}.png")
         tile.saved = True
-        cls.index["tiles"][name] = tile.digest
+        cls.index["tiles"][name] = "-"  # (where tiles once kept the fog digest they were filmed with)
         cls.index.get("sharp", {}).pop(name, None)
         cls._write_index()
         cls._queue_check(name)
@@ -689,7 +528,7 @@ class Tiles:
     @classmethod
     def tick(
         cls, pc: UObject, x: float, y: float, picture: float, room: float, north: float, *,
-        fog_on: bool, strength: float, paused: bool,
+        paused: bool,
     ) -> None:  # fmt: skip
         """Every frame: keeps the tiles around the player loaded or filmed, one step at a time."""
         world = scene.Scene.world_name
@@ -707,11 +546,9 @@ class Tiles:
             return
         # The same tiles as page mode (filmed with TargetGamma 1: the ECHO map's own values; the
         # widget linearizes its picture for UMG, widget.py)
-        fog_key = (f"fog{round(strength * 100)}" if fog_on else "nofog") + PAGE_SUFFIX
-        session = (char, world.lower(), fog_key, round(north, 1), tile_world)
+        session = (char, world.lower(), round(north, 1), tile_world)
         if session != cls.session or cls.page:
             cls._open(session, page=False)
-        cls._check_fog(char, world.lower(), fog_on)
         if cls.check_results:
             cls._apply_checks()
         if paused:
@@ -726,10 +563,6 @@ class Tiles:
                 cls._film(tile)
                 cls.next_action = now + ACTION_GAP_S
                 return
-        if cls.worker is not None:
-            return  # the fog mask is being read: digests aren't known yet
-        if fog_on and scene.Scene.extra() is None and cls.mask_stamp is not None:
-            return  # there's a saved fog mask but fog.py hasn't put its plane up yet: tiles would lack it
         wanted = cls._cover(x, y, picture + 1.5 * room, north)
         wanted_set = set(wanted)
         # Every wanted tile there (the usual case): look again after ACTION_GAP_S, not every frame
@@ -742,14 +575,14 @@ class Tiles:
                 continue
             name = f"{key[0]}_{key[1]}"
             cls.next_action = now + ACTION_GAP_S
-            if name in cls.index["tiles"] and cls.index["tiles"][name] == cls.digest(key):
+            if name in cls.index["tiles"]:
                 slot = cls._slot(pc, "load", wanted_set)
                 if slot is not None and cls._load(pc, key, slot):
                     return
             slot = cls._slot(pc, "film", wanted_set)
             if slot is None:
                 return  # every film slot holds an unsaved tile that's still needed
-            tile = _Tile(key, slot, cls.digest(key))
+            tile = _Tile(key, slot)
             slot.key = key
             cls.tiles[key] = tile
             cls._film(tile)
@@ -780,7 +613,7 @@ class Tiles:
                 tile.slot.key = None  # the loaded copy's slot is free again
             del cls.low[name]
             cls.tries[name] = cls.tries.get(name, 0) + 1
-            fresh = _Tile(key, slot, cls.digest(key))
+            fresh = _Tile(key, slot)
             slot.key = key
             cls.tiles[key] = fresh
             cls._film(fresh)
@@ -820,7 +653,7 @@ class Tiles:
     @classmethod
     def page_tick(
         cls, pc: UObject, x: float, y: float, half: float, north: float, *,
-        fog_on: bool, strength: float, paused: bool,
+        paused: bool,
     ) -> None:  # fmt: skip
         """
         Page mode, every frame (the minimap drawn in the HUD page): films the tiles a square of
@@ -839,11 +672,9 @@ class Tiles:
             if cls.session is not None:
                 cls.drop()
             return
-        fog_key = (f"fog{round(strength * 100)}" if fog_on else "nofog") + PAGE_SUFFIX
-        session = (char, world.lower(), fog_key, round(north, 1), tile_world)
+        session = (char, world.lower(), round(north, 1), tile_world)
         if session != cls.session or not cls.page:
             cls._open(session, page=True)
-        cls._check_fog(char, world.lower(), fog_on)
         if cls.check_results:
             cls._apply_checks()
         if cls.pending:
@@ -862,10 +693,6 @@ class Tiles:
                     cls._export(tile, final=False)
                 cls.next_action = now + ACTION_GAP_S
                 return
-        if cls.worker is not None:
-            return  # the fog mask is being read: digests aren't known yet
-        if fog_on and scene.Scene.extra() is None and cls.mask_stamp is not None:
-            return  # there's a saved fog mask but fog.py hasn't put its plane up yet: tiles would lack it
         wanted = cls._cover(x, y, half, north)
         wanted_set = set(wanted)
         cls.next_action = now + ACTION_GAP_S
@@ -875,7 +702,7 @@ class Tiles:
                 tile.slot.used = now
                 continue
             name = f"{key[0]}_{key[1]}"
-            on_disk = name in cls.index["tiles"] and cls.index["tiles"][name] == cls.digest(key)
+            on_disk = name in cls.index["tiles"]
             due = cls.low.get(name)
             if on_disk and (due is None or now < due):
                 continue  # the page shows it from disk
@@ -887,7 +714,7 @@ class Tiles:
             if on_disk:  # a blurry one, due again (shown as it is meanwhile)
                 del cls.low[name]
                 cls.tries[name] = cls.tries.get(name, 0) + 1
-            tile = _Tile(key, slot, cls.digest(key))
+            tile = _Tile(key, slot)
             slot.key = key
             cls.tiles[key] = tile
             cls._film(tile)
@@ -931,13 +758,13 @@ class Tiles:
         except OSError:
             pass
         cls.writer.ExportToDisk(target, str(path), cls.write_options)
-        cls.pending[name] = [path, time.monotonic() + EXPORT_CHECK_S, -1, final, tile.digest]
+        cls.pending[name] = [path, time.monotonic() + EXPORT_CHECK_S, -1, final]
 
     @classmethod
     def _check_pending(cls, now: float) -> None:
         """A written PNG counts once its size held between two looks (the writer works on a worker)."""
         for name, entry in list(cls.pending.items()):
-            path, at, last, final, digest = entry
+            path, at, last, final = entry
             if now < at:
                 continue
             entry[1] = now + EXPORT_CHECK_S
@@ -953,7 +780,7 @@ class Tiles:
             del cls.pending[name]
             cls.versions[name] = cls.versions.get(name, 0) + 1
             if final:
-                cls.index["tiles"][name] = digest
+                cls.index["tiles"][name] = "-"
                 cls.index.get("sharp", {}).pop(name, None)
                 cls._write_index()
                 cls._queue_check(name)
@@ -1016,7 +843,7 @@ def _art_texel(actor: UObject | None) -> float | None:
 
 
 def scene_character(pc: UObject) -> str | None:
-    """The character's id, as fog.py keys its masks (imported late: fog imports scene)."""
+    """The character's id, as fog.py keys its saved placements (imported late: fog imports scene)."""
     from . import fog  # noqa: PLC0415
 
     return fog._character(pc)  # noqa: SLF001

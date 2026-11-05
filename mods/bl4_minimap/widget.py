@@ -22,6 +22,7 @@ range. That layer is on the root, over the frame (the square frame clips).
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import unrealsdk
@@ -41,7 +42,7 @@ CLIP_TO_BOUNDS = 1
 DISPLAY_SIZE = 512  # px of the display render target
 RTF_RGBA8 = 2
 RTF_RGBA16F = 6
-BLEND_OPAQUE, BLEND_ADDITIVE, BLEND_MODULATE = 0, 3, 4
+BLEND_OPAQUE, BLEND_TRANSLUCENT, BLEND_ADDITIVE, BLEND_MODULATE = 0, 2, 3, 4
 # The picture holds the ECHO map's own bytes (filmed with TargetGamma 1); UMG treats a texture's
 # values as linear light and gamma-encodes them for the screen. So the picture is turned into linear
 # light first, sRGB-decoded with the usual cubic (decode(c) ~ A c + B c^2 + C c^3, within ~1 screen
@@ -187,6 +188,11 @@ class Minimap:
     linear: tuple[WeakPointer, ...] = ()
     linear_of = WeakPointer()  # the picture they were made from
     linear_frames = 0  # frames left to make them again (LINEAR_AFTER)
+    # Fog of war: the live explored grid as a texture (set_fog), drawn over the map in set_view.
+    # Held by a hidden image; fog_square is the world square it covers (X, Y corner, X, Y size).
+    fog_holder: Any = None
+    fog = WeakPointer()
+    fog_square: tuple[float, ...] | None = None
     size = 0.0
     icon_scale = 1.0
     arrow_angle = 0.0
@@ -261,6 +267,10 @@ class Minimap:
             holder.SetVisibility(COLLAPSED)
             linear.append(WeakPointer(target))
         cls.linear, cls.linear_of, cls.linear_frames = tuple(linear), WeakPointer(), 0
+        cls.fog_holder = _new("/Script/UMG.Image", tree)  # holds the fog texture (set_fog)
+        frame.AddChild(cls.fog_holder)
+        cls.fog_holder.SetVisibility(COLLAPSED)
+        cls.fog, cls.fog_square = WeakPointer(), None
         brush = unrealsdk.make_struct("SlateBrush")
         brush.ResourceObject = display
         brush.ImageSize.X = brush.ImageSize.Y = DISPLAY_SIZE
@@ -728,7 +738,37 @@ class Minimap:
             source, args["pos"], args["size"], _vec2(u - cover, v - cover), args["uv_size"], args["tint"],
             BLEND_OPAQUE, 0.0, args["pivot"],
         )  # fmt: skip
+        fog, shot = cls.fog(), scene.Scene.shot
+        if fog is not None and cls.fog_square is not None and shot is not None:
+            # The grid's square, placed and turned the way the picture shows the world: a picture
+            # UV is 0.5 + right / (2 picture), 0.5 - up / (2 picture) around the shot's point, with
+            # up / right along its north. World X is the grid's columns, Y its rows.
+            ox, oy, ex, ey = cls.fog_square
+            n = math.radians(shot[2])
+            c, s = math.cos(n), math.sin(n)
+            k = DISPLAY_SIZE / (2 * cover) / (2 * shot[3])  # display px per world unit
+            dx, dy = ox + ex / 2 - shot[0], oy + ey / 2 - shot[1]
+            cx = (0.5 + (-dx * s + dy * c) / (2 * shot[3]) - (u - cover)) / (2 * cover) * DISPLAY_SIZE
+            cy = (0.5 - (dx * c + dy * s) / (2 * shot[3]) - (v - cover)) / (2 * cover) * DISPLAY_SIZE
+            w, h = ex * k, ey * k
+            # Columns (world +X) run along (-s, -c) on the display, rows (+Y) along (c, -s): the
+            # quad turned by atan2(-c, -s) (canvas turns clockwise, y down)
+            canvas.K2_DrawTexture(
+                fog, _vec2(cx - w / 2, cy - h / 2), _vec2(w, h), _vec2(0, 0), _vec2(1, 1), args["tint"],
+                BLEND_TRANSLUCENT, math.degrees(math.atan2(-c, -s)), args["pivot"],
+            )  # fmt: skip
         krl.EndDrawCanvasToRenderTarget(pc, ctx)
+
+    @classmethod
+    def set_fog(cls, texture: UObject | None, square: tuple[float, ...] | None) -> None:
+        """The fog layer: a texture of the explored grid (unexplored: the fog colour at the fog
+        strength's opacity, explored: clear) and the world square it covers. None: no fog."""
+        if texture is cls.fog() and square == cls.fog_square:
+            return
+        if cls.fog_holder is not None and texture is not None:
+            cls.fog_holder.SetBrushFromTexture(texture, False)  # the holder keeps it from here on
+        cls.fog, cls.fog_square = (WeakPointer(texture), square) if texture is not None else (WeakPointer(), None)
+        cls.view = ()  # drawn again with the next set_view
 
     @classmethod
     def _linearize(cls, pc: UObject, picture: UObject) -> None:
@@ -766,6 +806,7 @@ class Minimap:
         cls.north_set = ()
         cls.display = WeakPointer()
         cls.linear, cls.linear_of, cls.linear_frames = (), WeakPointer(), 0
+        cls.fog_holder, cls.fog, cls.fog_square = None, WeakPointer(), None
         cls.layers = {}
         cls.pools = {}
         cls.used_by = {}

@@ -15,12 +15,12 @@ fall back to the level, unlit.
 
 The capture renders only our actors (show-only), so nothing else in either world costs anything.
 
-Pictures are cached. The map art never changes, but each capture costs ~3.9 ms of GPU (~1.1 ms of
-it the fog plane) and a new picture is filmed 5 times while its texture detail streams in. So
-pictures sit on a grid (in the north-up frame, spacing = how far the view may slide in one) and the
-last CACHE_SIZE of them are kept, each with its own capture and render target: walking back into an
-area shows its picture again with no capture at all. A fog change (only when the ECHO map was
-open) marks them stale: each is filmed again the next time it's needed.
+Pictures are cached. The map art never changes, but each capture costs GPU time (~3.9 ms when the
+fog plane was filmed too, ~1.1 ms of it the fog) and a new picture is filmed 5 times while its
+texture detail streams in. So pictures sit on a grid (in the north-up frame, spacing = how far the
+view may slide in one) and the last CACHE_SIZE of them are kept, each with its own capture and
+render target: walking back into an area shows its picture again with no capture at all. Fog isn't
+filmed: the minimap draws the live fog over the picture (widget.py, the HUD page).
 """
 
 from __future__ import annotations
@@ -183,8 +183,6 @@ class Scene:
     searched_world = WeakPointer()  # the level we last searched for the big map's world in
     actor = WeakPointer()  # the map model
     background = WeakPointer()
-    extra = WeakPointer()  # filmed along with the model (the fog plane)
-    extra_address: int | None = None
     entries: list[_Entry] = []  # cached pictures, see the module docstring
     current: _Entry | None = None  # the one shown
     # The current entry's capture and render target. Only WeakPointers: Unreal's garbage collector
@@ -253,7 +251,7 @@ class Scene:
 
     @classmethod
     def shown_actors(cls) -> list[UObject]:
-        return [a for a in (cls.actor(), cls.background(), cls.extra()) if a is not None]
+        return [a for a in (cls.actor(), cls.background()) if a is not None]
 
     @classmethod
     def _new_entry(cls, pc: UObject, kind: str = "film") -> _Entry:
@@ -339,25 +337,9 @@ class Scene:
         return plane
 
     @classmethod
-    def show_also(cls, extra: UObject | None) -> None:
-        """Films `extra` (the fog plane) along with the map model."""
-        # Called several times a second: only an actual change touches the cameras
-        address = extra._get_address() if extra is not None else None  # noqa: SLF001
-        if cls.actor() is None or address == cls.extra_address:
-            return
-        cls.extra_address = address
-        cls.extra = WeakPointer(extra) if extra is not None else WeakPointer()
-        shown = cls.shown_actors()
-        for entry in cls.entries:
-            capture = entry.capture()
-            if capture is not None:
-                capture.CaptureComponent2D.ShowOnlyActors = shown
-        cls.fresh = True  # every cached picture was filmed without it (or with it)
-
-    @classmethod
     def invalidate(cls) -> None:
-        """What's filmed changed (fog): every filmed picture is filmed again when next needed.
-        Composed ones follow their tiles (tiles.py re-films only tiles whose fog changed)."""
+        """A new map: every filmed picture is filmed again when next needed. Composed ones
+        follow their tiles."""
         for entry in cls.entries:
             if entry.kind == "film":
                 entry.stale = True
@@ -438,7 +420,7 @@ class Scene:
     @classmethod
     def tick_tiles(
         cls, pc: UObject, x: float, y: float, yaw: float, radius: float, room: float, *,
-        fog_on: bool, strength: float, paused: bool,
+        paused: bool,
     ) -> bool:  # fmt: skip
         """
         Every frame: lets tiles.py load or film a tile, then draws the shown picture from tiles if
@@ -447,7 +429,7 @@ class Scene:
         """
         from . import tiles  # noqa: PLC0415
 
-        tiles.Tiles.tick(pc, x, y, radius, room, yaw, fog_on=fog_on, strength=strength, paused=paused)
+        tiles.Tiles.tick(pc, x, y, radius, room, yaw, paused=paused)
         entry = cls.current
         if entry is None or entry.shot is None or entry.key is None or not tiles.Tiles.usable(radius):
             return False
@@ -538,8 +520,6 @@ class Scene:
         cls.capture = WeakPointer()
         cls.target = WeakPointer()
         cls.background = WeakPointer()
-        cls.extra = WeakPointer()
-        cls.extra_address = None
         cls.context = WeakPointer()
         cls.in_viewer = False
         cls.world = WeakPointer()

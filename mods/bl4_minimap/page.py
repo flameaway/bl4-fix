@@ -40,17 +40,15 @@ import re
 import secrets
 import select
 import socket
-import struct
 import threading
 import time
-import zlib
 from importlib import resources
 from pathlib import Path
 from typing import Any
 
 from unrealsdk import logging
 
-from . import uilink
+from . import fog, uilink
 
 KEY = "bl4minimap"
 SCRIPT_URL = "coui://uiresources/bl4minimap/minimap.js"
@@ -62,9 +60,6 @@ SECTIONS = ("cfg", "tiles", "slow", "fast", "fog")
 MAX_HEAD = 8192
 TILE_NAME = re.compile(r"^/t/(-?\d{1,4}_-?\d{1,4})\.png$")
 FOG_ROUTE = "/f.png"
-PNG_SIGNATURE = bytes((0x89,)) + b"PNG" + bytes((13, 10, 26, 10))
-# The fog layer's colour (unexplored land: this, at the fog strength's opacity, over the map)
-FOG_RGB = (6, 16, 30)
 
 
 class Feed:
@@ -248,36 +243,17 @@ def _tile(conn: socket.socket, name: str, fresh: bool) -> None:
         _send(conn, 200, body, b"image/png", b"max-age=86400")
 
 
-def _png_rgba(width: int, height: int, pixels: bytes) -> bytes:
-    """An 8-bit RGBA PNG (unfiltered rows)."""
-
-    def chunk(kind: bytes, body: bytes) -> bytes:
-        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
-
-    stride = width * 4
-    rows = b"".join(b"\x00" + pixels[r * stride:(r + 1) * stride] for r in range(height))
-    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-    return PNG_SIGNATURE + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows, 1)) + chunk(b"IEND", b"")
-
-
 def _fog(conn: socket.socket) -> None:
-    """Worker: the fog layer for the current explored grid (unexplored = FOG_RGB at the strength's
+    """Worker: the fog layer for the current explored grid (unexplored = fog.FOG_RGB at the strength's
     opacity, explored = clear). Its URL carries the revision, so each revision is fetched once."""
-    fog = Feed.fog
-    if fog is None:
+    layer = Feed.fog
+    if layer is None:
         _send(conn, 404, b"", b"text/plain", b"no-store")
         return
-    rev, grid, width, height, opacity = fog
+    rev, grid, width, height, opacity = layer
     made = Feed.fog_png
     if made is None or made[0] != rev:
-        r, g, b = FOG_RGB
-        alpha = bytes(round((255 - v) * opacity) for v in range(256))
-        pixels = bytearray(width * height * 4)
-        pixels[0::4] = bytes((r,)) * (width * height)
-        pixels[1::4] = bytes((g,)) * (width * height)
-        pixels[2::4] = bytes((b,)) * (width * height)
-        pixels[3::4] = grid.translate(alpha)
-        made = Feed.fog_png = (rev, _png_rgba(width, height, bytes(pixels)))
+        made = Feed.fog_png = (rev, fog.layer_png(grid, width, height, opacity))
     _send(conn, 200, made[1], b"image/png", b"max-age=86400")
 
 
