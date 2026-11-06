@@ -3,3 +3,13 @@
 shared/** -text
 mods/*/uilink/** -text
 mods/*/health/** -text
+# (also firston, frametick, gamekeys, in ported/ too: without -text a Windows checkout made those
+# copies CRLF while shared/ stayed LF, and the build's check failed on GitHub's machines)
+mods/*/firston/** -text
+mods/*/frametick/** -text
+mods/*/gamekeys/** -text
+ported/*/uilink/** -text
+ported/*/health/** -text
+ported/*/firston/** -text
+ported/*/frametick/** -text
+ported/*/gamekeys/** -text
