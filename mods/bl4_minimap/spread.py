@@ -16,9 +16,9 @@ import math
 
 # The part of an icon's size another icon may not come into (the art has a clear margin)
 FOOTPRINT = 0.85
-RINGS = 12  # rings of places tried around an icon's true spot before it's left there
-NEAR_RINGS = 3  # tried first, against only the icons near enough to reach them
+PASSES = 40  # push-apart passes at most (a pair is apart after one; a crowded stack takes more)
 _TOUCH = 0.999  # (two icons exactly touching don't overlap: rounding)
+_GOLDEN = math.pi * (3 - math.sqrt(5))  # (exact stacks open up in directions this far apart)
 
 
 def layout(spots: list[tuple[float, float, float, str]]) -> tuple[list[tuple[float, float]], list[list[int]]]:
@@ -27,10 +27,14 @@ def layout(spots: list[tuple[float, float, float, str]]) -> tuple[list[tuple[flo
     that orders exact stacks the same way each time (the texture). Returns each spot's offset (world
     units; (0, 0): left where it is) and the groups of spots that overlapped (two or more each).
 
-    Icons that overlap nothing stay put. Each group of icons that overlap (directly or through each
-    other) is placed one by one, the one nearest the group's middle first: at its true spot if it's
-    free, else at the nearest free place on rings around it, starting with the direction away from
-    the group's middle. Neighbours are found on a grid: O(n) for the usual 5-40 icons.
+    Icons that overlap nothing stay put. The icons of the groups that overlap (directly or through
+    each other) are pushed apart: both of an overlapping pair along the line between them, by half
+    the overlap each (one that stays pushes the other the whole way), pass after pass until none
+    overlap. Each ends up just clear of its neighbours, on the same side of them as in the world:
+    two vending machines side by side stay side by side, each moved half the way (until 2026-11-05
+    one stayed and the other went out on rings an icon apart, ending up behind it). Exact stacks
+    start a hair apart in fixed directions, so they open up the same way each time. Neighbours are
+    found on a grid: O(n) a pass for the usual 5-40 icons.
     """
     n = len(spots)
     offsets = [(0.0, 0.0)] * n
@@ -66,69 +70,61 @@ def layout(spots: list[tuple[float, float, float, str]]) -> tuple[list[tuple[flo
     if not groups:
         return offsets, []
 
-    # Placed so far: the icons that overlap nothing first (they stay), then each group's
-    placed = [spots[g[0]][:3] for g in by_root.values() if len(g) == 1]
-    # (Orders that only depend on the spots, not the list's order)
-    groups.sort(key=lambda g: min(spots[i][:2] for i in g))
-    for g in groups:
-        mx = sum(spots[i][0] for i in g) / len(g)
-        my = sum(spots[i][1] for i in g) / len(g)
-        g.sort(key=lambda i: ((spots[i][0] - mx) ** 2 + (spots[i][1] - my) ** 2, spots[i][0], spots[i][1], spots[i][3]))
-        for i in g:
-            x, y, r, _ = spots[i]
-            near = _near(placed, x, y, r, NEAR_RINGS)
-            if all(d2 >= q2 for d2, _, _, q2 in near):
-                placed.append((x, y, r))
+    # The icons that overlap nothing stay; the others move, in an order that only depends on the
+    # spots, not the list's order. The pairs that can meet are found once, on a grid twice as
+    # coarse (all pairs in neighbouring cells: pushed apart, an icon moves an icon or two)
+    moving = sorted((i for g in groups for i in g), key=lambda i: (spots[i][0], spots[i][1], spots[i][3]))
+    is_moving = [False] * n
+    for i in moving:
+        is_moving[i] = True
+    pos = [[x, y] for x, y, _, _ in spots]
+    stacked: dict[tuple[float, float], int] = {}
+    for i in moving:
+        x, y, r, _ = spots[i]
+        k = stacked.get((x, y), 0)
+        stacked[(x, y)] = k + 1
+        if k:  # (the first of an exact stack opens up north-ish, the next ones around it)
+            a = -math.pi / 2 + (k - 1) * _GOLDEN
+            pos[i][0] += math.cos(a) * r * 0.01
+            pos[i][1] += math.sin(a) * r * 0.01
+    wide = 2 * cell
+    coarse: dict[tuple[int, int], list[int]] = {}
+    for i, (x, y, _, _) in enumerate(spots):
+        coarse.setdefault((math.floor(x / wide), math.floor(y / wide)), []).append(i)
+    pairs = []  # (p, q, need, need^2 less rounding, p's share): a moving icon and one it can meet (a still one: share 1)
+    rank = {i: k for k, i in enumerate(moving)}
+    for i in moving:
+        x, y, ri, _ = spots[i]
+        gx, gy = math.floor(x / wide), math.floor(y / wide)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for j in coarse.get((gx + dx, gy + dy), ()):
+                    if j == i or (is_moving[j] and rank[j] < rank[i]):
+                        continue
+                    need = ri + spots[j][2]
+                    pairs.append((pos[i], pos[j], need, need * need * _TOUCH, 0.5 if is_moving[j] else 1.0))
+    # Each pass: p and q of an overlapping pair apart, p by its share of the overlap, q by the rest
+    for _ in range(PASSES):
+        clear = True
+        for p, q, need, near2, share in pairs:
+            ex, ey = p[0] - q[0], p[1] - q[1]
+            d2 = ex * ex + ey * ey
+            if d2 >= near2:
                 continue
-            ax, ay = x - mx, y - my
-            # Away from the middle; from the middle itself, world -Y (about north)
-            a0 = math.atan2(ay, ax) if ax * ax + ay * ay > (r * 0.01) ** 2 else -math.pi / 2
-            # The near rings first, with only the icons that reach them (most find a place there)
-            spot = _ring_spot(x, y, r, a0, near, 1, NEAR_RINGS) or _ring_spot(
-                x, y, r, a0, _near(placed, x, y, r, RINGS), NEAR_RINGS + 1, RINGS)  # fmt: skip
-            if spot is None:
-                placed.append((x, y, r))  # (nowhere free near: it stays, overlapping)
-                continue
-            placed.append((spot[0], spot[1], r))
-            offsets[i] = (spot[0] - x, spot[1] - y)
+            clear = False
+            d = math.sqrt(d2)
+            if d <= need * 1e-6:  # (on the same spot: apart north-south)
+                ex, ey, d = 0.0, -1.0, 1.0
+            over = (need - d) / d
+            p[0] += ex * over * share
+            p[1] += ey * over * share
+            q[0] -= ex * over * (1 - share)
+            q[1] -= ey * over * (1 - share)
+        if clear:
+            break
+    for i in moving:
+        offsets[i] = (pos[i][0] - spots[i][0], pos[i][1] - spots[i][1])
     return offsets, groups
-
-
-# Ring k's directions (6 k of them), in the order they're tried: straight on, then out to both sides
-_DIRS = [
-    [(math.cos(a), math.sin(a)) for a in ((t + 1) // 2 * 2 * math.pi / (6 * k) * (1 if t % 2 else -1) for t in range(6 * k))]
-    for k in range(1, RINGS + 1)
-]  # fmt: skip
-
-
-def _near(placed: list[tuple[float, float, float]], x: float, y: float, r: float,
-          rings: int) -> list[tuple[float, float, float, float]]:  # fmt: skip
-    """
-    The placed icons that could touch a place on rings 1..`rings` around (x, y), nearest first
-    (they block most places): (distance^2, x, y, (r + their r)^2).
-    """
-    reach = (rings + 1) * r
-    return sorted(
-        ((px - x) ** 2 + (py - y) ** 2, px, py, (r + pr) ** 2 * _TOUCH)
-        for px, py, pr in placed
-        if abs(px - x) < reach + pr and abs(py - y) < reach + pr
-    )  # fmt: skip
-
-
-def _ring_spot(x: float, y: float, r: float, a0: float, near: list[tuple[float, float, float, float]],
-               first: int, last: int) -> tuple[float, float] | None:  # fmt: skip
-    """The first free place on rings first..last (k r around (x, y)), each tried from the direction a0 out."""
-    ca, sa = math.cos(a0), math.sin(a0)
-    for k in range(first, last + 1):
-        dist = k * r
-        for ux, uy in _DIRS[k - 1]:
-            cx, cy = x + dist * (ux * ca - uy * sa), y + dist * (ux * sa + uy * ca)
-            for _, px, py, q2 in near:
-                if (cx - px) ** 2 + (cy - py) ** 2 < q2:
-                    break
-            else:
-                return cx, cy
-    return None
 
 
 def fit(points: list[tuple[float, float, float]], *, square: bool) -> tuple[float, float]:

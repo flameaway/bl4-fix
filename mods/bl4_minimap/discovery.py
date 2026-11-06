@@ -284,3 +284,43 @@ class Discovery:
         cls.entries, cls.places, cls.buckets, cls.others = b"", {}, {}, []
         cls._none()
         cls.next_read = 0.0
+
+
+# Where you last died: the ECHO map's skull. The server tells the client
+# (OakPlayerController.Client_NotifyLastDeathLocationAndMap, at load and when you die) and the
+# controller keeps it natively (code at _DEATH_INSN: the location's three doubles at +0x3DC0, the
+# level's FName at +0x3DD8; Cowbell_P, 2026-11-05: exactly where the map's saved copy had the skull).
+_DEATH_INSN = 0x41F3584
+_DEATH_CODE = bytes.fromhex("488b4f1048898ed03d00000f10070f1186c03d0000")
+DEATH_AT = 0x3DC0
+DEATH_TEXTURE = "/Game/DLC/Cello/uiresources/discovery_icons/ico_last_death.ico_last_death"
+
+
+class LastDeath:
+    broken = ""
+    checked = False
+    icon: dict[str, Any] | None = None  # the skull, on this level; None: none here
+    read_ok = False
+
+    @classmethod
+    def update(cls, pc: UObject, world_name: str) -> None:
+        """Reads where you last died (32 bytes, each slow update) and on which level."""
+        if cls.broken:
+            return
+        if not cls.checked:
+            base = objectives._k32.GetModuleHandleW(None)  # noqa: SLF001
+            if _read(base + _DEATH_INSN, len(_DEATH_CODE)) != _DEATH_CODE:
+                cls.broken = "game code changed (a patch?)"
+                unrealsdk.logging.warning(f"[Minimap] live last death icon off: {cls.broken}")
+                cls.icon, cls.read_ok = None, False
+                return
+            cls.checked = True
+        raw = _read(pc._get_address() + DEATH_AT, 0x20)  # noqa: SLF001
+        if raw is None:
+            cls.icon, cls.read_ok = None, False
+            return
+        x, y, z = struct.unpack_from("<3d", raw, 0)
+        level = raw[0x18:0x20]
+        here = any(level) and Discovery._name(level) == world_name  # noqa: SLF001
+        cls.icon = {"x": x, "y": y, "z": z, "texture": DEATH_TEXTURE} if here else None
+        cls.read_ok = True

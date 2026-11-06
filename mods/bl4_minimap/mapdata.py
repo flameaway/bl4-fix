@@ -12,7 +12,8 @@ So once per opening (a moment after it opens, behind the paused menu) we read it
 and again whenever your custom waypoint changes while the map is open (placing a pin there
 redraws the map's route to it): icons and the route are saved per character and map (JSON in the
 SDK settings folder) so they're there next session. The minimap shows the icons in range and the
-route as a dotted line, trimmed to the part still ahead of you. Open the map again to refresh them.
+route, trimmed to the part still ahead of you, where the game's own route (echoloc.py) finds none.
+Open the map again to refresh them.
 Icons the minimap draws live instead (your waypoint pin, players, mission givers) are left out
 or replaced by the caller.
 """
@@ -53,8 +54,8 @@ ROUTE_POLL_S = 0.25
 REFIND_S = 1.0  # search for new route actors at most this often, only when needed
 JOB_BUDGET_S = 0.0025  # per frame for a read of the open map (`MapData.run`)
 REFIND_FOR_S = 10.0  # ... and only this long after the map opened or the pin moved
-# World units: closer than this to the ECHO map's route, you're on it; further, it was copied from
-# somewhere else and the way from you to it is planned over the graph (`joined`)
+# World units: closer than this to a route line, you're on it (further: the game's route is asked
+# for again from where you are, __init__._game_route)
 JOIN_SLACK = 1500.0
 CURVE_STEP = 5.0  # map units (5 m) between the points a curved route segment is copied as
 CURVE_MIN_BEND = 1.0  # map units: a segment bending less than this from straight stays one line
@@ -267,11 +268,9 @@ class MapData:
     poll_at = 0.0  # next look at the route line while the map is open
     refind_at = 0.0  # next search for route actors allowed
     changed_at = 0.0  # when the map opened or the pin last moved
-    join_key: tuple[Any, int] | None = None  # (planned route, version) `joined` last worked out
     job: Generator[None, None, None] | None = None  # a read of the open map in progress (`run`)
     world_query: bool | None = None  # GetAllActorsOfClass finds the map's icons (None: not known yet)
     fallback_used = False  # find_all tried once because it found none
-    join_result: list[tuple[float, float]] | None = None
 
     @classmethod
     def _path(cls) -> Path:
@@ -623,38 +622,6 @@ class MapData:
                     break  # far off: the rest won't come back in range soon
                 along += spacing
         return dots
-
-    @classmethod
-    def on_route(cls, x: float, y: float) -> bool:
-        """Whether (x, y) is on the ECHO map's copied route (within `JOIN_SLACK`)."""
-        return any(near_line(r, x, y) for r in cls.routes)
-
-    @classmethod
-    def joined(cls, planned: list[tuple[float, float]]) -> list[tuple[float, float]] | None:
-        """
-        `planned` (your route over the graph) up to where it meets the ECHO map's copied route, then
-        the copy on to the goal; None if they never meet. The copy is the game's own way, but from
-        where the map was opened: walk away from it and only a straight line led back to it (World_P
-        2026-10-29: copied 208 m from the player; the game re-plans from where you are). Worked out
-        once per planned route and copy (~60 x 80 segment checks).
-        """
-        key = (planned, cls.version)
-        if cls.join_key is not None and cls.join_key[0] is planned and cls.join_key[1] == cls.version:
-            return cls.join_result
-        result = None
-        for copy in cls.routes:
-            if len(copy) < 2:  # noqa: PLR2004
-                continue
-            for k, (x, y) in enumerate(planned):
-                d, i, t = _nearest_on(copy, x, y)
-                if d <= JOIN_SLACK**2:
-                    (ax, ay), (bx, by) = copy[i], copy[i + 1]
-                    result = [*planned[: k + 1], (ax + (bx - ax) * t, ay + (by - ay) * t), *copy[i + 1 :]]
-                    break
-            if result:
-                break
-        cls.join_key, cls.join_result = key, result
-        return result
 
     @classmethod
     def objective_texture(cls) -> str | None:

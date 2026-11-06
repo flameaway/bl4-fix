@@ -30,7 +30,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
-from . import breadcrumbs, discovery, fog, frametick, gamekeys, health, loot, mapdata, mapwaypoints, markers, objectives, page, scene, services, spread, tiles, uilink
+from . import discovery, echoloc, fog, frametick, gamekeys, health, hudsway, loot, mapdata, mapwaypoints, markers, objectives, page, scene, services, spread, tiles, uilink
 from .widget import DOT_TEXTURE, EDGE_LAYER, MARKER_LOOKS, OVERSCAN, RING_WIDTH, Minimap
 
 __version__ = "0.1.1"
@@ -48,6 +48,12 @@ REFILM_MARGIN = 0.1
 DEFAULT_NORTH_YAW = 270.0  # the compass's north (world -Y) if we can't read it
 VERTICAL_GAP = 800.0  # world units (8 m) above/below you before a marker gets a chevron
 ROUTE_END_SLACK = 3000.0  # world units: a route ending this close to a live objective still leads there
+# The game's route (echoloc, on a worker thread: up to 60 ms a search) is asked for again: at once
+# for a new goal (moved this far, world units), at most this often once you're off it, and this
+# often anyway (mission progress opens and closes ways)
+ROUTE_GOAL_MOVE = 500.0
+ROUTE_OFF_S = 0.5
+ROUTE_REPLAN_S = 2.0
 GIVER_SLACK = 1000.0  # world units: a live mission giver this close to one on the ECHO map is that one
 POSTER_SLACK = 500.0  # contract posters (givers too, to the game) sit 0.5-1.3 m from their bounty board
 # A live mission giver's icon when the ECHO map hasn't shown one there yet
@@ -165,9 +171,16 @@ route_option = BoolOption(
     "Route line",
     True,
     description=(
-        "Shows the route to your waypoint or tracked mission as a dotted line, like the ECHO map's."
-        " It follows a new waypoint or objective at once, and takes the ECHO map's exact way once you"
-        " open the map; inside buildings and caves it's taken from the ECHO map when you open it."
+        "Shows the route to your waypoint or tracked mission, the same way the ECHO map routes you"
+        " (the game's own route, asked for live), and it follows a new waypoint or objective at once."
+    ),
+)
+route_top_option = BoolOption(
+    "Route line over icons",
+    False,
+    description=(
+        "Draws the route line over the map's icons (vendors, chests and the like) instead of under"
+        " them. Enemies, objectives and your arrow stay on top. In the HUD minimap only."
     ),
 )
 contracts_option = BoolOption(
@@ -263,6 +276,22 @@ page_option = BoolOption(
         " frame. The map is put together from saved map tiles; new areas are filmed once, the first"
         " time you're there."
     ),
+)
+
+
+def _still_hud_changed(_: BoolOption, value: bool) -> None:
+    if mod.is_enabled:  # settings load before the mod is on: _enable applies it then
+        hudsway.set_wanted(value)
+
+
+still_hud_option = BoolOption(
+    "Still HUD (no sway)",
+    False,
+    description=(
+        "Stops the whole HUD (every element, the minimap too) zooming and shaking when you sprint,"
+        " boost a vehicle, slide, glide, grapple or ground-slam."
+    ),
+    on_change=_still_hud_changed,
 )
 saved_on_option = BoolOption("Minimap on", True, is_hidden=True)
 
@@ -388,6 +417,10 @@ class State:
     markers: list[markers.Marker] = []  # noqa: RUF012  # from the last full update
     icons: list[dict[str, Any]] = []  # noqa: RUF012  # the map's icons near the player (last full update)
     route: list[tuple[float, float]] = []  # noqa: RUF012  # route dots near the player (last full update)
+    route_path: list[tuple[float, float]] = []  # noqa: RUF012  # the game's route to route_goal (_game_route)
+    route_goal: tuple[float, float, float] | None = None
+    route_at = 0.0  # when it was asked for
+    route_ticket = 0  # the request it's the answer to (echoloc.Echoloc.ask)
     error_logged = False
     north_yaw: float | None = None
     statics: Any = None  # GameplayStatics' default object, looked up once
@@ -519,32 +552,22 @@ def _teleporting(pc: UObject, pawn: UObject) -> bool:
     return False
 
 
-def _route(pc: UObject, world_name: str, loc: Any, radius: float,
+def _route(pc: UObject, world: UObject, loc: Any, radius: float,
            live: list[tuple[float, float, float]] | None) -> list[tuple[float, float]]:  # fmt: skip
     """
     The route dots near you, to your map pin, else to the nearest live objective (where the ECHO map
-    routes). In order:
-    - the ECHO map's own route (copied while it was open), when it ends at that goal: it's the game's
-      own way there. Our plan over the same graph can differ: the game doesn't take the shortest
-      way (World_P, 2026-10-28: its route was 2413 m where the shortest over the graph is 1744 m,
-      from the same node), and we don't know its costs. It starts where the map was opened, so
-      once you're off it, the way from you to it is planned over the graph (`MapData.joined`);
-    - planned live over the level's breadcrumb graph, when it gets there (a new goal, until the map
-      is opened again);
-    - the ECHO map's route when it leads to that same goal another way: the graph doesn't cover
-      interiors (the Speakeasy has no nodes: the map's route leads to its door);
-    - the planned route as far as the graph goes (then straight to the goal).
-    Vaults have no graph and the ECHO map draws no route there either.
+    routes): the game's own route (echoloc: the planner the ECHO map draws its line with), asked
+    for from where you are. Where it finds none, the ECHO map's route copied while the map was open,
+    when that still leads to the goal. Vaults have no route and the ECHO map draws none there either.
+    Until 2026-11-05 the minimap planned its own shortest way over the game's breadcrumb graph, but
+    the game doesn't take the shortest way (it weighs roads and more: World_P, 2026-10-28, 2413 m
+    where the shortest was 1744 m), so a new goal showed a different line until the map was opened.
     """
     if not route_option.value:
         return []
     data = mapdata.MapData
     spacing, reach = radius / ROUTE_DOTS_PER_RANGE, radius * 1.5
     pins = [m for m in State.markers if m.kind == "waypoint"]
-    # The map colours its line by where it goes (a bounty's was orange, the pin's white-blue,
-    # 2026-10-29). The map's own line keeps its colour; a line we plan gets the map's last colour for
-    # that kind of goal
-    planned_color = data.pin_color if pins else data.mission_color
     State.route_color = data.route_color
     goal = None
     if pins:
@@ -553,36 +576,44 @@ def _route(pc: UObject, world_name: str, loc: Any, radius: float,
         goal = _echo_goal(live) or min(live, key=lambda p: (p[0] - loc.X) ** 2 + (p[1] - loc.Y) ** 2)
     if goal is None:
         # Nowhere to go; with live objectives broken the map's copy is all we know
+        State.route_path, State.route_goal = [], None
         return data.route_dots(loc.X, loc.Y, spacing, reach) if live is None else []
-    me = (loc.X, loc.Y, loc.Z)
-    graph = breadcrumbs.Breadcrumbs
-    to_goal = [r for r in data.routes if r and (r[-1][0] - goal[0]) ** 2 + (r[-1][1] - goal[1]) ** 2 <= ROUTE_END_SLACK**2]
-    if to_goal:
-        if data.on_route(loc.X, loc.Y):
-            return data.route_dots(loc.X, loc.Y, spacing, reach)
-        # Off the game's line: the way back onto it ahead of you (a small search, redone as you go)
-        way = graph.reconnect(me, to_goal[0])
-        if way:
-            return data.route_dots(loc.X, loc.Y, spacing, reach, [way])
-        # Too far from it for that: a whole plan from you, joined to the game's line where they meet
-        planned = graph.update(pc, world_name, me, goal)
-        joined = data.joined(planned) if planned else None
-        if joined:
-            return data.route_dots(loc.X, loc.Y, spacing, reach, [joined])
-        if planned and graph.reaches_goal:
-            State.route_color = planned_color
-            return data.route_dots(loc.X, loc.Y, spacing, reach, [planned])
-        return data.route_dots(loc.X, loc.Y, spacing, reach)
-    planned = graph.update(pc, world_name, me, goal)
-    if planned and graph.reaches_goal:
-        State.route_color = planned_color
-        # Stepped off it: back onto it ahead (a whole new plan only once you're 40 m off)
-        way = graph.reconnect(me, planned) if not mapdata.near_line(planned, loc.X, loc.Y) else None
-        return data.route_dots(loc.X, loc.Y, spacing, reach, [way or planned])
+    # The map colours its line by where it goes (a bounty's was orange, the pin's white-blue,
+    # 2026-10-29): its copy's colour when the copy ends at this goal, else the map's last colour for
+    # that kind of goal
+    if not any(r and (r[-1][0] - goal[0]) ** 2 + (r[-1][1] - goal[1]) ** 2 <= ROUTE_END_SLACK**2 for r in data.routes):
+        State.route_color = data.pin_color if pins else data.mission_color
+    path = _game_route(pc, world, loc, goal)
+    if path:
+        return data.route_dots(loc.X, loc.Y, spacing, reach, [path])
     if data.routes and _copy_leads_to(goal, pinned=bool(pins), live=live):
+        State.route_color = data.route_color
         return data.route_dots(loc.X, loc.Y, spacing, reach)
-    State.route_color = planned_color
-    return data.route_dots(loc.X, loc.Y, spacing, reach, [planned]) if planned else []
+    return []
+
+
+def _game_route(pc: UObject, world: UObject, loc: Any, goal: tuple[float, float, float]) -> list[tuple[float, float]]:
+    """
+    The game's route to `goal`: the worker's last answer for it, asked for again when the goal
+    moves, you're off it, or it's old. For a new goal there's none until its answer comes (the next
+    update or so): the ECHO map's copy shows meanwhile where it leads there (_route).
+    """
+    answer = echoloc.Echoloc.answer
+    if answer is not None and answer[0] == State.route_ticket:
+        echoloc.Echoloc.answer = None
+        State.route_path = answer[1] or []
+    now = time.monotonic()
+    old = State.route_goal
+    moved = old is None or (old[0] - goal[0]) ** 2 + (old[1] - goal[1]) ** 2 + (old[2] - goal[2]) ** 2 > ROUTE_GOAL_MOVE**2
+    if moved:
+        State.route_path = []
+    off = bool(State.route_path) and not mapdata.near_line(State.route_path, loc.X, loc.Y)
+    if moved or now - State.route_at >= (ROUTE_OFF_S if off or not State.route_path else ROUTE_REPLAN_S):
+        rot = pc.ControlRotation
+        State.route_ticket = echoloc.Echoloc.ask(
+            world._get_address(), (loc.X, loc.Y, loc.Z), goal, (rot.Pitch, rot.Yaw, rot.Roll))  # fmt: skip
+        State.route_goal, State.route_at = goal, now
+    return State.route_path
 
 
 def _echo_goal(live: list[tuple[float, float, float]]) -> tuple[float, float, float] | None:
@@ -766,6 +797,14 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
             places.update(lx, ly, radius * 1.5, paused=paused, new_world=new_world)
             if not places.broken and places.read_ok:
                 icons = [i for i in icons if not places.covers(i)] + places.near(lx, ly, radius * 1.5)
+            # Where you last died, live (the saved skull stayed where you died before the map last opened)
+            death = discovery.LastDeath
+            death.update(pc, _world_name(world))
+            if death.read_ok:
+                icons = [i for i in icons if i["texture"] != discovery.DEATH_TEXTURE]
+                skull = death.icon
+                if skull is not None and (skull["x"] - lx) ** 2 + (skull["y"] - ly) ** 2 <= (radius * 1.5) ** 2:
+                    icons.append(skull)
         rifts = bool(rifts_option.value)
         slack = ROUTE_END_SLACK**2
 
@@ -835,14 +874,7 @@ def _gather(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bool, 
         if icons_option.value:
             services.Services.scan(pc, _world_name(world), paused)
             State.icons = State.icons + services.Services.near(lx, ly, radius * 1.5, State.icons)
-        graph = breadcrumbs.Breadcrumbs
-        before = (graph.world, graph.loaded)
-        State.route = _route(pc, _world_name(world), _Point(lx, ly, lz), radius, None if live.broken else tracked)
-        if route_option.value and (graph.world, graph.loaded) == before:
-            graph.preload(pc, _world_name(world))  # one part per update, not on top of what _route read
-    elif full and route_option.value:
-        # The graph loads a part per call at the marker rate (World_P's: ~40 parts), not the slow one
-        breadcrumbs.Breadcrumbs.preload(pc, _world_name(world))
+        State.route = _route(pc, world, _Point(lx, ly, lz), radius, None if live.broken else tracked)
 
 
 def _spread_places(update: bool, cx: float, cy: float, yaw: float, radius: float,
@@ -960,8 +992,6 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
             fog.Fog.sync(pc, _world_name(world), paused)
     if mapdata.MapData.job is not None:
         mapdata.MapData.run()  # a read of the open ECHO map, a piece a frame (behind the paused menu)
-    if breadcrumbs.Breadcrumbs.job is not None:
-        breadcrumbs.Breadcrumbs.run()  # a route plan, a slice a frame
     if check:
         State.hide_next, State.hide_cue = now + HIDE_CHECK_S, cue
         State.hidden = paused or _hud_hidden(pc) or _menu_up(pc) or _teleporting(pc, pawn)
@@ -1268,6 +1298,7 @@ def _page_frame(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bo
             "square": bool(square_option.value), "rotate": bool(rotate_option.value),
             "north": bool(north_option.value), "icon": icon_size_option.value / 100, "ui": State.ui,
             "radius": radius, "nyaw": north, "spread": bool(spread_option.value),
+            "routeTop": bool(route_top_option.value),
         })  # fmt: skip
     if not (full or slow):
         return
@@ -1303,6 +1334,8 @@ def _page_frame(pc: UObject, pawn: UObject, world: UObject, full: bool, slow: bo
 def on_frame() -> None:
     # Once per engine frame (shared/frametick: one hook for all our mods, the frame confirmed there)
     now = time.monotonic()
+    if hudsway.HudSway.due():  # only until the start-up load is in and the option applied
+        hudsway.HudSway.sync(now)
     if saved_on_option.value and Zoom.tick(now):
         State.page_force = True  # page mode: the whole pass (the new range) this frame
         State.hidden_until = 0.0
@@ -1318,13 +1351,13 @@ def on_frame() -> None:
             State.error_logged = True
     if (
         now < State.hidden_until and now - State.last_slow < SLOW_UPDATE_S
-        and mapdata.MapData.job is None and breadcrumbs.Breadcrumbs.job is None
+        and mapdata.MapData.job is None
     ):  # fmt: skip
         return  # hidden: looked at again every HIDDEN_POLL_S (the slow pass and the ECHO map's reads still run)
     if (
         State.page_on and State.page_vis and not State.page_force and now < State.tiles_next
         and now - State.last_slow < SLOW_UPDATE_S and now - State.last_update < 1 / max(1, rate_option.value)
-        and mapdata.MapData.job is None and breadcrumbs.Breadcrumbs.job is None
+        and mapdata.MapData.job is None
     ):  # fmt: skip
         # Page mode: the page draws every frame itself; the frames nothing else is due only send
         # where you are
@@ -1392,6 +1425,7 @@ def _enable() -> None:
     State.givers = []
     State.covered = set()
     Keys.was_down.clear()
+    hudsway.set_wanted(still_hud_option.value)
 
 
 def _disable() -> None:
@@ -1406,7 +1440,9 @@ def _disable() -> None:
     objectives.Objectives.clear()
     mapwaypoints.MapWaypoints.clear()
     discovery.Discovery.clear()
-    breadcrumbs.Breadcrumbs.clear()
+    State.route_path, State.route_goal = [], None
+    echoloc.Echoloc.clear()
+    hudsway.set_wanted(False)
 
 
 # A mod with no settings file loads switched off (a manual install, issue #5): start on
@@ -1416,10 +1452,11 @@ ensure_on(__name__)
 
 mod = build_mod(
     options=[
-        toggle_key, zoom_in_key, zoom_out_key, size_option, range_option, icon_size_option, icons_option, route_option, contracts_option,
+        toggle_key, zoom_in_key, zoom_out_key, size_option, range_option, icon_size_option, icons_option, route_option, route_top_option,
+        contracts_option,
         rifts_option, loot_option,
         vertical_option, spread_option, square_option, rotate_option, north_option, rate_option, fog_option, fog_strength_option,
-        margin_x_option, margin_y_option, page_option, saved_on_option,
+        margin_x_option, margin_y_option, page_option, still_hud_option, saved_on_option,
     ],
     hooks=[on_frame, on_teleport],
     on_enable=_enable,

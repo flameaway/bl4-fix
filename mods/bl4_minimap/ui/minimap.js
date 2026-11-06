@@ -83,9 +83,16 @@
     var rot = div(clip, "width:0;height:0;");
     var map = div(rot, "width:0;height:0;");
     var routeLayer = div(map, "width:0;height:0;");
+    var routePieces = div(routeLayer, "width:0;height:0;");  // dot to dot (placeRoute)
+    var routeLead = div(routeLayer, "width:0;height:0;");  // you to the first dot (placeLead)
+    // "Route line over icons": the route layer moves into its own clipped, turned map frame over the
+    // map's icons (layout()); the map frame's transforms are copied to it each frame only then
+    var routeClip = div(null, "overflow:hidden;display:none;");
+    var routeRot = div(routeClip, "width:0;height:0;");
+    var routeMap = div(routeRot, "width:0;height:0;");
     // (inside root: it goes with it when the page is replaced)
     var flowStyle = document.createElement("style");
-    flowStyle.textContent = "@keyframes bl4MinimapFlow{from{transform:translateX(-50%)}to{transform:translateX(0)}}";
+    flowStyle.textContent = "@keyframes bl4MinimapFlow{from{transform:translateX(-33.3333%)}to{transform:translateX(0)}}";
     root.appendChild(flowStyle);
     // Fog of war: the game's explored grid as one image (unexplored tinted), over the tiles and
     // under the route, placed in the map layer by a matrix from its world square (placeFog)
@@ -103,6 +110,7 @@
     var frameEl = div(root);  // icons, markers and the arrow (clips when square, like the UMG frame)
     var leaderLayer = div(frameEl, "width:0;height:0;");  // spread icons' lines to their true spots
     var iconLayer = div(frameEl, "width:0;height:0;");
+    frameEl.appendChild(routeClip);
     var markerLayer = div(frameEl, "width:0;height:0;");
     var arrow = div(frameEl, "background-image:url(" + ARROW_URL + ");background-size:100% 100%;");
     var badge = div(root, "box-sizing:border-box;border-radius:50%;text-align:center;color:#fff;font-family:Industry-Bold;display:none;");
@@ -345,7 +353,7 @@
 
     function layout(cfg) {
         var ui = cfg.ui || 1, size = cfg.size, square = cfg.square;
-        var key = [size, cfg.mx, cfg.my, square, ui, cfg.icon].join("|");
+        var key = [size, cfg.mx, cfg.my, square, ui, cfg.icon, cfg.routeTop].join("|");
         if (key === st.frameKey) return;
         st.frameKey = key;
         var r = root.style;
@@ -363,6 +371,15 @@
         cs.width = cs.height = size - 2 * inset + "px";
         cs.borderRadius = square ? "0" : "50%";
         rot.style.left = rot.style.top = size / 2 - inset + "px";
+        // (inside the ring: over the icons it's over the ring too)
+        var os = routeClip.style;
+        os.left = os.top = ringW + "px";
+        os.width = os.height = size - 2 * ringW + "px";
+        os.borderRadius = square ? (SQUARE_CORNER - RING) * ui + "px" : "50%";
+        os.display = cfg.routeTop ? "" : "none";
+        routeRot.style.left = routeRot.style.top = size / 2 - ringW + "px";
+        var host = cfg.routeTop ? routeMap : map;
+        if (routeLayer.parentNode !== host) host.appendChild(routeLayer);
         var gs = ring.style;
         gs.width = gs.height = size + "px";
         gs.border = ringW + "px solid " + RING_COLOR;
@@ -491,7 +508,33 @@
     // (placed again only when the route or the scale changes). Each dot is a whole number of
     // spacings along its route, so every piece starts its dashes at the same point of the pattern
     // and they run on from piece to piece; all pieces share one clock (the negative delay), so a
-    // piece added later is in step with the rest.
+    // piece added later is in step with the rest. The first piece runs from where you were at that
+    // frame (placeLead, from the arrow's own place) to the first dot: shorter or longer than a
+    // spacing, so its dashes are shifted to end at that dot in step with the next piece. Only that
+    // one piece is placed each frame; the rest only when the route changes.
+    function routePiece(parent, el, x, y, dx, dy, len, look, left) {
+        if (!el) {
+            el = div(parent, "overflow:hidden;transform-origin:0 50%;");
+            div(el, "width:100%;height:100%;opacity:" + ROUTE_BASE_ALPHA + ";");
+            var f = div(el, "height:100%;background-size:33.3333% 100%;background-repeat:repeat-x;" +
+                "animation:bl4MinimapFlow " + ROUTE_FLOW_MS + "ms linear infinite;");
+            f.style.animationDelay = -(Date.now() % ROUTE_FLOW_MS) + "ms";  // (all pieces on one clock)
+        }
+        var s = el.style, w = look.width;
+        s.display = "";
+        s.width = len.toFixed(2) + "px";
+        s.height = w.toFixed(2) + "px";
+        s.borderRadius = (w / 2).toFixed(2) + "px";
+        s.transform = "translate(" + x.toFixed(2) + "px," + (y - w / 2).toFixed(2) + "px) rotate(" +
+            (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(3) + "deg)";
+        el.firstChild.style.backgroundColor = look.color;
+        var flow = el.lastChild.style;
+        flow.width = (3 * look.period).toFixed(2) + "px";  // (covers up to 2 spacings while it moves one)
+        flow.left = left.toFixed(2) + "px";
+        if (flow.backgroundImage !== look.dash) flow.backgroundImage = look.dash;
+        return el;
+    }
+
     function placeRoute(cfg, scale) {
         var slow = st.slow;
         var key = st.revs.slow + "|" + scale.toFixed(6) + "|" + (st.anchor ? st.anchor.up + "," + st.anchor.right : "");
@@ -499,41 +542,43 @@
         st.routeKey = key;
         var route = slow && slow.route, dots = route ? route.d : [];
         var color = route ? route.c : "#fff", spacing = route && route.s ? route.s : 0;
-        var width = ROUTE_LINE * cfg.icon * cfg.ui, period = spacing * scale;
-        var dash = "linear-gradient(to right,transparent 0%," + color + " 80%,transparent 100%)";  // (one a spacing)
-        var delay = -(Date.now() % ROUTE_FLOW_MS) + "ms";
-        var kids = routeLayer.childNodes, n = 0, prev = null;
+        var look = {
+            width: ROUTE_LINE * cfg.icon * cfg.ui, period: spacing * scale, color: color,
+            dash: "linear-gradient(to right,transparent 0%," + color + " 80%,transparent 100%)"  // (one a spacing)
+        };
+        var kids = routePieces.childNodes, n = 0, prev = null;
+        st.routeFirst = null;
         for (var i = 0; i < dots.length; i++) {
             var f = northFrame(cfg, dots[i][0], dots[i][1]);
             var x = (f.right - st.anchor.right) * scale, y = (st.anchor.up - f.up) * scale;
+            if (!prev && spacing) st.routeFirst = { x: x, y: y, look: look };
             if (prev && spacing) {
                 var dx = x - prev.x, dy = y - prev.y, len = Math.sqrt(dx * dx + dy * dy);
-                if (len > 0 && len <= period * 1.5) {
-                    var el = kids[n], flow;
-                    if (!el) {
-                        el = div(routeLayer, "overflow:hidden;transform-origin:0 50%;");
-                        div(el, "width:100%;height:100%;opacity:" + ROUTE_BASE_ALPHA + ";");
-                        flow = div(el, "height:100%;background-size:50% 100%;background-repeat:repeat-x;" +
-                            "animation:bl4MinimapFlow " + ROUTE_FLOW_MS + "ms linear infinite;");
-                        flow.style.animationDelay = delay;
-                    }
-                    var s = el.style;
-                    s.display = "";
-                    s.width = len.toFixed(2) + "px";
-                    s.height = width.toFixed(2) + "px";
-                    s.borderRadius = (width / 2).toFixed(2) + "px";
-                    s.transform = "translate(" + prev.x.toFixed(2) + "px," + (prev.y - width / 2).toFixed(2) + "px) rotate(" +
-                        (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(3) + "deg)";
-                    el.firstChild.style.backgroundColor = color;
-                    flow = el.lastChild.style;
-                    flow.width = (2 * period).toFixed(2) + "px";
-                    if (flow.backgroundImage !== dash) flow.backgroundImage = dash;
+                if (len > 0 && len <= look.period * 1.5) {
+                    routePiece(routePieces, kids[n], prev.x, prev.y, dx, dy, len, look, 0);
                     n++;
                 }
             }
             prev = { x: x, y: y };
         }
         for (; n < kids.length; n++) kids[n].style.display = "none";
+        st.leadKey = "";
+    }
+
+    // The piece from you (`here`, where the arrow is drawn this frame) to the first dot
+    function placeLead(here, scale) {
+        var first = st.anchor ? st.routeFirst : null, el = routeLead.firstChild;
+        var x = first ? (here.right - st.anchor.right) * scale : 0, y = first ? (st.anchor.up - here.up) * scale : 0;
+        var dx = first ? first.x - x : 0, dy = first ? first.y - y : 0, len = Math.sqrt(dx * dx + dy * dy);
+        var period = first ? first.look.period : 0;
+        if (!first || len <= 0 || len > period * 2) {
+            if (el && st.leadKey !== "none") { el.style.display = "none"; st.leadKey = "none"; }
+            return;
+        }
+        var key = x.toFixed(2) + "," + y.toFixed(2);
+        if (key === st.leadKey) return;
+        st.leadKey = key;
+        routePiece(routeLead, el, x, y, dx, dy, len, first.look, -((period - len % period) % period));
     }
 
     // markers.project: (u, v) in -1..1 of the half-size, x right, y down, `yaw` up
@@ -555,18 +600,8 @@
     // endregion
     // region Spread ("Spread out stacked icons": spread.py's layout and fit, see there)
 
-    var SPREAD_FOOT = 0.85, SPREAD_RINGS = 12, SPREAD_NEAR_RINGS = 3, SPREAD_TOUCH = 0.999;
+    var SPREAD_FOOT = 0.85, SPREAD_PASSES = 40, SPREAD_TOUCH = 0.999, SPREAD_GOLDEN = Math.PI * (3 - Math.sqrt(5));
     var LEADER = 2, LEADER_DOT = 8;  // the line's width, the true spot's dot (at 100% icon size)
-    // Ring k's directions (6 k), in the order tried: straight on, then out to both sides
-    var SPREAD_DIRS = [];
-    for (var rk = 1; rk <= SPREAD_RINGS; rk++) {
-        var dirs = [];
-        for (var rt = 0; rt < 6 * rk; rt++) {
-            var ra = ((rt + 1) >> 1) * 2 * Math.PI / (6 * rk) * (rt % 2 ? 1 : -1);
-            dirs.push([Math.cos(ra), Math.sin(ra)]);
-        }
-        SPREAD_DIRS.push(dirs);
-    }
 
     // spots: [x, y, r, key] in world units -> { offs: [[dx, dy]...], groups: [[spot...]...] }
     function spreadLayout(spots) {
@@ -609,87 +644,79 @@
             if (!byRoot[ri]) { byRoot[ri] = []; roots.push(ri); }
             byRoot[ri].push(i);
         }
-        var groups = [], placed = [];
+        var groups = [], isMoving = [];
+        for (i = 0; i < n; i++) isMoving.push(false);
         for (i = 0; i < roots.length; i++) {
             var g = byRoot[roots[i]];
-            if (g.length > 1) groups.push(g);
-            else placed.push([spots[g[0]][0], spots[g[0]][1], spots[g[0]][2]]);  // (alone: it stays)
+            if (g.length > 1) {
+                groups.push(g);
+                for (j = 0; j < g.length; j++) isMoving[g[j]] = true;
+            }
         }
         if (!groups.length) return { offs: offs, groups: [] };
         function cmp(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
-        function first(g) {
-            var best = spots[g[0]];
-            for (var k = 1; k < g.length; k++) {
-                var s = spots[g[k]];
-                if (s[0] < best[0] || (s[0] === best[0] && s[1] < best[1])) best = s;
+        // The icons that overlap nothing stay; the others move, in an order that only depends on
+        // the spots, not the list's order
+        var moving = [], rank = {}, pos = [], stacked = {};
+        for (i = 0; i < n; i++) { pos.push([spots[i][0], spots[i][1]]); if (isMoving[i]) moving.push(i); }
+        moving.sort(function (a, b) {
+            var p = spots[a], q = spots[b];
+            return cmp(p[0], q[0]) || cmp(p[1], q[1]) || cmp(p[3], q[3]);
+        });
+        for (i = 0; i < moving.length; i++) {
+            var mi = moving[i], ms = spots[mi], sk = ms[0] + "," + ms[1], k = stacked[sk] || 0;
+            rank[mi] = i;
+            stacked[sk] = k + 1;
+            if (k) {  // (the first of an exact stack opens up north-ish, the next ones around it)
+                var a0 = -Math.PI / 2 + (k - 1) * SPREAD_GOLDEN;
+                pos[mi][0] += Math.cos(a0) * ms[2] * 0.01;
+                pos[mi][1] += Math.sin(a0) * ms[2] * 0.01;
             }
-            return best;
         }
-        groups.sort(function (a, b) { var p = first(a), q = first(b); return cmp(p[0], q[0]) || cmp(p[1], q[1]); });
-        for (var gi = 0; gi < groups.length; gi++) {
-            var grp = groups[gi], mx = 0, my = 0;
-            for (i = 0; i < grp.length; i++) { mx += spots[grp[i]][0]; my += spots[grp[i]][1]; }
-            mx /= grp.length;
-            my /= grp.length;
-            var d2 = {};
-            for (i = 0; i < grp.length; i++) {
-                var gs = spots[grp[i]];
-                d2[grp[i]] = (gs[0] - mx) * (gs[0] - mx) + (gs[1] - my) * (gs[1] - my);
-            }
-            grp.sort(function (a, b) {
-                var p = spots[a], q = spots[b];
-                return cmp(d2[a], d2[b]) || cmp(p[0], q[0]) || cmp(p[1], q[1]) || cmp(p[3], q[3]);
-            });
-            for (var gm = 0; gm < grp.length; gm++) {
-                var sp = spots[grp[gm]], x = sp[0], y = sp[1], r = sp[2];
-                var near = nearList(placed, x, y, r, SPREAD_NEAR_RINGS), spot = null, blocked = false;
-                for (j = 0; j < near.length && !blocked; j++) blocked = near[j][0] < near[j][3];
-                if (blocked) {
-                    var ax = x - mx, ay = y - my;
-                    var a0 = ax * ax + ay * ay > r * 0.01 * r * 0.01 ? Math.atan2(ay, ax) : -Math.PI / 2;  // (middle: ~north)
-                    // The near rings first, with only the icons that reach them (most find a place there)
-                    spot = ringSpot(x, y, r, a0, near, 1, SPREAD_NEAR_RINGS) ||
-                        ringSpot(x, y, r, a0, nearList(placed, x, y, r, SPREAD_RINGS), SPREAD_NEAR_RINGS + 1, SPREAD_RINGS);
-                }
-                if (spot) {
-                    placed.push([spot[0], spot[1], r]);
-                    offs[grp[gm]] = [spot[0] - x, spot[1] - y];
-                } else {
-                    placed.push([x, y, r]);  // (free, or nowhere free near: it stays)
+        // The pairs that can meet, found once on a grid twice as coarse (all pairs in neighbouring
+        // cells: pushed apart, an icon moves an icon or two): [p, q, need, need^2 less rounding, p's share]
+        var wide = 2 * cell, coarse = {}, pairs = [];
+        for (i = 0; i < n; i++) {
+            var ck = Math.floor(spots[i][0] / wide) + "," + Math.floor(spots[i][1] / wide);
+            (coarse[ck] || (coarse[ck] = [])).push(i);
+        }
+        for (i = 0; i < moving.length; i++) {
+            var pi = moving[i], px = Math.floor(spots[pi][0] / wide), py = Math.floor(spots[pi][1] / wide);
+            for (var cx = -1; cx <= 1; cx++) {
+                for (var cy = -1; cy <= 1; cy++) {
+                    var cl = coarse[(px + cx) + "," + (py + cy)];
+                    if (!cl) continue;
+                    for (var cj = 0; cj < cl.length; cj++) {
+                        j = cl[cj];
+                        if (j === pi || (isMoving[j] && rank[j] < i)) continue;
+                        var need = spots[pi][2] + spots[j][2];
+                        pairs.push([pos[pi], pos[j], need, need * need * SPREAD_TOUCH, isMoving[j] ? 0.5 : 1]);
+                    }
                 }
             }
+        }
+        // Each pass: p and q of an overlapping pair apart, p by its share of the overlap, q by the rest
+        for (var pass = 0; pass < SPREAD_PASSES; pass++) {
+            var clear = true;
+            for (i = 0; i < pairs.length; i++) {
+                var pr = pairs[i], p = pr[0], q = pr[1], ex = p[0] - q[0], ey = p[1] - q[1], d2 = ex * ex + ey * ey;
+                if (d2 >= pr[3]) continue;
+                clear = false;
+                var d = Math.sqrt(d2);
+                if (d <= pr[2] * 1e-6) { ex = 0; ey = -1; d = 1; }  // (on the same spot: apart north-south)
+                var over = (pr[2] - d) / d, sh = pr[4];
+                p[0] += ex * over * sh;
+                p[1] += ey * over * sh;
+                q[0] -= ex * over * (1 - sh);
+                q[1] -= ey * over * (1 - sh);
+            }
+            if (clear) break;
+        }
+        for (i = 0; i < moving.length; i++) {
+            var mv = moving[i];
+            offs[mv] = [pos[mv][0] - spots[mv][0], pos[mv][1] - spots[mv][1]];
         }
         return { offs: offs, groups: groups };
-    }
-
-    // The placed icons that could touch a place on rings 1..rings around (x, y), nearest first (they
-    // block most places): [distance^2, x, y, (r + their r)^2]
-    function nearList(placed, x, y, r, rings) {
-        var reach = (rings + 1) * r, near = [];
-        for (var j = 0; j < placed.length; j++) {
-            var pl = placed[j], px = pl[0] - x, py = pl[1] - y, pr = pl[2];
-            if (Math.abs(px) < reach + pr && Math.abs(py) < reach + pr) near.push([px * px + py * py, pl[0], pl[1], (r + pr) * (r + pr) * SPREAD_TOUCH]);
-        }
-        near.sort(function (a, b) { return a[0] - b[0]; });
-        return near;
-    }
-
-    // The first free place on rings first..last (k r around (x, y)), each tried from the direction a0 out
-    function ringSpot(x, y, r, a0, near, first, last) {
-        var ca = Math.cos(a0), sa = Math.sin(a0);
-        for (var k = first - 1; k < last; k++) {
-            var dirs = SPREAD_DIRS[k], dist = (k + 1) * r;
-            for (var t = 0; t < dirs.length; t++) {
-                var cx = x + dist * (dirs[t][0] * ca - dirs[t][1] * sa), cy = y + dist * (dirs[t][0] * sa + dirs[t][1] * ca);
-                var ok = true;
-                for (var m = 0; m < near.length; m++) {
-                    var ex = cx - near[m][1], ey = cy - near[m][2];
-                    if (ex * ex + ey * ey < near[m][3]) { ok = false; break; }
-                }
-                if (ok) return [cx, cy];
-            }
-        }
-        return null;
     }
 
     // pts: [x, y, edge] -> the shift [x, y] that brings them all inside together
@@ -866,12 +893,17 @@
         var here = northFrame(cfg, p.x, p.y);
         placeTiles(cfg, here, scale);
         placeRoute(cfg, scale);
+        placeLead(here, scale);
         placeFog(cfg, scale);
         if (st.anchor) {
-            map.style.transform = "translate(" + (-(here.right - st.anchor.right) * scale).toFixed(2) + "px," +
+            var mt = "translate(" + (-(here.right - st.anchor.right) * scale).toFixed(2) + "px," +
                 (-(st.anchor.up - here.up) * scale).toFixed(2) + "px)";
+            map.style.transform = mt;
+            if (cfg.routeTop) routeMap.style.transform = mt;
         }
-        rot.style.transform = "rotate(" + wrap180(cfg.nyaw - mapYaw).toFixed(2) + "deg)";
+        var rt = "rotate(" + wrap180(cfg.nyaw - mapYaw).toFixed(2) + "deg)";
+        rot.style.transform = rt;
+        if (cfg.routeTop) routeRot.style.transform = rt;
         var arrowTurn = cfg.rotate ? 0 : wrap180(yaw - mapYaw);
         var at = arrowTurn.toFixed(1);
         if (at !== st.lastArrow) { arrow.style.transform = "rotate(" + at + "deg)"; st.lastArrow = at; }
