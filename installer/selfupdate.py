@@ -14,6 +14,12 @@ the download to <name>, start it and quit. The new copy deletes the .old file on
 has gone. The app lives only where the player keeps it (the Start menu entry points there); there's
 no copy in the game folder any more (core._settle_app), so the Mod Menu never downloads the app.
 
+Mods update without a new app (fetch_mods, 2026-11-04): before an install the app compares each
+mod it's installing with the release (and with what's installed and its own copy), downloads the
+newer ones (size and SHA-256 from the signed manifest, the zip's own pyproject.toml version) into
+core.mod_cache_dir(), and core.install takes the newest copy. So a release that only updates mods
+needs no app update; the "Update App" offer stays for a newer app, SDK or a mod the catalog lacks.
+
 No unreal, no admin: everything here runs as the player, from a worker thread.
 """
 
@@ -45,6 +51,7 @@ USER_AGENT = "BL4-Fix-Setup"
 TIMEOUT_S = 15
 MAX_MANIFEST = 1 << 20
 MAX_EXE = 256 << 20
+MAX_MOD = 64 << 20
 CHUNK = 256 << 10
 # Tests serve releases from a local http server; real downloads must stay on https
 ALLOW_HTTP = False
@@ -151,7 +158,14 @@ def compare(manifest: dict[str, Any]) -> dict[str, Any]:
     newer_app = _vkey(str(app.get("version", ""))) > _vkey(shared.MOD_VERSION)
     newer_sdk = _vkey(str(manifest.get("sdk", ""))) > _vkey(shared.SDK_VERSION)
     return {
-        "stale": bool(newer_app or newer_sdk or new_mods or newer_mods),
+        # Newer mods alone don't make the app stale: it downloads them itself (fetch_mods)
+        "stale": bool(newer_app or newer_sdk or new_mods),
+        # Every catalog mod's version in the release, for the page's per-mod update lines
+        "mods": {
+            mod_id: str(info.get("version", ""))
+            for mod_id, info in manifest["mods"].items()
+            if isinstance(info, dict) and mod_id in catalog.BY_ID
+        },
         "release": str(manifest["release"]),
         "version": str(app.get("version", "")),
         "current": shared.MOD_VERSION,
@@ -160,6 +174,75 @@ def compare(manifest: dict[str, Any]) -> dict[str, Any]:
         "sdk": newer_sdk,
         "size": int(app.get("size") or 0),
     }
+
+
+def mod_updates(manifest: dict[str, Any], game_dir: Path, mods: set[str] | frozenset[str]) -> list[str]:
+    """
+    The mods in `mods` whose release version is newer than both the installed copy and the
+    newest this app has (its payload or an earlier download): the ones fetch_mods downloads.
+    """
+    sdk_mods = game_dir / "sdk_mods"
+    wanted = []
+    for mod_id in sorted(mods):
+        info = manifest["mods"].get(mod_id)
+        if mod_id not in catalog.BY_ID or not isinstance(info, dict):
+            continue
+        release = _vkey(str(info.get("version", "")))
+        local = max(
+            _vkey(core.sdkmod_version(core.mod_source(mod_id), mod_id)),
+            _vkey(core.sdkmod_version(sdk_mods / f"{mod_id}.sdkmod", mod_id)),
+        )
+        if release > local:
+            wanted.append(mod_id)
+    return wanted
+
+
+def download_mod(manifest: dict[str, Any], mod_id: str, url: str | None = None) -> Path:
+    """
+    Downloads one mod of the release into core.mod_cache_dir() once its size, SHA-256 (from the
+    signed manifest) and its own pyproject.toml version check out. Returns the file.
+    """
+    info = manifest["mods"][mod_id]
+    size, digest, version = int(info.get("size") or 0), str(info.get("sha256") or ""), str(info.get("version") or "")
+    asset = str(info.get("asset") or f"{mod_id}.sdkmod")
+    if not size or not digest or not version or "/" in asset or "\\" in asset:
+        raise RuntimeError(f"the release doesn't list {mod_id} properly")
+    data = _get(url or asset_url(str(manifest["release"]), asset), min(MAX_MOD, size + 1))
+    if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
+        raise RuntimeError(f"the {mod_id} download doesn't match the release (size or SHA-256)")
+    target = core.cached_mod(mod_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".download")
+    tmp.write_bytes(data)
+    try:
+        if core.sdkmod_version(tmp, mod_id) != version:
+            raise RuntimeError(f"the {mod_id} download isn't version {version}")
+        tmp.replace(target)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return target
+
+
+def fetch_mods(game_dir: Path, mods: set[str] | frozenset[str], log=print, manifest: dict[str, Any] | None = None) -> None:  # noqa: ANN001
+    """
+    Before an install: downloads the release's newer copies of `mods` (mod_updates). Best effort:
+    offline, or a download that fails, leaves that mod to the copy this app already has.
+    """
+    if manifest is None:
+        _, manifest = check()
+        if manifest is None:
+            log("Couldn't reach GitHub for mod updates: installing this app's copies.")
+            return
+    wanted = mod_updates(manifest, game_dir, mods)
+    for i, mod_id in enumerate(wanted, 1):
+        name, version = catalog.BY_ID[mod_id].name, manifest["mods"][mod_id].get("version")
+        log(f"[{i}/{len(wanted)}] Downloading {name} {version}...")
+        try:
+            download_mod(manifest, mod_id)
+        except Exception as ex:  # noqa: BLE001 - keep going: the install uses the copy it has
+            log(f"Couldn't download {name} {version} ({ex}): installing this app's copy.")
+    if wanted:
+        log(f"Downloaded {len(wanted)} mod update(s) from {manifest['release']}.")
 
 
 def check(url: str | None = None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:

@@ -536,9 +536,10 @@ it does guard against:
 - Run BL4 Fix Setup and untick the mod, or **System > Uninstall** to remove everything.
 - **Roll back:** after an update, MODS > Updates lists the previous version of each updated mod
   with a Roll back button (it reloads at once when it can, else when the game closes).
-- **Safe mode** (BL4 Fix Setup > System > Safe mode, or `BL4FixSetup.exe --safe-mode on` with the
-  game closed) moves every mod that isn't BL4 Fix's into `sdk_mods/.bl4_safe_mode/`, deleting
-  nothing. Turn it off there, or press Restore on MODS > Discover in game, to put them back.
+- **Switch to Vanilla** (BL4 Fix Setup, under Install, or `BL4FixSetup.exe --vanilla on [--leave ours,others,sdk]`
+  with the game closed) moves every mod, BL4 Fix's and other modders', SDK mods and pak mods, into
+  `BL4Fix_ModsOff` in the game folder, deleting nothing. The popup has a switch each for BL4 Fix's mods, other modders' mods and the
+  Python SDK, all on: with all three moved the game starts completely vanilla. **Turn Mods Back On** (or `--vanilla off`) puts them back.
 - Save Backups restores a character or the bank from any kept backup, and the `-before-restore`
   copy undoes a restore.
 
@@ -627,9 +628,12 @@ and almost every change reloads live without restarting the game.
 | [`mods/`](mods) | One folder per mod |
 | [`ported/`](ported) | GPL-3.0 rewrites of Yeti's mods |
 | [`installer/`](installer) | The setup app: `python installer/build.py` produces `dist/BL4FixSetup.exe`; `catalog.py` lists the mods |
-| [`tools/`](tools) | Generators for game-derived data (`gen_*.py`), NCS parser (our rewrite of monokrome's [`bl4-ncs`](https://github.com/monokrome/bl4)), desktop agent, bridge client, live UI editing, `release.py` |
-| [`dev/`](dev) | The bridge mod (run Python on the game thread from outside), hot-reload scripts, reverse-engineering and profiling tools |
+| [`tools/`](tools) | Release tooling: `release.py` / `verify_release.py`, `sync_shared.py`, `nexus_pack.py`, `make_repo.py` |
 | [`docs/`](docs) | Write-ups: co-op fast travel, network performance, game hitches |
+
+Everything needed to build and verify a release is here. The data the mods read from the game
+(the `.json` files in each mod) is committed as generated. The scripts that extract it from the
+game's files, and personal test and reverse-engineering tooling, aren't published.
 
 ### Building the setup app
 
@@ -641,7 +645,7 @@ python installer/build.py
 
 It downloads the pinned SDK, packs every mod and builds `dist/BL4FixSetup.exe` with PyInstaller (in
 `installer/.venv`). The setup window is styled after the game's menus but holds no game files: its
-art (`installer/ui/art/`, the backdrop and icon made by `tools/gen_setup_art.py`) is our own and its
+art (`installer/ui/art/`) is our own and its
 font is [Saira](https://github.com/Omnibus-Type/Saira) (SIL Open Font License), so nothing has to
 come from your install. No pictures are shipped either: Kairosdex makes its boss and item pictures
 in each player's own game, at the title screen. The first build also compiles
@@ -672,7 +676,7 @@ two-instance testing, the installer).
 - [nanafy](https://github.com/nanafy) for [bl4-slim](https://github.com/nanafy/bl4-slim) (MIT),
   the idea and methods behind the setup app's Disk Space page (our own implementation).
 - [monokrome](https://github.com/monokrome) for [bl4](https://github.com/monokrome/bl4)
-  (BSD-2-Clause): `tools/ncs_parse.py`, which reads the game's NCS definition files, is our Python
+  (BSD-2-Clause): the mods' game data is read from the game's NCS definition files with our Python
   rewrite of its `bl4-ncs` parser.
 - [Nicnl](https://github.com/Nicnl) for
   [borderlands4-serials](https://github.com/Nicnl/borderlands4-serials) (AGPL-3.0): Reroll's item
@@ -701,7 +705,6 @@ Files that come from other people's code keep those authors' notices and license
   Reroll: from Nicnl's borderlands4-serials, **AGPL-3.0** ([LICENSE-AGPL](LICENSE-AGPL), shipped in
   those three mods too). GPL-3.0 allows the combination; these files stay AGPL-3.0.
 - `mods/bl4_direct/ui.py`: follows mattmab's MattsBL4ModsMenu, MIT (notice in the file).
-- `tools/ncs_parse.py`: from monokrome's bl4, BSD-2-Clause (notice in the file).
 - `installer/ui/fonts/Saira.ttf`: the Saira font, SIL Open Font License 1.1
   (`installer/ui/fonts/OFL.txt`, bundled with it in the setup app).
 

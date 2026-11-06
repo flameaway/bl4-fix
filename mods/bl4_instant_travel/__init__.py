@@ -35,8 +35,8 @@ try:
 except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo / host only
     coop = None
 
-__version__ = "0.1.2"
-__version_info__ = (0, 1, 2)
+__version__ = "0.1.3"
+__version_info__ = (0, 1, 3)
 
 GAME_DIR = SETTINGS_DIR.parent.parent
 STATION_TYPE = 24576  # def handle type of travel stations

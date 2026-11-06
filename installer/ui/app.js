@@ -29,8 +29,6 @@ const S = {
   // Disk Space: the last scan's numbers for the current choice (api.space_info), the voice
   // languages to keep, whether to blank old patch data
   space: { info: null, keep: null, old: true, seq: 0 },
-  // Safe mode (api.safe_mode: core.safe_mode_status): on, aside, missing, left, others, time
-  safe: null,
 };
 
 /* ---------- components (setup.css draws them) ---------- */
@@ -71,38 +69,11 @@ function listButton(text, fn, cls) {
   return b;
 }
 
-/* ---------- boot: the mark powers up ---------- */
-
-// Jagged arcs of light around the mark, a new set every few frames while the boot screen shows
-function bootBolts() {
-  const svg = $("#boot-bolts");
-  const bolt = () => {
-    const a = Math.random() * Math.PI * 2;
-    const len = 0.35 + Math.random() * 0.5;
-    const r0 = 250 + Math.random() * 60;
-    let d = "";
-    const steps = 9;
-    for (let i = 0; i <= steps; i++) {
-      const t = a + (len * i) / steps;
-      const r = r0 + (Math.random() - 0.5) * 46;
-      d += `${i ? "L" : "M"}${(500 + Math.cos(t) * r).toFixed(1)} ${(500 + Math.sin(t) * r).toFixed(1)} `;
-    }
-    return `<path d="${d}"/>`;
-  };
-  const draw = () => {
-    if ($("#boot").classList.contains("done")) return;
-    svg.innerHTML = Array.from({ length: 1 + Math.floor(Math.random() * 3) }, bolt).join("");
-    setTimeout(draw, 70 + Math.random() * 160);
-  };
-  draw();
-}
+/* ---------- start: the page shows at once (no boot screen since 2026-11-04) ---------- */
 
 async function boot() {
   S.api = await getApi();
-  const still = params.has("still");
-  if (still) document.body.classList.add("still");
-  else bootBolts();
-  const started = performance.now();
+  if (params.has("still")) document.body.classList.add("still");
   S.info = await S.api.init();
   S.gameDir = S.info.game_dir;
   S.selected = new Set(S.info.mods.filter((m) => m.required || m.default).map((m) => m.id));
@@ -111,12 +82,6 @@ async function boot() {
   const statusP = refreshStatus();
   loadFriends();
   lookupIp();
-  if (!still) {
-    await sleep(Math.max(0, 2300 - (performance.now() - started)));
-    $("#boot-prompt").textContent = "ECHO-4 link established";
-    await sleep(500);
-  }
-  $("#boot").classList.add("done");
   showPage(params.get("page") || "loadout");
   await statusP;
   setInterval(pollRunning, 3000);
@@ -130,6 +95,36 @@ async function checkUpdate(manual = false) {
   if (S.update && S.update.stale) toast(`A newer BL4 Fix Setup is out (${S.update.version}): Update App`);
   else if (manual) toast(S.update ? "BL4 Fix Setup is up to date" : "Couldn't reach GitHub (offline?)", !S.update);
   render();
+}
+
+// Mod updates: the app downloads a newer mod from the release itself at Install
+// (selfupdate.fetch_mods), or installs its own newer copy (status.local)
+function vkey(v) {
+  return (String(v || "").match(/\d+/g) || []).slice(0, 4).map(Number);
+}
+
+function newer(a, b) {
+  const x = vkey(a), y = vkey(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  }
+  return false;
+}
+
+// {from, to} when an installed mod has a newer version to install, else null
+function modUpdate(id) {
+  const st = S.status;
+  if (!st || !st.valid || !st.versions || !st.installed.includes(id)) return null;
+  const have = st.versions[id];
+  if (!have || (st.dev_mods || []).includes(id)) return null;
+  const release = S.update && S.update.mods ? S.update.mods[id] : "";
+  const local = (st.local || {})[id] || "";
+  const best = newer(release, local) ? release : local;
+  return best && newer(best, have) ? { from: have, to: best } : null;
+}
+
+function modUpdates() {
+  return S.info.mods.filter((m) => S.selected.has(m.id) && modUpdate(m.id));
 }
 
 function updateSummary(u) {
@@ -164,6 +159,7 @@ function getApi() {
 const NAV = [
   { id: "update", text: "Update App", big: true }, // shown only when a newer release is out
   { id: "install", text: "Install", big: true },
+  { id: "vanilla", text: "Switch to Vanilla", big: true }, // every mod moved out of reach, and back
   { id: "launch", text: "Launch Game", big: true },
   { divider: true },
   { id: "loadout", text: "Loadout" },
@@ -186,7 +182,7 @@ function buildMenu() {
     // pending changes in brackets next to the text
     const txt = el("p", "mi_txt", item.text);
     const slot = deco("div", "mi " + (item.big ? "mi_big" : "mi_sub"), ["mi_band", "mi_pip", "mi_pip mi_pip_r"], txt);
-    if (item.id === "install" || item.id === "update") {
+    if (item.id === "install" || item.id === "update" || item.id === "vanilla") {
       slot.classList.add("su_mm_install");
       slot.appendChild(el("p", "su_mm_info", ""));
       if (item.id === "update") slot.hidden = true;
@@ -203,6 +199,7 @@ function buildMenu() {
 function navigate(id) {
   if (id === "update") return updateApp();
   if (id === "install") return install();
+  if (id === "vanilla") return vanilla();
   if (id === "launch") return launch();
   if (id === "quit") return quit();
   showPage(id);
@@ -365,8 +362,16 @@ function renderLoadout() {
       if (m.required) status = { kind: "core", text: "Always on" };
       else if (known && on && !installed.has(m.id)) status = { kind: "add", text: "+ Install" };
       else if (known && !on && installed.has(m.id)) status = { kind: "remove", text: "- Remove" };
-      else if (installed.has(m.id)) status = { kind: "on", text: "Installed" };
-      const meta = [m.key ? `Key: ${m.key}` : "", installed.has(m.id) ? "Installed" : "Not installed", dev.has(m.id) ? "Loads from a dev folder" : ""].filter(Boolean).join("  //  ");
+      const up = known && on ? modUpdate(m.id) : null;
+      if (!status && up) status = { kind: "add", text: "Update" };
+      else if (!status && installed.has(m.id)) status = { kind: "on", text: "Installed" };
+      const have = known && S.status.versions ? S.status.versions[m.id] : "";
+      const meta = [
+        m.key ? `Key: ${m.key}` : "",
+        installed.has(m.id) ? (have ? `Installed ${have}` : "Installed") : "Not installed",
+        up ? `Update: ${up.to}` : "",
+        dev.has(m.id) ? "Loads from a dev folder" : "",
+      ].filter(Boolean).join("  //  ");
       const t = m.required ? toggle(true, null) : toggle(on, (v) => setMod(m.id, v));
       if (m.required) t.classList.add("su_locked");
       row(m.name, [t], { title: m.name, meta, body: m.blurb }, {
@@ -474,7 +479,6 @@ function renderSystem() {
     });
   }
   title("Safety");
-  safeModeRow();
   row("Safety", [valueText("Open source  //  Saves read only", "su_dim")], {
     title: "Safety", meta: "What BL4 Fix does and doesn't do", body: SAFETY_TEXT, long: true,
   });
@@ -499,7 +503,7 @@ function renderSystem() {
   });
 }
 
-/* ---------- safety + safe mode (core.set_safe_mode) ---------- */
+/* ---------- safety ---------- */
 
 const SAFETY_TEXT =
   "Open source: BL4 Fix's mods are GPL-3.0, at github.com/flameaway/bl4-fix.\n" +
@@ -507,46 +511,7 @@ const SAFETY_TEXT =
   "Internet: GitHub for update checks and the downloads you press; api.ipify.org to show your public IP for co-op; Microsoft for the VC++ runtime when it's missing. Nothing else.\n" +
   "Bug reports: stay on your PC until you attach one yourself, with names, paths and IP addresses masked.\n" +
   "Other modders' repositories: their mods aren't checked by BL4 Fix and run with the game's rights. Add only repositories you trust.\n" +
-  "Safe mode sets other modders' mods aside if one breaks the game.";
-
-const SAFE_MODE_WHY =
-  "For when a mod breaks the game: sets every mod that isn't BL4 Fix's aside (not deleted) until you turn this off. BL4 Fix's mods keep working.";
-
-function plural(n, word) {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
-
-function safeModeRow() {
-  const s = S.safe;
-  const known = !!(S.status && S.status.valid && s && "on" in s);
-  const on = known && s.on;
-  const aside = known ? s.aside.length : 0;
-  const others = known ? s.others.length : 0;
-  let meta = "", body = SAFE_MODE_WHY + "\n(They wait in sdk_mods\\.bl4_safe_mode. Close the game first.)";
-  if (!known) meta = "Pick the game folder first";
-  else if (on) {
-    meta = `${plural(aside, "mod")} set aside`;
-    if (aside) body += "\n\nSet aside: " + s.aside.join(", ");
-    if (others) body += "\n\nAdded since (these load): " + s.others.join(", ") + ". Turn safe mode off and on again to set them aside too.";
-  } else {
-    meta = others ? `${plural(others, "mod")} by other modders installed` : "No other modders' mods installed";
-    if (others) body += "\n\nWould set aside: " + s.others.join(", ");
-  }
-  if (known && s.left.length) body += "\n\nStill set aside, because sdk_mods has one with the same name again: " + s.left.join(", ");
-  const t = toggle(on, known ? setSafeMode : null);
-  if (!known) t.classList.add("su_locked");
-  row("Safe mode", [t], { title: "Safe mode", meta, metaCls: on ? "su_warn" : "", body }, {
-    status: on ? { kind: "warn", text: `${aside} aside` } : null,
-    onClick: known ? () => setSafeMode(!on) : null,
-  });
-}
-
-async function setSafeMode(on) {
-  if (S.busy || !S.status || !S.status.valid) return;
-  if (S.status.running) return toast("Close Borderlands 4 first", true);
-  startTask("safe_mode", on ? "Safe mode on" : "Safe mode off");
-  if (!(await S.api.set_safe_mode(S.gameDir, on))) endTask();
-}
+  "Switch to Vanilla (under Install) moves every mod out of the game's reach if one breaks the game, and Turn Mods Back On returns them.";
 
 /* ---------- bug reports (the Mod Menu's report.py) ---------- */
 
@@ -714,11 +679,13 @@ function updateMenu() {
   else if (!st) { sub = "..."; disabled = true; }
   else if (!st.valid) { sub = "No game"; disabled = true; }
   else if (st.running) { sub = "Game running"; disabled = true; }
+  else if (st.vanilla) { sub = "Mods off"; disabled = true; }
   else {
     const { add, remove } = changes();
     const fwChanged = S.friends.firewall !== S.firewallSaved;
     if (!st.installed.length) sub = `${S.selected.size} mods`;
     else if (add.length || remove.length) { text = "Apply"; sub = [add.length ? `+${add.length}` : "", remove.length ? `-${remove.length}` : ""].filter(Boolean).join(" "); }
+    else if (modUpdates().length) { const n = modUpdates().length; text = "Update"; sub = `${n} mod${n === 1 ? "" : "s"}`; }
     else if (fwChanged) { text = "Apply"; sub = "Firewall"; }
     else if (!st.ready) text = "Repair";
     else { text = "Reinstall"; sub = "Up to date"; }
@@ -737,6 +704,14 @@ function updateMenu() {
   }
   u.slot.classList.toggle("su_disabled", S.busy);
 
+  const v = S.nav.vanilla;
+  const off = !!(st && st.valid && st.vanilla);
+  v.txt.textContent = off ? "Turn Mods Back On" : S.busy && S.task === "vanilla" ? "Moving Mods" : "Switch to Vanilla";
+  const vInfo = $(".su_mm_info", v.slot);
+  vInfo.textContent = off ? (st.vanilla.sdk ? "No SDK" : `${st.vanilla.mods.length} off`) : "";
+  vInfo.classList.toggle("su_empty", !off);
+  v.slot.classList.toggle("su_disabled", S.busy || !st || !st.valid || !!(st && st.running));
+
   const l = S.nav.launch;
   const running = !!(st && st.valid && st.running);
   l.txt.textContent = running ? "Game Running" : S.launching ? "Starting..." : "Launch Game";
@@ -746,7 +721,6 @@ function updateMenu() {
 async function refreshStatus() {
   S.status = S.gameDir ? await S.api.status(S.gameDir) : { valid: false };
   if (S.status.valid) S.selected = new Set(S.status.chosen);
-  S.safe = S.status.valid ? await S.api.safe_mode(S.gameDir) : null;
   render();
 }
 
@@ -779,8 +753,8 @@ async function install() {
   if (S.busy || !S.status || !S.status.valid) return;
   if (S.status.running) { toast("Close Borderlands 4 first", true); return; }
   if (S.update && S.update.stale) {
-    // This exe's mods are older than the release's (or it lacks new ones): update it first
-    const first = await confirmDialog("Update the app first?", `A newer BL4 Fix Setup is out:\n${updateSummary(S.update)}\n\nThis app would install its older copies.`, "Update first", false,
+    // A newer app, SDK or new mods (mod updates alone it downloads itself): update it first
+    const first = await confirmDialog("Update the app first?", `A newer BL4 Fix Setup is out:\n${updateSummary(S.update)}\n\nInstall anyway still updates your mods from the release; the new app brings the rest.`, "Update first", false,
       { cancelText: "Install anyway", okCls: "", backdrop: null });
     if (first === null) return;
     if (first) return updateApp(true);
@@ -794,23 +768,48 @@ async function install() {
     if (on) { S.friends.firewall = true; S.friendsDirty = true; }
   }
   if (remove.length && !(await confirmDialog("Remove mods?", "These will be uninstalled (their settings are kept):\n\n" + remove.map((m) => m.name).join("\n"), "Remove and apply"))) return;
-  startTask("install", "Installing");
+  S.updatedMods = modUpdates().length;
+  startTask("install", S.updatedMods && !changes().add.length && S.status.installed.length ? "Updating mods" : "Installing");
   S.installFirewall = S.friends.firewall;
   if (!(await S.api.install(S.gameDir, [...S.selected], S.friends.firewall))) endTask();
 }
 
 async function uninstall() {
   if (S.busy || !S.status || !S.status.valid) return;
-  const ok = await confirmDialog("Uninstall everything?", "Removes every mod BL4 Fix installed and the firewall rule. Your friends list and mod settings are kept.", "Uninstall", true);
+  const ok = await confirmDialog("Uninstall everything?", "Removes every mod BL4 Fix installed and the firewall rule. Your friends list and mod settings are kept.", "Uninstall",
+    [{ key: "sdk", label: "Also remove the Python SDK (leave this off if you use other SDK mods)", off: "Keep", on: "Remove" }]);
   if (!ok) return;
   startTask("uninstall", "Uninstalling");
-  if (!(await S.api.uninstall(S.gameDir, ok.removeSdk))) endTask();
+  if (!(await S.api.uninstall(S.gameDir, ok.sdk))) endTask();
+}
+
+const VANILLA_WHY =
+  "For when a mod breaks the game, or to play without mods: moves what's picked below into BL4Fix_ModsOff in the game folder, where the game doesn't load it. Nothing is deleted. It all stays there until you press Turn Mods Back On.\n\nAre you sure?";
+
+async function vanilla() {
+  const st = S.status;
+  if (S.busy || !st || !st.valid) return;
+  if (st.running) return toast("Close Borderlands 4 first", true);
+  if (st.vanilla) {
+    startTask("vanilla", "Turning mods back on");
+    if (!(await S.api.set_vanilla(S.gameDir, false))) endTask();
+    return;
+  }
+  const ok = await confirmDialog("Switch to vanilla?", VANILLA_WHY, "Switch to Vanilla", [
+    { key: "ours", label: "BL4 Fix's mods", off: "Leave", on: "Move", value: true },
+    { key: "others", label: "Other modders' mods (SDK and pak mods)", off: "Leave", on: "Move", value: true },
+    { key: "sdk", label: "Python SDK (oak2-sdk). Moved too, the game starts completely vanilla", off: "Leave", on: "Move", value: true },
+  ], { okCls: "" });
+  if (!ok) return;
+  if (!ok.ours && !ok.others && !ok.sdk) return toast("Nothing picked to switch off", true);
+  startTask("vanilla", "Switching to vanilla");
+  if (!(await S.api.set_vanilla(S.gameDir, true, ok.ours, ok.others, ok.sdk))) endTask();
 }
 
 async function launch() {
   if (S.busy || S.launching || !S.status || !S.status.valid || S.status.running) return;
   const { add, remove } = changes();
-  if ((add.length || remove.length || !S.status.installed.length) &&
+  if (!S.status.vanilla && (add.length || remove.length || !S.status.installed.length) &&
       !(await confirmDialog("Launch without installing?", "Your loadout has changes that aren't installed yet. Launch Borderlands 4 anyway?", "Launch anyway"))) return;
   const error = await S.api.launch_game(S.gameDir);
   if (error) { toast(error, true); return; }
@@ -831,7 +830,7 @@ function startTask(name, label) {
   S.task = name;
   S.logCount = 0;
   addLog(label, "su_head");
-  if (name !== "friends" && name !== "firewall" && name !== "safe_mode") {
+  if (name !== "friends" && name !== "firewall" && name !== "vanilla") {
     $("#working-title").textContent = label;
     $("#working-line").textContent = "Starting...";
     $("#pfill").style.width = "3%";
@@ -867,13 +866,12 @@ window.app = {
       else celebrate(true, "Restarting with the new version...", "Updated");
       return;
     }
-    if (name === "safe_mode") {
+    if (name === "vanilla") {
       await refreshStatus();
-      const s = S.safe || {};
-      const n = (s.aside || []).length;
-      if (error) toast("Safe mode: " + error, true);
-      else if (s.on) toast(`Safe mode on: ${n} mod${n === 1 ? "" : "s"} by other modders set aside`);
-      else toast("Safe mode off: other modders' mods are back" + ((s.left || []).length ? ` (${s.left.length} kept aside, see Activity)` : ""), !!(s.left || []).length);
+      const v = S.status && S.status.vanilla;
+      if (error) toast(error, true);
+      else if (v) toast(v.sdk ? "Vanilla: no mods and no Python SDK" : `Vanilla: ${v.mods.length} mod${v.mods.length === 1 ? "" : "s"} switched off`);
+      else toast("Mods are back on");
       return;
     }
     if (name === "report") {
@@ -913,7 +911,9 @@ window.app = {
       celebrate(false, error);
     } else {
       if (name === "install") S.firewallSaved = S.installFirewall;
-      celebrate(true, name === "uninstall" ? "BL4 Fix and its mods are gone." : "In game: F6 for co-op, F7 for mod settings.", name === "uninstall" ? "Uninstalled" : "Installed");
+      const updated = name === "install" && S.updatedMods ? `${S.updatedMods} mod${S.updatedMods === 1 ? "" : "s"} updated. ` : "";
+      celebrate(true, name === "uninstall" ? "BL4 Fix and its mods are gone." : updated + "In game: F6 for co-op, F7 for mod settings.",
+        name === "uninstall" ? "Uninstalled" : updated ? "Updated" : "Installed");
     }
     refreshStatus();
   },
@@ -973,27 +973,29 @@ async function saveFriends() {
 
 /* ---------- popups ---------- */
 
-// opts: cancelText, okCls (the OK button's class, default su_danger), backdrop (what a click
-// outside the dialog resolves to, default false)
-function confirmDialog(titleText, body, okText, uninstallOptions = false, opts = {}) {
+// switches: On/Off choices under the text ([{ key, label, off, on, value }]; OK resolves to
+// { key: value, ... }). opts: cancelText, okCls (the OK button's class, default su_danger),
+// backdrop (what a click outside the dialog resolves to, default false)
+function confirmDialog(titleText, body, okText, switches = null, opts = {}) {
   return new Promise((resolve) => {
     $("#dialog-title").textContent = titleText;
     const b = $("#dialog-body");
     b.innerHTML = "";
     b.appendChild(el("p", "su_dialog_text", body));
-    let removeSdk = false;
-    if (uninstallOptions) {
+    const picked = {};
+    for (const s of switches || []) {
+      picked[s.key] = !!s.value;
       const opt = el("div", "su_dialog_opt");
       const redraw = () => {
         opt.innerHTML = "";
-        opt.append(el("p", "su_dialog_opt_label", "Also remove the Python SDK (leave this off if you use other SDK mods)"), toggle(removeSdk, (v) => { removeSdk = v; redraw(); }, "Keep", "Remove"));
+        opt.append(el("p", "su_dialog_opt_label", s.label), toggle(picked[s.key], (v) => { picked[s.key] = v; redraw(); }, s.off, s.on));
       };
       redraw();
       b.appendChild(opt);
     }
     const btns = $("#dialog-btns");
     btns.innerHTML = "";
-    const done = (ok) => { $("#dialog").hidden = true; resolve(ok ? { removeSdk } : false); };
+    const done = (ok) => { $("#dialog").hidden = true; resolve(ok ? picked : false); };
     btns.append(listButton(opts.cancelText || "Cancel", () => done(false)), listButton(okText, () => done(true), opts.okCls ?? "su_danger"));
     $("#dialog").hidden = false;
     $("#dialog").onclick = (e) => {
@@ -1092,13 +1094,14 @@ function mockApi() {
   if (demo === "working") setTimeout(() => { startTask("install", "Installing"); app.onLog("Installing Python SDK 0.3 (was: none)..."); app.onLog("Installed bl4_minimap."); }, 600);
   if (demo === "hover") setTimeout(() => { $$(".row")[3].classList.add("hover_effect"); S.nav.coop.slot.classList.add("hover_effect"); $$(".su_btn")[0]?.classList.add("hover_effect"); }, 600);
   if (demo === "report") setTimeout(() => { showPage("system"); bugReport(); }, 600);
-  // &demo=safety / safemode: the System page with that row hovered (its details pane showing)
-  if (demo === "safety" || demo === "safemode") {
-    const name = demo === "safety" ? "Safety" : "Safe mode";
+  // &demo=safety: the System page with that row hovered (its details pane showing); &demo=vanilla:
+  // the Switch to Vanilla dialog
+  if (demo === "vanilla") setTimeout(() => vanilla(), 800);
+  if (demo === "safety") {
     const hover = (tries) => {
       if (S.info && S.page !== "system") showPage("system");
-      const entry = $$(".row").find((e) => $(".row_name", e)?.textContent === name);
-      if (entry && S.safe) entry.dispatchEvent(new MouseEvent("mouseenter"));
+      const entry = $$(".row").find((e) => $(".row_name", e)?.textContent === "Safety");
+      if (entry) entry.dispatchEvent(new MouseEvent("mouseenter"));
       else if (tries) setTimeout(() => hover(tries - 1), 200);
     };
     setTimeout(() => hover(30), 600);
@@ -1113,6 +1116,11 @@ function mockApi() {
         valid: true, ready: !fresh, running: params.has("running"), installed: fresh ? [] : installed,
         chosen: fresh ? mods.map((m) => m.id) : [...installed, "bl4_reroll"].filter((x) => x !== "bl4_perf"),
         dev_mods: [], conflicts: [], compat: "BL4-5554-8f3a2c-0.5.0",
+        // &vanilla: mods switched off (core.vanilla_status)
+        vanilla: params.has("vanilla") ? { mods: [...installed.map((id) => id + ".sdkmod"), "PersistentLoot.sdkmod"], paks: 3, sdk: false } : null,
+        // &modupdate: two installed mods older than the release (update_check's mods)
+        versions: fresh ? {} : Object.fromEntries(installed.map((id) => [id, params.has("modupdate") && (id === "bl4_minimap" || id === "bl4_item_cards") ? "0.1.0" : "0.2.0"])),
+        local: Object.fromEntries(mods.map((m) => [m.id, "0.2.0"])),
         checks: [
           ok("vc", "VC++ Runtime", "14.44", "needs 14.44+ (installed for you)"),
           ok("sdk", "Python SDK", fresh ? "missing" : "0.3", "needs 0.3", !fresh),
@@ -1143,7 +1151,8 @@ function mockApi() {
     launch_game: async () => "",
     update_check: async () => (params.has("update")
       ? { stale: true, release: "v2026.11.01", version: "0.5.3", current: "0.5.2", new_mods: ["Instant Fast Travel"], newer_mods: ["Minimap", "Reroll"], sdk: false, size: 104000000, can_apply: true }
-      : { stale: false, release: "v2026.10.27", version: "0.5.2", current: "0.5.2", new_mods: [], newer_mods: [], sdk: false, size: 0, can_apply: true }),
+      : { stale: false, release: "v2026.10.27", version: "0.5.2", current: "0.5.2", new_mods: [], newer_mods: [], sdk: false, size: 0, can_apply: true,
+          mods: params.has("modupdate") ? { bl4_minimap: "0.2.1", bl4_item_cards: "0.2.1" } : {} }),
     update_apply: async () => { setTimeout(() => app.onTaskDone("selfupdate", null), 800); return true; },
     open_releases: async () => {},
     set_firewall: async () => { setTimeout(() => app.onTaskDone("firewall", null), 600); return true; },
@@ -1172,10 +1181,7 @@ function mockApi() {
     report_result: async () => ({ path: "C:\\...\\bl4fix-report-20261029-181203.zip", name: "bl4fix-report-20261029-181203.zip", url: "https://github.com/flameaway/bl4-fix/issues/new?template=bug.yml" }),
     show_report: async () => {},
     open_issue: async () => {},
-    safe_mode: async () => (params.has("safe")
-      ? { on: true, aside: ["PersistentLoot.sdkmod", "better_hud"], missing: [], left: [], others: [], time: 1793000000 }
-      : { on: false, aside: [], missing: [], left: [], others: ["PersistentLoot.sdkmod", "better_hud"], time: 0 }),
-    set_safe_mode: async () => { setTimeout(() => { app.onLog("Safe mode on: 2 mods by other modders set aside (2 now). BL4 Fix's mods keep working."); app.onTaskDone("safe_mode", null); }, 400); return true; },
+    set_vanilla: async () => { setTimeout(() => { app.onLog("Mods off: 8 mods moved to C:\\...\\Borderlands 4\\BL4Fix_ModsOff. The Python SDK stays on."); app.onTaskDone("vanilla", null); }, 400); return true; },
     minimize: async () => {}, close: async () => {}, drag: async () => {},
   };
 }

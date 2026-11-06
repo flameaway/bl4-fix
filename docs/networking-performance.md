@@ -1,5 +1,8 @@
 # BL4 Direct: co-op latency and smoothness
 
+> The scripts this names under `dev/`, and the bridge, desktop agent and proxy tools, are personal
+> test and reverse-engineering tooling and aren't published. The findings and the method are all here.
+
 Investigation into whether BL4 Direct's co-op (game net driver swapped to `SteamNetDriver`, plain UDP, listen server) can be made less laggy. Game build `26007962`, UE 5.5.4. Values were read on 2026-10-23 from a running instance (bridge `A`) that was hosting `VaultoftheDamned_P` with `?listen?bIsLanMatch?port=7777` and **no client connected**. The area was quiet, with no enemies. Nothing was changed in the game.
 
 Confidence labels used below:

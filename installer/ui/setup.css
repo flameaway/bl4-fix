@@ -394,31 +394,6 @@ input { user-select: text; }
 .su_log_line.su_head { color: var(--gold); margin-top: 1rem; }
 
 /* endregion */
-/* region Boot: the mark powers up */
-
-#boot { position: fixed; inset: 0; z-index: 100; background: var(--ink); transition: opacity 0.7s ease, visibility 0.7s; overflow: hidden; }
-#boot.done { opacity: 0; visibility: hidden; }
-.boot_art { position: absolute; left: 50%; top: 46%; width: 80rem; height: 80rem; margin: -40rem 0 0 -40rem; animation: su_titlein 1.2s ease-out both; }
-@keyframes su_titlein { from { opacity: 0; transform: scale(1.06); } }
-.boot_glow { position: absolute; inset: 10rem; border-radius: 50%; background: radial-gradient(circle, rgba(242, 167, 59, 0.22), rgba(0, 198, 255, 0.06) 45%, transparent 70%); }
-.boot_mark { position: absolute; left: 20rem; top: 14rem; width: 40rem; height: 40rem; filter: drop-shadow(0 0 2.4rem rgba(242, 167, 59, 0.35)); }
-.boot_mark .mark_ring { animation: su_bootspin 1.6s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-@keyframes su_bootspin { from { transform: rotate(-120deg); opacity: 0; } }
-.boot_bolts { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: #8fe6ff; stroke-width: 2.2; stroke-linejoin: round; filter: drop-shadow(0 0 0.6rem #00c6ff); pointer-events: none; }
-.boot_word {
-  position: absolute; left: 0; right: 0; top: 56rem; text-align: center; margin: 0;
-  font-weight: 800; font-size: 11rem; letter-spacing: 0.8rem; text-transform: uppercase; color: #ffcc4d;
-  -webkit-text-stroke: 0.5rem #120a04; text-shadow: 0 0.6rem 0 #93440c, 0 0 3rem rgba(255, 170, 40, 0.45);
-}
-.boot_word span { color: var(--text); text-shadow: 0 0.6rem 0 #3f4a50, 0 0 3rem rgba(0, 198, 255, 0.35); }
-.su_boot_prompt {
-  position: absolute; left: 0; right: 0; bottom: 14rem; z-index: 2; text-align: center; margin: 0;
-  font-weight: var(--med); font-size: 2.6rem; letter-spacing: 0.4rem; text-transform: uppercase; color: var(--cyan);
-  animation: su_pulse 1.4s ease-in-out infinite;
-}
-@keyframes su_pulse { 50% { opacity: 0.35; } }
-
-/* endregion */
 /* region Popups */
 
 #dialog { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(0, 3, 10, 0.72); }
@@ -432,7 +407,8 @@ input { user-select: text; }
 .su_dialog_line { height: 0.15rem; margin: 2rem 0; background: linear-gradient(90deg, var(--gold) 0 0.8rem, rgba(63, 118, 157, 0.7) 0.8rem calc(100% - 0.8rem), var(--gold) calc(100% - 0.8rem)); }
 .su_dialog_text { margin: 0; font-size: 2.2rem; line-height: 140%; color: var(--text-dim); white-space: pre-line; text-align: center; }
 .su_dialog_opt { display: flex; align-items: center; gap: 2rem; margin-top: 2.4rem; justify-content: center; }
-.su_dialog_opt_label { margin: 0; font-size: 1.9rem; color: var(--text-dim); max-width: 34rem; }
+.su_dialog_opt_label { margin: 0; font-size: 1.9rem; color: var(--text-dim); width: 34rem; text-align: left; }
+.su_dialog_opt + .su_dialog_opt { margin-top: 1.2rem; }
 .su_dialog_opt .toggle { width: 22rem; }
 .su_dialog_btns { display: flex; justify-content: center; gap: 2rem; }
 .su_dialog_btns .su_btn { min-width: 22rem; }
@@ -493,6 +469,5 @@ input { user-select: text; }
 
 /* endregion */
 
-/* Previews (?still): no boot, no motion */
-.still #boot { display: none; }
+/* Previews (?still): no motion */
 .still *, .still *::before, .still *::after { animation: none !important; transition: none !important; }

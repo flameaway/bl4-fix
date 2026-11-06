@@ -778,6 +778,7 @@
             b.style.flex = "0 0 auto";
         }
         b.classList.remove("bl4cm_btn");
+        b.dataset.inputElem = "true";  // so the game's D-pad nav stops on it (Mod Menu's menu.js)
         slot.appendChild(b);
         entry.appendChild(slot);
         after.parentNode.insertBefore(entry, after.nextSibling);

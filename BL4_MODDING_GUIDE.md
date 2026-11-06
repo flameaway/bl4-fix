@@ -179,6 +179,9 @@ The pattern is from MattsBL4ModsMenu (MIT). All of this is verified in BL4 Direc
 - Games launched from there crash or run invisibly.
 - **Always launch through something running in the user's session.**
 
+These pieces (and the `dev/` scripts named elsewhere in this guide) are personal tooling and aren't
+published; they're described so you can build your own.
+
 | Piece | What it does |
 |---|---|
 | `tools/desktop_agent.py` | Runs in the user's session (started once via a one-shot `schtasks /create ... /it /rl LIMITED` + `/run` + `/delete`, with the user's OK). Fixed actions: start Steam, launch the game with `-bridgeid=X`, kill the game, screenshot, click, key, type. Restarts itself when its source changes. |

@@ -74,6 +74,36 @@ def payload_mod(mod_id: str) -> Path:
     return PAYLOAD / f"{mod_id}.sdkmod"
 
 
+def mod_cache_dir() -> Path:
+    """
+    Where the app keeps mods it downloaded from the latest release (selfupdate.fetch_mods), newer
+    than its own payload: %LOCALAPPDATA%/BL4 Fix/mods/<id>.sdkmod. Install takes the newer copy.
+    """
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "BL4 Fix" / "mods"
+
+
+def cached_mod(mod_id: str) -> Path:
+    return mod_cache_dir() / f"{mod_id}.sdkmod"
+
+
+def mod_source(mod_id: str) -> Path:
+    """The newest copy of a mod this app has: its payload's, or one it downloaded (if newer)."""
+    ours, cached = payload_mod(mod_id), cached_mod(mod_id)
+    have = sdkmod_version(cached, mod_id) if cached.is_file() else None
+    if have and _version_key(have) > _version_key(sdkmod_version(ours, mod_id)):
+        return cached
+    return ours
+
+
+def installed_versions(game_dir: Path) -> dict[str, str]:
+    """{mod id: version} of every catalog .sdkmod in sdk_mods (set aside: where it is)."""
+    found = {}
+    for m in catalog.MODS:
+        if (version := sdkmod_version(_mod_path(game_dir, f"{m.id}.sdkmod"), m.id)) is not None:
+            found[m.id] = version
+    return found
+
+
 def _version_key(version: str | None) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", version or "")[:4])
 
@@ -306,7 +336,7 @@ def installed_sdk_version(game_dir: Path) -> str | None:
 
 
 def installed_mod_version(game_dir: Path) -> str | None:
-    mod = game_dir / "sdk_mods" / "bl4_direct.sdkmod"
+    mod = _mod_path(game_dir, "bl4_direct.sdkmod")
     try:
         with zipfile.ZipFile(mod) as zf:
             text = zf.read("bl4_direct/shared.py").decode("utf-8")
@@ -343,6 +373,7 @@ class Status:
     dev_mods: frozenset[str] = frozenset()
     # The player's choice (Config.firewall): False = no rule wanted
     firewall_wanted: bool = True
+    vanilla: dict | None = None  # mods switched off (vanilla_status)
 
     @property
     def vcredist_ok(self) -> bool:
@@ -354,7 +385,9 @@ class Status:
 
     @property
     def mod_ok(self) -> bool:
-        return self.mod == shared.MOD_VERSION
+        # This app's version or newer (the in-game updater, or this app's own mod update, may
+        # have brought a newer BL4 Direct Connect than the app was built with)
+        return self.mod is not None and _version_key(self.mod) >= _version_key(shared.MOD_VERSION)
 
     @property
     def ready(self) -> bool:
@@ -373,6 +406,7 @@ class Status:
             f"{mark(self.firewall_ok)}Firewall:     {self._firewall_line()}",
             f"Skip intro:   {self._intro_line()}",
             f"Mods:         {self._mods_line()}",
+            *([f"!! Mods are switched off (vanilla{'' if not self.vanilla['sdk'] else ', Python SDK off too'}): {VANILLA_REL} in the game folder"] if self.vanilla else []),
             *(f"!! {c}" for c in self.conflicts),
             f"Compatibility: {shared.compat_code(self.game_dir)}",
         ]
@@ -430,14 +464,15 @@ def status(game_dir: Path) -> Status:
         intro_skipped=movies.skipped(game_dir),
         mods=installed_mods(game_dir),
         dev_mods=dev_mods(game_dir),
+        vanilla=vanilla_status(game_dir),
     )
 
 
 def installed_mods(game_dir: Path) -> frozenset[str]:
-    """Catalog mods in sdk_mods (Skip Intro counts only while it's switched on)."""
-    sdk_mods = game_dir / "sdk_mods"
+    """Catalog mods in sdk_mods, or set aside there (Skip Intro counts only while it's switched on)."""
     found = {
-        m.id for m in catalog.MODS if (sdk_mods / f"{m.id}.sdkmod").is_file() or (sdk_mods / m.id).is_dir()
+        m.id for m in catalog.MODS
+        if _mod_path(game_dir, f"{m.id}.sdkmod").is_file() or _mod_path(game_dir, m.id).is_dir()
     }
     if SKIP_INTRO in found and not skip_intro_enabled(game_dir):
         found.discard(SKIP_INTRO)
@@ -531,6 +566,8 @@ def install(
     """
     if not is_game_dir(game_dir):
         raise RuntimeError(f"{game_dir} doesn't look like a Borderlands 4 install")
+    if vanilla_on(game_dir):
+        raise RuntimeError(MODS_OFF)
     if game_running():
         raise RuntimeError("Close Borderlands 4 first.")
     _verify_payload()
@@ -613,12 +650,17 @@ def _install_mod(game_dir: Path, info: catalog.ModInfo, new: bool, log=print) ->
         loose.rename(backup)
         log(f"Moved old mod folder to {backup}")
     target = sdk_mods / f"{info.id}.sdkmod"
-    have, ours = sdkmod_version(target, info.id), sdkmod_version(payload_mod(info.id), info.id)
+    source = mod_source(info.id)
+    have, ours = sdkmod_version(target, info.id), sdkmod_version(source, info.id)
     if have and ours and _version_key(have) > _version_key(ours):
         # The in-game updater installed a newer release since this app was built: keep it
         log(f"Kept {info.name} {have} (newer than this app's {ours}).")
     else:
-        shutil.copyfile(payload_mod(info.id), target)
+        if have and ours and have != ours:
+            log(f"Updated {info.name} {have} -> {ours}.")
+        tmp = target.with_name(target.name + ".tmp")
+        shutil.copyfile(source, tmp)
+        tmp.replace(target)
     if info.id == SKIP_INTRO:
         return  # its enabled flag is the movie switch (set_skip_intro)
 
@@ -807,6 +849,8 @@ def _firewall_runner(log=print):  # noqa: ANN001, ANN202
 
 
 def uninstall(game_dir: Path, remove_sdk: bool, log=print) -> None:  # noqa: ANN001
+    if vanilla_on(game_dir):
+        raise RuntimeError(MODS_OFF)
     if game_running():
         raise RuntimeError("Close Borderlands 4 first.")
     if _needs_admin_for(game_dir):
@@ -924,7 +968,9 @@ def prepare_pages(game_dir: Path, chosen: set[str] | frozenset[str], log=print) 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         for mod_id in dict.fromkeys(m for m, _, _ in wanted):
-            with zipfile.ZipFile(payload_mod(mod_id)) as zf:
+            # The installed copy (what the game will load), else the newest this app has
+            installed = game_dir / "sdk_mods" / f"{mod_id}.sdkmod"
+            with zipfile.ZipFile(installed if sdkmod_version(installed, mod_id) else mod_source(mod_id)) as zf:
                 zf.extractall(root)
         for mod_id, page, takes_enabled in wanted:
             enabled = mod_enabled(game_dir, mod_id)
@@ -995,164 +1041,178 @@ def set_skip_intro(game_dir: Path, on: bool, log=print) -> None:  # noqa: ANN001
 
 
 # endregion
-# region Safe mode
+# region Vanilla
 #
-# "Start without other modders' mods": for when a mod breaks the game. Every mod in sdk_mods that
-# isn't in the catalog (and isn't the SDK's own) moves into sdk_mods/.bl4_safe_mode/, which the SDK
-# doesn't load (it skips dot entries); nothing is deleted. The record there lists what moved, by
-# the name it had in sdk_mods. The Mod Menu reads the same folder and record in game ("N mods set
-# aside"): keep the format. Safe mode is on while the record exists.
+# "Switch to Vanilla": every mod moves out of the places the game loads mods from into one folder
+# in the game folder, BL4Fix_ModsOff/, under the same paths (sdk_mods/foo.sdkmod ->
+# BL4Fix_ModsOff/sdk_mods/foo.sdkmod). Nothing is deleted. Three groups, each one the player's pick
+# (all by default): BL4 Fix's mods (their .sdkmod, shim paks in ~mods, loose page files in
+# uiresources, a dev setup's extra mod folders in unrealsdk.user.toml), other modders' mods
+# (every other mod the SDK would load, every other pak in ~mods) and the Python SDK (its loader,
+# dsound.dll: with it gone the game starts completely vanilla). It's the same drive, so each move
+# is a rename. Mods are off while the record exists: the app reads the installed mods from either
+# place meanwhile (_mod_path) and won't install or uninstall.
 
-SAFE_MODE_REL = Path("sdk_mods/.bl4_safe_mode")
-SAFE_MODE_RECORD = "safe_mode.json"
-SAFE_MODE_FORMAT = 1
-# The SDK's own entries in sdk_mods (oak2-sdk.zip and what it makes), never set aside
+VANILLA_REL = Path("BL4Fix_ModsOff")
+VANILLA_RECORD = "vanilla.json"
+SDK_LOADER_REL = WIN64_REL / "dsound.dll"
+MODS_OFF = "Mods are switched off (vanilla). Turn them back on first."
+# The SDK's own entries in sdk_mods (oak2-sdk.zip and what it makes), never moved
 SDK_OWN = frozenset({"mods_base", "console_mod_menu", "keybinds", "unrealsdk", "pyunrealsdk", "settings", "__main__.py"})
+# Folders that switching back merges into rather than moves whole (the game folder's own, and
+# ~mods if the game folder has one again)
+_VANILLA_MERGE = frozenset(
+    p.as_posix() for p in (Path("sdk_mods"), *WIN64_REL.parents, WIN64_REL, WIN64_REL / "Plugins", MOD_PAKS_REL, *MOD_PAKS_REL.parents, UI_REL)
+    if p != Path(".")
+)
 
 
-def _other_mod_entry(entry: Path) -> bool:
-    """Whether an sdk_mods entry is a mod the SDK would load that isn't BL4 Fix's or the SDK's."""
+def _sdk_mod_entry(entry: Path) -> bool:
+    """Whether an sdk_mods entry is a mod the SDK would load (and not the SDK's own)."""
     name = entry.name
     if name.startswith((".", "_")) or name.lower() in SDK_OWN:
         return False
     if entry.is_dir():
-        # The SDK skips folders with a dot in the name (not a valid module): nothing to set aside
-        mod_id = name if "." not in name else None
-    elif entry.is_file() and entry.suffix.lower() == ".sdkmod":
-        mod_id = entry.stem
-    else:
-        return False
-    return mod_id is not None and mod_id not in catalog.BY_ID and mod_id.lower() not in SDK_OWN
+        return "." not in name  # the SDK skips folders with a dot in the name (not a module)
+    return entry.suffix.lower() == ".sdkmod" and entry.stem.lower() not in SDK_OWN
 
 
-def other_mods(game_dir: Path) -> list[str]:
-    """Other modders' mods in sdk_mods right now (names as they are there: foo.sdkmod, foo)."""
-    sdk_mods = game_dir / "sdk_mods"
-    try:
-        entries = sorted(sdk_mods.iterdir(), key=lambda p: p.name.lower())
-    except OSError:
-        return []
-    return [e.name for e in entries if _other_mod_entry(e)]
+def vanilla_on(game_dir: Path) -> bool:
+    return (game_dir / VANILLA_REL / VANILLA_RECORD).is_file()
 
 
-def _safe_mode_record(game_dir: Path) -> dict | None:
-    """The record (safe mode is on), or None. An unreadable record still counts as on."""
-    path = game_dir / SAFE_MODE_REL / SAFE_MODE_RECORD
-    if not path.is_file():
+def _mod_path(game_dir: Path, name: str) -> Path:
+    """sdk_mods/<name>, or where it is in BL4Fix_ModsOff while mods are off."""
+    path = game_dir / "sdk_mods" / name
+    if not path.exists() and (aside := game_dir / VANILLA_REL / "sdk_mods" / name).exists():
+        return aside
+    return path
+
+
+def vanilla_status(game_dir: Path) -> dict | None:
+    """None while mods are on; else the mods set aside, how many pak mods, whether the SDK is off."""
+    if not vanilla_on(game_dir):
         return None
+    aside = game_dir / VANILLA_REL
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"format": SAFE_MODE_FORMAT, "moved": [], "time": 0}
-    if not isinstance(data, dict):
-        return {"format": SAFE_MODE_FORMAT, "moved": [], "time": 0}
-    moved = data.get("moved")
-    data["moved"] = [m for m in moved if isinstance(m, str) and m] if isinstance(moved, list) else []
-    return data
-
-
-def _safe_name(name: str) -> bool:
-    """A name from the record that stays one entry directly in sdk_mods (no paths smuggled in)."""
-    return bool(name) and name not in (".", "..") and "/" not in name and "\\" not in name and ":" not in name
-
-
-def _aside_entries(game_dir: Path) -> list[str]:
-    """What sits in the safe mode folder besides the record (and its temp file)."""
-    try:
-        entries = (game_dir / SAFE_MODE_REL).iterdir()
-        return sorted((e.name for e in entries if not e.name.startswith(SAFE_MODE_RECORD)), key=str.lower)
+        mods = sorted((e.name for e in (aside / "sdk_mods").iterdir()), key=str.lower)
     except OSError:
-        return []
+        mods = []
+    try:
+        paks = sum(1 for _ in (aside / MOD_PAKS_REL).iterdir())
+    except OSError:
+        paks = 0
+    return {"mods": mods, "paks": paks, "sdk": (aside / SDK_LOADER_REL).exists()}
 
 
-def safe_mode_status(game_dir: Path) -> dict:
+# Our mods' shim paks in ~mods (with their .next / .remove staging files)
+_OUR_PAKS = frozenset({p for m in catalog.MODS for p in m.paks} | {catalog.LINK_PAK})
+
+
+def _vanilla_moves(game_dir: Path, ours: bool, others: bool, sdk: bool) -> list[Path]:
+    """What switching to vanilla moves (paths in the game folder that are there now)."""
+    moves = []
+    try:
+        for e in (game_dir / "sdk_mods").iterdir():
+            if _sdk_mod_entry(e) and (ours if (e.stem if e.is_file() else e.name) in catalog.BY_ID else others):
+                moves.append(Path("sdk_mods", e.name))
+    except OSError:
+        pass
+    try:
+        for e in (game_dir / MOD_PAKS_REL).iterdir():
+            if ours if e.name.removesuffix(".next").removesuffix(".remove") in _OUR_PAKS else others:
+                moves.append(MOD_PAKS_REL / e.name)
+    except OSError:
+        pass
+    if ours:
+        moves += [UI_REL / d for d in sorted({d for m in catalog.MODS for d in m.ui_dirs} | {catalog.LINK_UI_DIR})]
+        moves.append(WIN64_REL / "Plugins" / "unrealsdk.user.toml")
+    if sdk:
+        moves.append(SDK_LOADER_REL)
+    return [p for p in moves if (game_dir / p).exists()]
+
+
+def _put_back(game_dir: Path, rel: Path, log=print) -> tuple[int, list[str]]:  # noqa: ANN001
+    """Moves BL4Fix_ModsOff/<rel>'s entries back into the game folder. Returns (moved, kept aside)."""
+    aside = game_dir / VANILLA_REL
+    moved, kept = 0, []
+    for source in sorted((aside / rel).iterdir()):
+        path = rel / source.name
+        if path.parent == Path(".") and source.name.startswith(VANILLA_RECORD):
+            continue  # the record (and its temp file)
+        target = game_dir / path
+        if path.as_posix() in _VANILLA_MERGE and source.is_dir() and target.is_dir():
+            m, k = _put_back(game_dir, path, log)
+            moved += m
+            kept += k
+            continue
+        if target.exists():
+            kept.append(path.as_posix())
+            log(f"Kept {path.as_posix()} in {VANILLA_REL}: the game folder has one with that name again.")
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source.rename(target)
+        except OSError as ex:
+            kept.append(path.as_posix())
+            log(f"Couldn't put {path.as_posix()} back: {ex}")
+            continue
+        moved += 1
+    return moved, kept
+
+
+def set_vanilla(  # noqa: PLR0913
+    game_dir: Path, on: bool, ours: bool = True, others: bool = True, sdk: bool = True, log=print,  # noqa: ANN001
+) -> None:
     """
-    on: the record exists. aside: what the record lists that is in the folder. missing: listed but
-    gone (moved back by hand). left: in the folder but not listed (a copy that couldn't go back
-    because sdk_mods had one again, or a move a crash didn't record). others: other modders' mods
-    in sdk_mods now (what turning it on would set aside). time: when it was turned on.
-    """
-    record = _safe_mode_record(game_dir)
-    present = _aside_entries(game_dir)
-    listed = record["moved"] if record else []
-    return {
-        "on": record is not None,
-        "aside": [n for n in listed if n in present],
-        "missing": [n for n in listed if n not in present],
-        "left": [n for n in present if n not in listed],
-        "others": other_mods(game_dir),
-        "time": (record or {}).get("time", 0),
-    }
-
-
-def set_safe_mode(game_dir: Path, on: bool, log=print) -> dict:  # noqa: ANN001
-    """
-    On: moves every other modder's mod into sdk_mods/.bl4_safe_mode and writes the record (turning
-    it on again sets aside mods added since). Off: moves them back, skipping (and reporting) any
-    whose name sdk_mods has again, then removes the record and the folder if it's empty.
-    Returns {"moved": [names], "skipped": [[name, reason]]}. Not while the game runs: it has the
-    mods open (and a mod moved under it would vanish mid-session).
+    On: moves the picked groups into BL4Fix_ModsOff (ours: BL4 Fix's mods; others: other modders';
+    sdk: the SDK's loader) and writes the record. Switching on again moves what was added since
+    (or a group not picked before). Off: puts everything
+    back, keeping (and naming) any entry the game folder has again, then removes the record and
+    the folder if it's empty. Not while the game runs: it has the mods and paks open.
     """
     if game_running():
         raise RuntimeError("Close Borderlands 4 first.")
     if _needs_admin_for(game_dir):
-        log("This user can't change the game folder: Windows asks for admin to change safe mode.")
-        _run_self_elevated(["--safe-mode", "on" if on else "off", "--game", str(game_dir)], log)
-        return {"moved": [], "skipped": [], "elevated": True}
-    sdk_mods = game_dir / "sdk_mods"
-    aside = game_dir / SAFE_MODE_REL
-    record_path = aside / SAFE_MODE_RECORD
-    moved: list[str] = []
-    skipped: list[list[str]] = []
+        log("This user can't change the game folder: Windows asks for admin to move the mods.")
+        leave = [name for name, move in (("ours", ours), ("others", others), ("sdk", sdk)) if not move]
+        _run_self_elevated(["--vanilla", "on" if on else "off", *(["--leave", ",".join(leave)] if leave else []), "--game", str(game_dir)], log)
+        return
+    aside = game_dir / VANILLA_REL
     if on:
-        record = _safe_mode_record(game_dir) or {"format": SAFE_MODE_FORMAT, "moved": []}
-        aside.mkdir(parents=True, exist_ok=True)
-        for name in other_mods(game_dir):
-            target = aside / name
-            if target.exists() or target.is_symlink():
-                skipped.append([name, "a copy with that name is already set aside"])
-                log(f"Left {name} in place: a copy with that name is already in {SAFE_MODE_REL.as_posix()}.")
+        if not (ours or others or sdk):
+            raise RuntimeError("Pick something to switch off.")
+        aside.mkdir(exist_ok=True)
+        # The record first: if this stops midway, mods still read as off and Off puts back what moved
+        _write_json(aside / VANILLA_RECORD, {"format": 1, "time": int(time.time())})
+        mods = 0
+        for path in _vanilla_moves(game_dir, ours, others, sdk):
+            target = aside / path
+            if target.exists():
+                log(f"Left {path.as_posix()} in place: {VANILLA_REL}/{path.as_posix()} already exists.")
                 continue
             try:
-                (sdk_mods / name).rename(target)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                (game_dir / path).rename(target)
             except OSError as ex:
-                skipped.append([name, f"couldn't move it ({ex.strerror or ex})"])
-                log(f"Couldn't set {name} aside: {ex}")
+                log(f"Couldn't move {path.as_posix()}: {ex}")
                 continue
-            moved.append(name)
-        # Keep what's still set aside from before; drop names put back by hand since
-        listed = [n for n in record["moved"] if n not in moved and _safe_name(n) and (aside / n).exists()]
-        _write_json(record_path, {"format": SAFE_MODE_FORMAT, "moved": [*listed, *moved], "time": int(time.time())})
-        total = len(listed) + len(moved)
-        log(f"Safe mode on: {total} mod{'' if total == 1 else 's'} by other modders set aside"
-            f" ({len(moved)} now). BL4 Fix's mods keep working.")
-        return {"moved": moved, "skipped": skipped}
+            mods += path.parts[0] == "sdk_mods"
+        st = vanilla_status(game_dir) or {}
+        log(f"Mods off: {mods} mod{'' if mods == 1 else 's'} moved to {aside}"
+            + (", the Python SDK is off too: the game starts vanilla." if st.get("sdk") else ". The Python SDK stays on."))
+        return
 
-    record = _safe_mode_record(game_dir)
-    listed = [n for n in (record["moved"] if record else []) if _safe_name(n)]
-    # Also anything else in the folder: a copy an earlier Off couldn't put back, or a move a crash
-    # left unrecorded
-    for name in dict.fromkeys([*listed, *_aside_entries(game_dir)]):
-        source, target = aside / name, sdk_mods / name
-        if not (source.exists() or source.is_symlink()):
-            continue  # already moved back by hand
-        if target.exists() or target.is_symlink():
-            skipped.append([name, "sdk_mods has one with that name again"])
-            log(f"Kept {name} aside: sdk_mods has one with that name again (it's still in {SAFE_MODE_REL.as_posix()}).")
-            continue
-        try:
-            source.rename(target)
-        except OSError as ex:
-            skipped.append([name, f"couldn't move it back ({ex.strerror or ex})"])
-            log(f"Couldn't put {name} back: {ex}")
-            continue
-        moved.append(name)
-    record_path.unlink(missing_ok=True)
+    if not aside.is_dir():
+        return
+    moved, kept = _put_back(game_dir, Path("."), log)
+    (aside / VANILLA_RECORD).unlink(missing_ok=True)
+    for folder in sorted(_VANILLA_MERGE, key=len, reverse=True):
+        with contextlib.suppress(OSError):
+            (aside / folder).rmdir()  # only when empty
     with contextlib.suppress(OSError):
-        aside.rmdir()  # only when empty
-    log(f"Safe mode off: {len(moved)} mod{'' if len(moved) == 1 else 's'} put back"
-        + (f", {len(skipped)} left aside." if skipped else "."))
-    return {"moved": moved, "skipped": skipped}
+        aside.rmdir()
+    log(f"Mods back on: {moved} file{'' if moved == 1 else 's'} and folder(s) put back" + (f", {len(kept)} left in {aside}." if kept else "."))
 
 
 # endregion

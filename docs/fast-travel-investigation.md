@@ -1,5 +1,8 @@
 # Co-op fast travel: why players got stuck in the portal
 
+> The scripts this names under `dev/`, and the bridge, desktop agent and proxy tools, are personal
+> test and reverse-engineering tooling and aren't published. The findings and the method are all here.
+
 Investigated 2026-10-23 on the game build of 2026-10-22 (`Borderlands4.exe`, 647,338,264 bytes).
 Offsets and RVAs below are for that build only.
 

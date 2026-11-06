@@ -169,8 +169,14 @@ class Api:
             "ready": st.ready,
             "running": core.game_running(),
             "installed": sorted(st.mods),
+            # Each installed mod's version, and the newest copy this app has of every mod (its
+            # payload or a download): the page shows what Install would update
+            "versions": core.installed_versions(path),
+            "local": {m.id: core.sdkmod_version(core.mod_source(m.id), m.id) or "" for m in catalog.MODS},
             "chosen": sorted(core.choose_mods(path)),
             "dev_mods": sorted(st.dev_mods),
+            # Mods switched off (core.vanilla_status): None, or what sits in BL4Fix_ModsOff
+            "vanilla": core.vanilla_status(path),
             "conflicts": st.conflicts,
             "compat": shared.compat_code(path),
             "checks": [
@@ -226,11 +232,26 @@ class Api:
     def install(self, game_dir: str, mods: list[str], use_firewall: bool | None = None) -> bool:
         path = Path(game_dir)
         fw = None if use_firewall is None else bool(use_firewall)
-        return self._task("install", lambda: core.install(path, self._log, mods=set(mods), use_firewall=fw))
+
+        def run() -> None:
+            if core.vanilla_on(path):
+                raise RuntimeError(core.MODS_OFF)
+            if core.game_running():
+                raise RuntimeError("Close Borderlands 4 first.")
+            # The release's newer mods first (the update check's manifest, else fetched now)
+            selfupdate.fetch_mods(path, core.choose_mods(path, set(mods)), self._log, self._manifest)
+            core.install(path, self._log, mods=set(mods), use_firewall=fw)
+
+        return self._task("install", run)
 
     def uninstall(self, game_dir: str, remove_sdk: bool) -> bool:
         path = Path(game_dir)
         return self._task("uninstall", lambda: core.uninstall(path, bool(remove_sdk), self._log))
+
+    def set_vanilla(self, game_dir: str, on: bool, ours: bool = True, others: bool = True, sdk: bool = True) -> bool:
+        """Mods moved out of the game's reach, or back (core.set_vanilla)."""
+        path = Path(game_dir)
+        return self._task("vanilla", lambda: core.set_vanilla(path, bool(on), bool(ours), bool(others), bool(sdk), self._log))
 
     # endregion
     # region updating this app
@@ -352,20 +373,6 @@ class Api:
     def open_issue(self) -> None:
         if self._report:
             os.startfile(self._report[1])  # noqa: S606
-
-    # endregion
-    # region safe mode (other modders' mods set aside: core.set_safe_mode)
-
-    def safe_mode(self, game_dir: str) -> dict:
-        """core.safe_mode_status ({} for a folder that isn't the game)."""
-        path = Path(game_dir)
-        if not game_dir or not core.is_game_dir(path):
-            return {}
-        return core.safe_mode_status(path)
-
-    def set_safe_mode(self, game_dir: str, on: bool) -> bool:
-        path = Path(game_dir)
-        return self._task("safe_mode", lambda: core.set_safe_mode(path, bool(on), self._log))
 
     # endregion
     # region friends

@@ -1,5 +1,8 @@
 # Borderlands 4: what causes the hitches and lag (2026-10-24)
 
+> The scripts this names under `dev/`, and the bridge, desktop agent and proxy tools, are personal
+> test and reverse-engineering tooling and aren't published. The findings and the method are all here.
+
 An investigation of frame-time hitches in a long-running game session, done with an external
 sampling profiler written for it (`dev/perf/`). The game was build 26007962 (v1.11, after the
 Denuvo removal), on an RTX 3080 Ti with 32 GB of RAM, windowed at 2090x1306. Settings were DLSS

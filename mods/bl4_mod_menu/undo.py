@@ -11,8 +11,9 @@ helper moves it in when the game closes, keeping the newer one as the copy to go
 the mod from it when it can (like repos.update_async), and tells updates.py / repos.py not to offer
 the version it rolled back from again this session (updates.hold).
 
-Safe mode: the setup app moves every mod that isn't BL4 Fix's into sdk_mods/.bl4_safe_mode/ with a
-record safe_mode.json = {"format": 1, "moved": ["foo.sdkmod", "a_folder", ...], "time": unix}.
+Safe mode: setup apps up to v2026.10.31 moved every mod that isn't BL4 Fix's into
+sdk_mods/.bl4_safe_mode/ (the setup app has Switch to Vanilla instead now), with a record
+safe_mode.json = {"format": 1, "moved": ["foo.sdkmod", "a_folder", ...], "time": unix}.
 Discover and Repositories say so and offer Restore: each entry goes back into sdk_mods (a mod that
 isn't loaded can move while the game runs; a name sdk_mods already has stays put and is named),
 then hotload.scan() lists them under "In your mods folder", where Load starts one now. They aren't
@@ -39,7 +40,7 @@ except ImportError:  # offline tests import the folder's modules directly
     import updates  # type: ignore[no-redef]
 
 ROLLBACK = ".bl4_rollback"  # in sdk_mods (dot folders aren't loaded as mods)
-SAFE_DIR = ".bl4_safe_mode"  # in sdk_mods, made by the setup app (installer/core.py)
+SAFE_DIR = ".bl4_safe_mode"  # in sdk_mods, made by setup apps up to v2026.10.31
 SAFE_RECORD = "safe_mode.json"
 MAX_SAFE = 200  # entries listed / restored at once
 

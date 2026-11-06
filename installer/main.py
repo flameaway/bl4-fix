@@ -5,6 +5,7 @@ With no arguments, opens the GUI. Command line use (from a terminal):
 
     BL4FixSetup.exe --status
     BL4FixSetup.exe --install [--game DIR] [--skip-intro on|off] [--mods all|none|defaults|ID,ID...]
+                    (downloads the latest release's newer mods first; --offline: this app's copies)
     BL4FixSetup.exe --add-mod ID[,ID...] | --remove-mod ID[,ID...]
     BL4FixSetup.exe --list-mods
     BL4FixSetup.exe --skip-intro on|off
@@ -26,8 +27,9 @@ Disk Space (slim.py; never part of --install):
     BL4FixSetup.exe --disk-scan [--keep LANGS]    (what it would free; changes nothing)
     BL4FixSetup.exe --disk-free --keep LANGS|all [--old-patches on|off]
 
-Safe mode (for when a mod breaks the game; never while it runs):
-    BL4FixSetup.exe --safe-mode on|off|status    (other modders' mods to sdk_mods/.bl4_safe_mode and back)
+Vanilla (every mod moved to BL4Fix_ModsOff in the game folder and back; never while it runs):
+    BL4FixSetup.exe --vanilla on|off|status [--leave ours,others,sdk]
+        (on: BL4 Fix's mods, other modders' mods and the Python SDK; --leave keeps those in place)
 
 Bug reports (the Mod Menu's report.py; works with the game closed or running):
     BL4FixSetup.exe --bug-report [DIR]    (zip into DIR, default sdk_mods/.bug_reports)
@@ -98,6 +100,8 @@ def cli(args: argparse.Namespace) -> int:
     if args.prepare_pages:
         if core.game_running():
             raise SystemExit("Close Borderlands 4 first.")
+        if core.vanilla_on(game):
+            raise SystemExit(core.MODS_OFF)
         core.prepare_pages(game, core.installed_mods(game))
         return 0
 
@@ -109,14 +113,17 @@ def cli(args: argparse.Namespace) -> int:
         print(f"Report: {path}\nAttach it to a new issue: {url}")
         return 0
 
-    if args.safe_mode:
-        return _safe_mode(game, args.safe_mode)
+    if args.vanilla:
+        return _vanilla(game, args.vanilla, args.leave)
 
     if args.list_mods:
         installed = core.installed_mods(game)
+        versions = core.installed_versions(game)
         for info in catalog.MODS:
             mark = "x" if info.id in installed else " "
-            print(f"[{mark}] {info.id:24} {info.name}{' (always)' if info.required else ''}: {info.blurb}")
+            have = versions.get(info.id, "-")
+            ours = core.sdkmod_version(core.mod_source(info.id), info.id) or "-"
+            print(f"[{mark}] {info.id:24} {have:>7} (app: {ours:>7})  {info.name}{' (always)' if info.required else ''}: {info.blurb}")
         return 0
 
     mods = _mod_ids(args.mods) if args.mods else None
@@ -128,6 +135,11 @@ def cli(args: argparse.Namespace) -> int:
     installing = bool(args.install or mods is not None or skip_intro is not None)
     if installing:
         use_firewall = None if args.firewall is None else args.firewall == "on"
+        if not args.offline and not args.log_file and not core.game_running():
+            # (An elevated copy started by core.install skips this: its parent already downloaded)
+            import selfupdate  # noqa: PLC0415
+
+            selfupdate.fetch_mods(game, core.choose_mods(game, mods, skip_intro))
         # Skip Intro is a mod now: switching it installs or removes it like the others
         core.install(game, skip_intro=skip_intro, mods=mods, use_firewall=use_firewall)
         config = core.load_config(game)  # install may have saved the firewall choice
@@ -168,25 +180,24 @@ def cli(args: argparse.Namespace) -> int:
     return 0
 
 
-def _safe_mode(game: Path, what: str) -> int:
-    """--safe-mode on|off|status: other modders' mods set aside in sdk_mods/.bl4_safe_mode (core)."""
+def _vanilla(game: Path, what: str, leave: str) -> int:
+    """--vanilla on|off|status: mods in BL4Fix_ModsOff (core.set_vanilla), or back."""
     import core  # noqa: PLC0415
 
+    groups = {g.strip().lower() for g in leave.split(",") if g.strip()}
+    if unknown := groups - {"ours", "others", "sdk"}:
+        raise SystemExit(f"--leave takes ours, others and sdk, not {', '.join(sorted(unknown))}")
     if what != "status":
-        result = core.set_safe_mode(game, what == "on")
-        for name, reason in result["skipped"]:
-            print(f"  skipped {name}: {reason}")
-    st = core.safe_mode_status(game)
-    if st["on"]:
-        print(f"Safe mode: on, {len(st['aside'])} mod{'' if len(st['aside']) == 1 else 's'} set aside"
-              + (f" ({', '.join(st['aside'])})" if st["aside"] else ""))
-        if st["others"]:
-            print(f"  added since (loads; turn it on again to set aside): {', '.join(st['others'])}")
+        core.set_vanilla(game, what == "on", "ours" not in groups, "others" not in groups, "sdk" not in groups)
+    st = core.vanilla_status(game)
+    if st is None:
+        print("Mods: on")
     else:
-        print(f"Safe mode: off, {len(st['others'])} mod{'' if len(st['others']) == 1 else 's'} by other modders in sdk_mods"
-              + (f" ({', '.join(st['others'])})" if st["others"] else ""))
-    if st["left"]:
-        print(f"  still in {core.SAFE_MODE_REL.as_posix()} (sdk_mods has the same name): {', '.join(st['left'])}")
+        mods = st["mods"]
+        print(f"Mods: off (vanilla), {len(mods)} mod{'' if len(mods) == 1 else 's'} and {st['paks']} pak file(s) in {game / core.VANILLA_REL}"
+              + (", Python SDK off" if st["sdk"] else ", Python SDK on"))
+        if mods:
+            print(f"  {', '.join(mods)}")
     return 0
 
 
@@ -253,13 +264,16 @@ def main() -> int:
     parser.add_argument("--add-mod", metavar="IDS", help="install these mods (comma list), keep the rest")
     parser.add_argument("--remove-mod", metavar="IDS", help="remove these mods (comma list), keep the rest")
     parser.add_argument("--list-mods", action="store_true", help="every mod this app can install")
+    parser.add_argument("--offline", action="store_true", help="with --install: don't download newer mods")
     parser.add_argument("--prepare-pages", action="store_true", help="set up the installed mods' game pages now")
     parser.add_argument("--disk-scan", action="store_true", help="what Disk Space would free (changes nothing)")
     parser.add_argument("--disk-free", action="store_true", help="remove unused voice languages / old patch data")
     parser.add_argument("--keep", metavar="LANGS", help="with --disk-*: voice languages to keep (comma list, or all)")
     parser.add_argument("--old-patches", choices=["on", "off"], default="on", help="with --disk-*: free old patch data")
-    parser.add_argument("--safe-mode", choices=["on", "off", "status"],
-                        help="set other modders' mods aside (on), put them back (off), or show it")
+    parser.add_argument("--vanilla", choices=["on", "off", "status"],
+                        help="move every mod out of the game's reach (on), put them back (off), or show it")
+    parser.add_argument("--leave", metavar="GROUPS", default="",
+                        help="with --vanilla on: groups to leave in place (comma list of ours, others, sdk)")
     parser.add_argument("--bug-report", nargs="?", const="", metavar="DIR",
                         help="write a bug report zip (default: sdk_mods/.bug_reports) and print the issue link")
 
@@ -289,8 +303,15 @@ def main() -> int:
     return code
 
 
+WEBVIEW2_PAGE = "https://developer.microsoft.com/microsoft-edge/webview2/#download"
+
+
 def _run_gui() -> None:
-    """The HTML window (pywebview on WebView2); the plain Tk window where WebView2 is missing."""
+    """
+    The HTML window (pywebview on WebView2). The exe has no Tk (2026-11-04: Tcl/Tk's ~900 files
+    doubled the unpack at every start, 1.1 -> 2.2 s), so where WebView2 is missing it asks the
+    player to install it; run from source, the plain Tk window (gui.py) still stands in.
+    """
     try:
         import webgui  # noqa: PLC0415
 
@@ -300,9 +321,27 @@ def _run_gui() -> None:
     if use_web:
         webgui.run()
         return
-    import gui  # noqa: PLC0415
-
+    try:
+        import gui  # noqa: PLC0415
+    except ImportError:
+        _ask_for_webview2()
+        return
     gui.run()
+
+
+def _ask_for_webview2() -> None:
+    import ctypes  # noqa: PLC0415
+    import os  # noqa: PLC0415
+
+    text = (
+        "BL4 Fix Setup needs Microsoft Edge WebView2 (part of Windows 11 and up-to-date Windows 10), "
+        "and this PC doesn't have it.\n\nOpen Microsoft's download page now? Install the Evergreen "
+        "runtime, then start BL4 Fix Setup again.\n\n(The command line works without it: "
+        "BL4FixSetup.exe --help)"
+    )
+    MB_YESNO, MB_ICONINFORMATION, IDYES = 0x4, 0x40, 6  # noqa: N806
+    if ctypes.windll.user32.MessageBoxW(None, text, "BL4 Fix Setup", MB_YESNO | MB_ICONINFORMATION) == IDYES:
+        os.startfile(WEBVIEW2_PAGE)  # noqa: S606
 
 
 def _save_silent_output(code: int) -> None:

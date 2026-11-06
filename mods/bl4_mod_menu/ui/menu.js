@@ -2634,6 +2634,9 @@
         // Same structure as theirs: a full-size slot (their <gbx-component>) holding the button
         var slot = el("div", optionsBtn.className);
         var b = make("button", "list_btn");
+        // The game's D-pad nav (InputBehavior_List) only stops on rows holding a
+        // [data-input-elem="true"]; it focuses it with a mouseenter and selects it with a click
+        b.dataset.inputElem = "true";
         var label = q(b, ".button_txt");
         var theirs = q(optionsBtn, ".button_txt");
         if (label) {
@@ -2710,8 +2713,11 @@
             label.classList.add("bl4mm_main_label");
         }
         var wrapper = q(entry, ".menu_button_wrapper") || entry.firstElementChild || entry;
-        hoverable(entry, wrapper);
-        entry.addEventListener("mouseenter", function () {
+        // The game's D-pad nav stops on it like on theirs: it sends the wrapper (their
+        // data-input-elem) a mouseenter, which doesn't bubble, so listen there
+        wrapper.dataset.inputElem = "true";
+        hoverable(wrapper);
+        wrapper.addEventListener("mouseenter", function () {
             var widget = document.querySelector("widget-menu-main");
             try {
                 if (widget && typeof widget.PlaySound === "function") widget.PlaySound("ElementFocused");

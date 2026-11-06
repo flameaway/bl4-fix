@@ -255,7 +255,10 @@ def main() -> None:
             "--hidden-import", "movies",
             "--hidden-import", "catalog",
             "--hidden-import", "webgui",
-            "--hidden-import", "gui",
+            # No Tk (gui.py is the from-source fallback only): its ~900 data files doubled the
+            # onefile unpack at every start (main._run_gui)
+            "--exclude-module", "tkinter",
+            "--exclude-module", "_tkinter",
             "--hidden-import", "selfupdate",
             "--hidden-import", "signing",
             "--hidden-import", "slim",
