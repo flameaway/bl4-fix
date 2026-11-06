@@ -6,7 +6,10 @@ Builds a GitHub release for the in-game updater (dev only).
 Writes dist/release/:
 - one .sdkmod per mod in installer/catalog.py (byte-for-byte reproducible, see installer/build.py)
 - BL4FixSetup.exe, rebuilt first by installer/build.py (unless --no-exe), so the setup app
-  installs exactly these files
+  installs exactly these files. For a published release use GitHub's attested build instead:
+  push, `gh workflow run build-setup.yml -f ref=<commit>`, `gh run download <run id> --name
+  BL4FixSetup --dir dist`, then run this with --no-exe (verify-release.yml checks the exe's
+  attestation once published)
 - manifest.json, which the Mod Menu reads (format: mods/bl4_mod_menu/updates.py), and
   manifest.json.sig: its signature by BL4 Fix's release key (tools/release_key.py). Mod Menus from
   0.2.3 and the setup app refuse a release without a valid one, so this only runs on the PC (and

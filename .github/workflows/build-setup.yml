@@ -1,0 +1,53 @@
+# Builds the setup app (BL4FixSetup.exe) on GitHub's machines from a commit of this repository and
+# attests it: `gh attestation verify BL4FixSetup.exe --repo flameaway/bl4-fix` then shows GitHub
+# built that exact exe from this source. The release ships this exe (tools/release.py --no-exe
+# after downloading it), so the signed manifest's SHA-256 is the attested one. Possible since
+# 2026-11-03: the exe holds only our own files (installer/build.py), no game files. A PyInstaller
+# exe isn't byte-for-byte reproducible, so it's attested where it's built rather than rebuilt and
+# compared like the .sdkmods (verify-release.yml).
+#
+#   gh workflow run build-setup.yml -f ref=<commit>
+#   gh run download <run id> --name BL4FixSetup --dir dist
+name: Build setup app
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit to build (the release's commit)
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # The release's Python (tools/release.py ZLIB_PINNED: the .sdkmods inside are deflated)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.4"
+
+      - name: Build
+        run: |
+          python installer/build.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-FileHash dist/BL4FixSetup.exe -Algorithm SHA256
+
+      - name: Attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/BL4FixSetup.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BL4FixSetup
+          path: dist/BL4FixSetup.exe
+          if-no-files-found: error

@@ -14,8 +14,9 @@ Run it on a checkout of the tag. It checks:
 - SHA256SUMS.txt: every line matches its file
 
 Exit 0 when all match. --list writes the verified files' paths (one per line) for the attestation
-step. The setup exe isn't rebuilt (its window uses game files that only a PC with the game has):
-its SHA-256 is checked against the signed manifest and SHA256SUMS.txt only.
+step. The setup exe isn't rebuilt (a PyInstaller exe isn't byte-for-byte reproducible): GitHub
+builds and attests it (.github/workflows/build-setup.yml; verify-release.yml checks that), and
+here its SHA-256 is checked against the signed manifest and SHA256SUMS.txt.
 """
 
 from __future__ import annotations

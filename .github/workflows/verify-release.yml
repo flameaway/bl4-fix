@@ -1,8 +1,9 @@
 # Rebuilds every published release from its tag on GitHub's machines, checks the result is byte
 # for byte the release's files (tools/verify_release.py), and attests those files: anyone can then
 # run `gh attestation verify <file> --repo flameaway/bl4-fix` to see GitHub built that exact file
-# from this repository's source at that tag. The setup exe isn't rebuilt (its window uses the
-# game's own files, which only a PC with the game has); it's checked against the signed manifest.
+# from this repository's source at that tag. The setup exe isn't rebuilt here (a PyInstaller exe
+# isn't byte-for-byte reproducible): GitHub built and attested it already (build-setup.yml), and
+# this checks that attestation and the signed manifest.
 name: Verify release
 
 on:
@@ -47,6 +48,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $files = (Get-Content verified.txt) -join "`n"
           "files<<EOF`n$files`nEOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Check the setup app was built by GitHub (build-setup.yml)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify release/BL4FixSetup.exe --repo "${{ github.repository }}" --signer-workflow "${{ github.repository }}/.github/workflows/build-setup.yml"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Attest the verified files
         uses: actions/attest-build-provenance@v2
