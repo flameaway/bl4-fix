@@ -54,6 +54,10 @@ LOWER_BETTER = {
 CORE_SHARE = 0.5
 PICTURE_PREFIX = "part:"  # thumbs.Shots keys of part pictures (roll.tick hands them to picture_done)
 PICTURE_WAIT_S = 16.0
+# A part's picture is read back this long after it came in (_measure): the manager frames the whole
+# item, so a part alone sits where it does on the item; the page centres it on where it's drawn. By
+# then the capture is done on the GPU, so the read doesn't wait for it (~20 ms right after one: readback.py)
+MEASURE_AFTER_S = 0.3
 # Roll chances: this many rolls by the game's rules (serialgen.generate, the same as "Roll one"),
 # made a few at a time per frame. A part's chance is the share of rolls that have it.
 SIM_ROLLS = 4000
@@ -73,6 +77,7 @@ class S:
     level = 1  # the roll's level (its serial's): the parts are read and their chances rolled at it
     pictures: dict[int, dict[str, Any]] = {}  # noqa: RUF012 - part position -> its picture (thumbs.tick_shots)
     pictures_at = 0.0  # when the last one was asked for (0: not yet)
+    healed_at = 0.0  # when the pictures were last looked for in the manager (_heal)
     no_pictures = False  # the manager can't take them here (the bake has it, or this build can't)
     matched = False  # text parts given the table the item's rules have them in (_match_texts)
     # Roll chances (simulated): (table, index) -> rolls that had it, out of sim_n
@@ -86,6 +91,7 @@ class S:
     # The slot whose alternatives the page shows (its drop-down under a part): its position
     slot_at: int | None = None
     alt_pictures: dict[str, dict[str, Any]] = {}  # noqa: RUF012 - "<table>_<index>" -> its picture alone
+    unmeasured: list[dict[str, Any]] = []  # noqa: RUF012 - pictures not yet read for where the part is drawn, oldest first
     # What each alternative does (the roll with it in place of the slot's part, against the roll
     # without that part, like the rolled parts): "<table>_<index>" -> _compare's dict, or None if
     # the game won't take it with this roll's other parts
@@ -139,6 +145,7 @@ def request(key: str, serial: str | None = None, own: str | None = None) -> None
     S.matched = False
     S.slot_at = None
     S.alt_pictures = {}
+    S.unmeasured = []
     S.alt_effects = {}
     S.alt_without = None
     S.alt_slot_at = None
@@ -166,7 +173,9 @@ def state() -> dict[str, Any] | None:
     from . import thumbs  # noqa: PLC0415 - it imports roll, which imports this module
 
     def path(picture: dict[str, Any] | None) -> str | None:
-        shot = thumbs.follow(picture)
+        # Only once it's measured: shown before, it came in whole and then grew to its part's box
+        # a moment later (the user's report 2026-11-06)
+        shot = thumbs.follow(picture) if picture and picture.get("measured") else None
         return shot["path"] if shot else None
 
     chances = _chances_ready()
@@ -176,9 +185,10 @@ def state() -> dict[str, Any] | None:
         n = _slot_of(S.parts[i])
         # Its slot (the page groups the parts of a slot that picks several) and how many it picks
         picks = list(prepared.slots[n][:2]) if prepared is not None and n is not None else None
-        parts.append({**part, "picture": path(S.pictures.get(i)), "chance": _chance(S.parts[i], chances),
+        parts.append({**part, "picture": path(S.pictures.get(i)), "box": (S.pictures.get(i) or {}).get("box"),
+                      "icon": "" if part.get("maker") else _text_icon(S.parts[i]), "chance": _chance(S.parts[i], chances),
                       "has_slot": n is not None, "slot_n": n, "picks": picks})  # fmt: skip
-    waiting = bool(S.pictures_at) and time.monotonic() - S.pictures_at < PICTURE_WAIT_S and len(S.pictures) < len(S.done)
+    waiting = bool(S.pictures_at) and time.monotonic() - S.pictures_at < PICTURE_WAIT_S and (len(S.pictures) < len(S.done) or bool(S.unmeasured))
     return {"item": S.key, "own": S.own, "serial": S.serial, "status": S.status, "parts": parts,
             "count": max(0, len(S.parts) - 1), "pictures": "waiting" if waiting or (S.status == "working") else "done",
             "chances": "done" if chances else "working", "rolls": SIM_ROLLS, "slot": _slot_state()}  # fmt: skip
@@ -198,7 +208,33 @@ def picture_done(key: str, picture: dict[str, Any]) -> None:
         S.alt_pictures[tag[1:]] = picture
     else:
         return
+    picture["at"] = time.monotonic()
+    S.unmeasured.append(picture)
     _changed()
+
+
+def _measure() -> None:
+    """One picture a tick, MEASURE_AFTER_S after it came in: where its part is drawn ("box")."""
+    from . import thumbs  # noqa: PLC0415
+
+    if not S.unmeasured or time.monotonic() - S.unmeasured[0]["at"] < MEASURE_AFTER_S:
+        return
+    picture = S.unmeasured.pop(0)
+    shot = thumbs.follow(picture)
+    target = thumbs._target_at(shot["address"]) if shot else None  # noqa: SLF001
+    if target is not None and (box := thumbs.drawn_box(target)):
+        picture["box"] = box
+    picture["measured"] = True  # (shown from now on, framed or whole if it couldn't be read)
+    _changed()
+
+
+def _text_icon(part: tuple[int, int | str]) -> str:
+    """The icon of the first card text a part adds that has one (a grenade's stat augment), or ""."""
+    texts = stats.data().get("ui_texts", {})
+    for key in stats.data().get("part_texts", {}).get(str(part[0]), {}).get(str(part[1]), []):
+        if icon := (texts.get(key) or {}).get("icon"):
+            return icon
+    return ""
 
 
 def _shoot(tag: str, parts: list[tuple[int, int | str]]) -> bool:
@@ -311,11 +347,18 @@ def open_slot(at: int | None) -> None:
         S.alt_slot_at = S.slot_at
         S.alt_effects = {}
         S.alt_without = None
+    _ask_alt_pictures()
+    _changed()
+
+
+def _ask_alt_pictures() -> None:
+    """The open slot's parts' pictures that aren't there (not asked yet, or dropped: _heal)."""
     for c in _slot_list()[1]:
         tag = f"{c['table']}_{str(c['index']).lower()}"
-        if tag not in S.alt_pictures:
+        # A shared part (an augment, an element) has no model of its own: rendered "alone" the game
+        # drew a default item instead. It shows its icon, as a skill part does.
+        if tag not in S.alt_pictures and c["maker"] and not c["icon"]:
             _shoot(f"a{tag}", [S.parts[0], (c["table"], c["index"])])
-    _changed()
 
 
 def _slot_list() -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
@@ -338,9 +381,13 @@ def _slot_list() -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
         found = _names().get(str(table), {}).get(str(index).lower()) or ["Part", f"Part {index}", "", ""]
         slot, part_name, note, maker = [*found, "", "", ""][:4]
         passive = passives.get(str(index)) if table == S.parts[0][0] else None
+        icon = ""
         if passive and (skill := skills.get(f"{passive[0]},{passive[1]}")):
             part_name = f"+{passive[2]} {skill.get('name', part_name)}"  # a class mod skill part: its skill
-        out.append({"table": table, "index": index, "name": part_name, "slot": slot, "maker": maker, "note": note,
+            icon = skill.get("icon", "")
+        elif not maker:
+            icon = _text_icon((table, index))
+        out.append({"table": table, "index": index, "name": part_name, "slot": slot, "maker": maker, "note": note, "icon": icon,
                     "weight": weight / total, "chance": _chance((table, index), chances),
                     "rolled": (table, index) in rolled})  # fmt: skip
     out.sort(key=lambda c: (-(c["chance"] if c["chance"] is not None else c["weight"]), c["name"]))
@@ -367,8 +414,10 @@ def _slot_state() -> dict[str, Any] | None:
         return None
     for c in out:
         tag = f"{c['table']}_{str(c['index']).lower()}"
-        picture = thumbs.follow(S.alt_pictures.get(tag))
+        alt = S.alt_pictures.get(tag)
+        picture = thumbs.follow(alt) if alt and alt.get("measured") else None  # (as state's path())
         c["picture"] = picture["path"] if picture else None
+        c["box"] = picture.get("box") if picture else None
         # What it does: a part in this roll as its own row has it; another as read (tick)
         if c["rolled"]:
             at = S.parts.index((c["table"], c["index"]))
@@ -468,8 +517,9 @@ def _ask_picture(i: int) -> None:
     """Part i's own picture, asked as soon as it's read (the game renders ~4 a second, in the order asked)."""
     # A shared part (an element, secondary ammo) has no model of its own: rendered alone, the
     # thumbnail scene showed a close-up of the gun's material (seen 2026-11-02). The page shows its
-    # icon instead.
-    if S.no_pictures or i in S.pictures or not S.done[i - 1].get("maker"):
+    # icon instead, as it does for a skill part (a class mod's): its skill's icon.
+    part = S.done[i - 1]
+    if S.no_pictures or i in S.pictures or not part.get("maker") or any(s.get("icon") for s in part.get("skills") or []):
         return
     S.pictures_at = time.monotonic()
     if not _shoot(str(i), [S.parts[0], S.parts[i]]):
@@ -598,9 +648,45 @@ def _stat(line: dict[str, Any], other: dict[str, Any] | None, change: str | None
 # endregion
 
 
+HEAL_EVERY_S = 1.0
+
+
+def _heal() -> None:
+    """
+    Pictures the thumbnail manager dropped are asked for again. It keeps a picture only while it
+    likes (the parts screen's 14 were all gone a while after it opened, the manager holding 301
+    others; the user saw them load, then go blank), and the page then had none. One pass over its
+    map for all of them, once a second while the screen is open.
+    """
+    from . import thumbs  # noqa: PLC0415
+
+    now = time.monotonic()
+    if now - S.healed_at < HEAL_EVERY_S or not (S.pictures or S.alt_pictures):
+        return
+    S.healed_at = now
+    if not (thumbs.S.manager and thumbs.S.manager()):
+        return  # (no manager to look in: not "all dropped")
+    pictures = [*S.pictures.values(), *S.alt_pictures.values()]
+    there = thumbs._rendered_all([p["serial"] for p in pictures])  # noqa: SLF001
+    lost = [i for i, p in S.pictures.items() if p["serial"] not in there]
+    lost_alts = [t for t, p in S.alt_pictures.items() if p["serial"] not in there]
+    if not lost and not lost_alts:
+        return
+    for i in lost:
+        del S.pictures[i]
+        _ask_picture(i)
+    for tag in lost_alts:
+        del S.alt_pictures[tag]
+    if lost_alts:
+        _ask_alt_pictures()
+    _changed()
+
+
 def tick() -> None:
     if S.key is None:
         return
+    _measure()
+    _heal()
     pc = get_pc(possibly_loading=True)
     if pc is None or pc.Pawn is None:
         return
@@ -660,4 +746,4 @@ def _alts_left() -> bool:
 def busy() -> bool:
     # (the chances count from before the item's rules are made: _prepare takes a few ticks)
     return (S.status == "working" or (S.key is not None and bool(S.parts) and not _chances_ready() and serialgen.has(S.key))
-            or (S.key is not None and _alts_left()))  # fmt: skip
+            or (S.key is not None and (_alts_left() or bool(S.unmeasured))))  # fmt: skip

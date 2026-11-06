@@ -3,14 +3,14 @@ Kairosdex for Borderlands 4: a dex of the game's bosses and the legendaries they
 
 Beat a boss and it's registered in the dex, with its drop table: every legendary and pearl it
 has a dedicated drop for, what kind of item each is, and the chance per kill (normal, at your UVH
-level, and in its Big Encore). The Items tab lists every legendary and pearl and who drops it,
-with the bosses' pictures and buttons to set a waypoint on (or travel to) a boss's Big Encore
-machine. Items stay "???" until you've had one ("Obtained items only", on by default, so beating a
+level, and in its Big Encore). The Collection lists every legendary and pearl, the copies you
+hold and who drops it, with the bosses' pictures and buttons to set a waypoint on (or travel to) a
+boss's Big Encore machine. Items stay "???" until you've had one ("Obtained items only", on by default, so beating a
 boss doesn't spoil its drops); with that off, a boss's drops show once you beat it.
 
 Open it with F8 (in game or in any menu), from the Kairosdex entry in the pause menu, or with the
 `dex` console command. Search by boss, area or item name (click the search box and type), filter
-by region, item type or manufacturer, and sort by name, number, area, type or chance.
+by region, item type or manufacturer, sort the bosses and group the Collection.
 
 The dex is account-wide: a boss beaten by any character counts (kills are kept per character in
 progress.py). A boss counts when you're in the fight as it dies (tracker.py). Bosses beaten
@@ -40,6 +40,7 @@ from mods_base import (
     SETTINGS_DIR,
     BoolOption,
     ButtonOption,
+    DropdownOption,
     KeybindOption,
     NestedOption,
     build_mod,
@@ -83,6 +84,23 @@ open_key = KeybindOption(
     "Open key",
     "F8",
     description="Opens and closes the Kairosdex. Works in game and in the game's menus.",
+)
+
+search_key = KeybindOption(
+    "Search key",
+    "F",
+    description="With the Kairosdex open: starts typing in its search box, so you can type a boss, "
+    "area or item straight away (Enter or Esc stops). Held with the modifier below.",
+)
+
+# The modifier held with the search key; the Unreal key names of each side
+SEARCH_MODIFIERS = {"Ctrl": ("LeftControl", "RightControl"), "Shift": ("LeftShift", "RightShift"),
+                    "Alt": ("LeftAlt", "RightAlt"), "None": ()}  # fmt: skip
+search_modifier = DropdownOption(
+    "Search key modifier",
+    "Ctrl",
+    list(SEARCH_MODIFIERS),
+    description="Held with the search key (Ctrl + F by default). None: the key alone.",
 )
 
 obtained_option = BoolOption(
@@ -137,16 +155,6 @@ reset_char_button = ButtonOption(
         " (backpack and equipped). Its beaten bosses stay."
     ),
     on_press=_reset_char,
-)
-
-list_hover_option = BoolOption(
-    "Item card on hover in the item list",
-    False,
-    description=(
-        "Hovering an item in the Items list shows its item card beside it. A boss's drop list always"
-        " shows the card on hover."
-    ),
-    on_change=_changed,
 )
 
 celebrate_option = BoolOption(
@@ -278,7 +286,6 @@ def _show_pictures() -> None:
 screen.S.unlocked = lambda: bool(unlock_option.value)
 screen.S.obtained = lambda: bool(obtained_option.value)
 screen.S.spoiler_free = lambda: bool(spoiler_free_option.value)
-screen.S.list_hover = lambda: bool(list_hover_option.value)
 progress.Mode.per_char = lambda: bool(per_char_option.value)
 
 
@@ -387,6 +394,7 @@ def _bake_command(words: list[str]) -> None:
 class S:
     pending_open = 0.0
     key_was_down = True
+    search_was_down = True
     registered = False
     slow_at = 0.0  # the next full pass (_all) with nothing under way
     busy = False  # screen.busy() / a bake after the last full pass: the next one runs next frame
@@ -433,6 +441,18 @@ def _tick() -> None:
     if down and not S.key_was_down and not screen.S.typing and get_pc(possibly_loading=True) is not None:
         screen.toggle()
     S.key_was_down = down
+    # Ctrl + F (the options): into the open screen's search box. One key read a frame while not
+    # typing; the modifier and the screen only on a press.
+    if not screen.S.typing:
+        down = uilink.key_down(search_key.value)
+        if down and not S.search_was_down and _modifier_held() and screen.screen_open():
+            screen.start_typing()
+        S.search_was_down = down
+
+
+def _modifier_held() -> bool:
+    sides = SEARCH_MODIFIERS.get(search_modifier.value, ())
+    return not sides or any(uilink.key_down(k) for k in sides)
 
 
 def _all(now: float) -> None:
@@ -452,6 +472,7 @@ def _all(now: float) -> None:
 
 def _enable() -> None:
     S.key_was_down = True
+    S.search_was_down = True
     S.slow_at = 0.0
     celebrate.setup(GAME_DIR, lambda: bool(celebrate_option.value))
     celebrate.sync(bool(celebrate_option.value))
@@ -482,11 +503,12 @@ mod = build_mod(
     options=[
         open_button,
         open_key,
+        search_key,
+        search_modifier,
         obtained_option,
         spoiler_free_option,
         per_char_option,
         reset_char_button,
-        list_hover_option,
         celebrate_option,
         title_pictures_option,
         dev_options,

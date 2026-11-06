@@ -34,7 +34,7 @@ PACKAGES = {
                "mods/bl4_item_cards", "mods/bl4_minimap", "mods/bl4_third_person", "mods/bl4_unstuck",
                "mods/bl4_respec", "mods/bl4_instant_tabs", "mods/bl4_sprint_toggle",
                "mods/bl4_item_pictures"],
-    "frametick": ["mods/bl4_backpack_size", "mods/bl4_builds", "mods/bl4_crisp_numbers",
+    "frametick": ["mods/bl4_bank_anywhere", "mods/bl4_backpack_size", "mods/bl4_builds", "mods/bl4_crisp_numbers",
                   "mods/bl4_damage_meter", "mods/bl4_direct", "mods/bl4_echo_anywhere",
                   "mods/bl4_instant_tabs", "mods/bl4_instant_travel", "mods/bl4_item_cards",
                   "mods/bl4_less_fog", "mods/bl4_minimap", "mods/bl4_mod_menu", "mods/bl4_perf",
@@ -45,12 +45,12 @@ PACKAGES = {
                   "ported/bl4_dialog_skipper", "ported/bl4_grapple_anywhere", "ported/bl4_ground_loot",
                   "ported/bl4_slam_tweaks"],
     # Every uilink carrier (uilink reads keys through it) and every mod that reads keys itself
-    "gamekeys": ["mods/bl4_builds", "mods/bl4_tidy_pause", "mods/bl4_reroll", "mods/bl4_uvh_teleport",
+    "gamekeys": ["mods/bl4_bank_anywhere", "mods/bl4_builds", "mods/bl4_tidy_pause", "mods/bl4_reroll", "mods/bl4_uvh_teleport",
                  "mods/bl4_damage_meter", "mods/bl4_weapondex", "mods/bl4_mod_menu", "mods/bl4_item_cards",
                  "mods/bl4_respec", "mods/bl4_instant_tabs", "mods/bl4_item_pictures", "mods/bl4_direct",
                  "mods/bl4_echo_anywhere", "mods/bl4_minimap", "mods/bl4_sprint_toggle", "mods/bl4_third_person"],
     # Every shipped mod but the Mod Menu (a Library, always on): ensure_on() before build_mod()
-    "firston": ["mods/bl4_backpack_size", "mods/bl4_builds", "mods/bl4_crisp_numbers", "mods/bl4_damage_meter",
+    "firston": ["mods/bl4_bank_anywhere", "mods/bl4_backpack_size", "mods/bl4_builds", "mods/bl4_crisp_numbers", "mods/bl4_damage_meter",
                 "mods/bl4_direct", "mods/bl4_echo_anywhere", "mods/bl4_instant_tabs", "mods/bl4_instant_travel",
                 "mods/bl4_item_cards", "mods/bl4_item_pictures", "mods/bl4_less_fog", "mods/bl4_minimap",
                 "mods/bl4_perf", "mods/bl4_reroll", "mods/bl4_respec", "mods/bl4_save_backup",

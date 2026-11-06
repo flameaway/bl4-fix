@@ -1,0 +1,8 @@
+[project]
+name = "BL4 Bank Anywhere"
+version = "0.1.0"
+description = "Open the bank anywhere with a key (F10): the game's own Withdraw / Deposit screen, no machine needed."
+authors = [{ name = "flame" }]
+
+[tool.sdkmod]
+supported_games = ["BL4"]

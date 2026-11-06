@@ -6,6 +6,11 @@
     display: none !important;
 }
 
+/* Unseen but still taking its room (the owner row's arrows at its ends) */
+.bl4dex_unseen {
+    visibility: hidden;
+}
+
 .bl4dex_root {
     position: absolute;
     left: 0;
@@ -224,6 +229,8 @@
 /* region Filter chips */
 
 .bl4dex_filters {
+    position: relative;
+    z-index: 5;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
@@ -346,37 +353,111 @@
     flex: 0 0 auto;
 }
 
-.bl4dex_entry {
+/* The Bosses tab's binder (dex.js renderBossBinder): the Collection's group headers
+   (.bl4dex_group*, .bl4dex_tiles) over boss tiles, sized like its item tiles (values copied from
+   .bl4dex_tile*, not shared, so either can change alone). Beaten: a green foot line; not beaten:
+   dashed, with the area to find it in. */
+.bl4dex_boss_tile {
     position: relative;
+    flex: 0 0 15.6rem;
+    width: 15.6rem;
+    height: 16.4rem;
+    margin: 0 0.9rem 0.9rem 0;
+    padding: 0.6rem 0.8rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: rgba(14, 40, 58, 0.9);
+    border: 0.15rem solid rgba(63, 118, 157, 0.55);
+    border-bottom: 0.4rem solid #6fe08a;
+}
+
+.bl4dex_boss_tile:hover {
+    border-color: #00c6ff;
+}
+
+.bl4dex_boss_tile.bl4dex_boss_tile_open {
+    background-color: rgba(8, 22, 32, 0.6);
+    border-style: dashed;
+    border-color: rgba(52, 85, 107, 0.7);
+    border-bottom: 0.15rem dashed rgba(52, 85, 107, 0.7);
+}
+
+.bl4dex_boss_tile.bl4dex_selected {
+    border-color: #ffb13b;
+    background-color: rgba(60, 46, 14, 0.75);
+}
+
+.bl4dex_root .bl4dex_boss_tile_no {
+    position: absolute;
+    left: 0.7rem;
+    top: 0.4rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.6rem;
+    color: #00c6ff;
+}
+
+.bl4dex_root .bl4dex_boss_tile_kind {
+    position: absolute;
+    right: 0.7rem;
+    top: 0.6rem;
+    max-width: 9rem;
+    font-family: Industry-Normal;
+    font-size: 1.2rem;
+    color: #a0aeb1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4dex_boss_tile_picture {
+    position: relative;
+    flex: 0 0 9.4rem;
+    width: 100%;
+    height: 9.4rem;
+    margin-top: 2rem;
     display: flex;
     flex-direction: row;
     align-items: center;
-    height: 6.2rem;
-    min-height: 6.2rem;
-    padding: 0 1.6rem;
-    margin-bottom: 0.6rem;
-    background-color: rgba(10, 30, 44, 0.75);
-    border-left: 0.5rem solid rgba(63, 118, 157, 0.4);
+    justify-content: center;
 }
 
-.bl4dex_entry:hover {
-    background-color: rgba(0, 120, 160, 0.35);
+.bl4dex_root .bl4dex_boss_tile_name {
+    width: 100%;
+    font-family: Industry-DemiBold;
+    font-size: 1.6rem;
+    color: #e8f2f8;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.bl4dex_entry.bl4dex_selected {
-    background-color: rgba(0, 198, 255, 0.22);
-    border-left-color: #00c6ff;
+.bl4dex_root .bl4dex_boss_tile_locked {
+    color: #56656a;
+    letter-spacing: 0.3rem;
 }
 
-/* Boss pictures: a thumbnail on each row, a large one atop the details */
-
-.bl4dex_boss_entry {
-    height: 8.4rem;
-    min-height: 8.4rem;
-    padding-left: 0.8rem;
+.bl4dex_root .bl4dex_boss_tile_beaten,
+.bl4dex_root .bl4dex_boss_tile_where {
+    width: 100%;
+    margin-top: auto;
+    font-family: Industry-DemiBold;
+    font-size: 1.3rem;
+    color: #6fe08a;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.bl4dex_thumb,
+.bl4dex_root .bl4dex_boss_tile_where {
+    font-family: Industry-Normal;
+    color: #6f8ea4;
+}
+
+/* Boss pictures: a large one atop the details */
+
 .bl4dex_portrait {
     position: relative;
     display: flex;
@@ -385,13 +466,6 @@
     justify-content: center;
     background-color: rgba(0, 20, 32, 0.8);
     border: 0.12rem solid rgba(63, 118, 157, 0.45);
-}
-
-.bl4dex_thumb {
-    flex: 0 0 7.4rem;
-    width: 7.4rem;
-    height: 7.4rem;
-    margin-right: 1.4rem;
 }
 
 .bl4dex_portrait {
@@ -437,12 +511,6 @@
     margin-bottom: 0.6rem;
 }
 
-.bl4dex_item_names {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-}
-
 .bl4dex_item_picture {
     position: relative;
     display: flex;
@@ -462,14 +530,7 @@
     font-size: 5rem;
 }
 
-/* The card's red (flavor) text and the item's unique effect */
-.bl4dex_root .bl4dex_red_text {
-    font-family: Industry-Medium;
-    font-size: 1.9rem;
-    color: #ff5a3c;
-    margin: 0.2rem 0;
-}
-
+/* An item's unique effect */
 .bl4dex_effect {
     display: flex;
     flex-direction: column;
@@ -484,40 +545,6 @@
 .bl4dex_effect span {
     font-family: Industry-Normal;
     font-size: 1.8rem;
-}
-
-.bl4dex_no {
-    flex: 0 0 7.4rem;
-    width: 7.4rem;
-    font-family: Industry-DemiBold;
-    font-size: 2rem;
-    color: #00c6ff;
-}
-
-.bl4dex_entry_main {
-    flex: 1 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    min-width: 0;
-}
-
-.bl4dex_entry_name {
-    font-family: Industry-DemiBold;
-    font-size: 2.3rem;
-    color: #e4d9ce;
-}
-
-.bl4dex_entry_sub {
-    font-family: Industry-Normal;
-    font-size: 1.6rem;
-    color: #8fa0a4;
-}
-
-.bl4dex_entry_side {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
 }
 
 .bl4dex_root .bl4dex_tag {
@@ -535,33 +562,9 @@
     font-family: Industry-DemiBold;
 }
 
-.bl4dex_locked .bl4dex_entry_name,
 .bl4dex_locked .bl4dex_cell_title {
     color: #56656a;
     letter-spacing: 0.3rem;
-}
-
-.bl4dex_locked .bl4dex_no {
-    color: #3d6f85;
-}
-
-.bl4dex_rarity_bar {
-    flex: 0 0 0.6rem;
-    width: 0.6rem;
-    height: 4rem;
-    margin-right: 1.6rem;
-}
-
-.bl4dex_rarity_legendary {
-    background-color: #ff9b2e;
-}
-
-.bl4dex_rarity_pearlescent {
-    background-color: #8ff5e6;
-}
-
-.bl4dex_item_entry {
-    padding-left: 1rem;
 }
 
 .bl4dex_name_legendary {
@@ -573,10 +576,6 @@
 }
 
 /* Spoiler free: a hidden item's rarity isn't shown */
-.bl4dex_rarity_hidden {
-    background-color: #3d4a50;
-}
-
 .bl4dex_name_hidden {
     color: #56656a;
 }
@@ -604,10 +603,12 @@
 /* endregion */
 /* region Details */
 
+/* The list is sized to whole tile columns by dex.js fitList, the details take the rest (user asks
+   2026-11-05: too few tiles in sight, then blank space) */
 .bl4dex_details {
-    /* Wide enough for two columns: a boss or item beside its drops or its item card (54.6rem) */
-    flex: 0 0 112rem;
-    width: 112rem;
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
     height: 100%;
     max-height: 100%;
     display: flex;
@@ -617,6 +618,15 @@
     background-color: rgba(3, 16, 25, 0.88);
     border-top: 0.3rem solid rgba(0, 198, 255, 0.6);
     overflow-y: scroll;
+}
+
+.bl4dex_ruler {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 10rem;
+    height: 0;
+    visibility: hidden;
 }
 
 .bl4dex_detail_no {
@@ -732,28 +742,7 @@
 }
 
 /* endregion */
-/* region Footer and toast */
-
-.bl4dex_footer {
-    flex: 0 0 6.6rem;
-    height: 6.6rem;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    margin-top: 1.4rem;
-}
-
-.bl4dex_close.list_btn {
-    width: 22rem;
-    flex: 0 0 22rem;
-    margin-right: 3rem;
-}
-
-.bl4dex_hint {
-    font-family: Industry-Normal;
-    font-size: 1.9rem;
-    color: #a0aeb1;
-}
+/* region Toast */
 
 .bl4dex_toast {
     position: absolute;
@@ -851,23 +840,6 @@
     color: #ff7a5c;
 }
 
-/* "Plus one of N part effects" and its Show all chip; the listed variants are dimmed */
-.bl4dex_variant_row {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.bl4dex_variant_row .bl4dex_chip {
-    margin: 0 0 0 1rem;
-    padding: 0.3rem 1rem;
-}
-
-.bl4dex_effect.bl4dex_variant {
-    opacity: 0.75;
-}
-
 /* A class mod's skills: name, points (or how many it can get), description */
 .bl4dex_skill {
     display: flex;
@@ -905,6 +877,12 @@
     flex-direction: row;
     justify-content: center;
     margin: 1rem 0;
+}
+
+/* No frame lines on the dex's cards (the game's item_card_bkg_lines: thin side lines whose white
+   end caps stuck out past the card's top and bottom; pinned to the card they still showed) */
+.bl4dex_game_card .item_card_bkg_lines {
+    display: none;
 }
 
 .bl4dex_game_card .item_card_tooltip {
@@ -977,11 +955,6 @@
     min-width: 0;
 }
 
-.bl4dex_cols_item .bl4dex_col_right {
-    flex: 0 0 56rem;
-    width: 56rem;
-}
-
 .bl4dex_cols_boss .bl4dex_col_left {
     flex: 0 0 40rem;
     width: 40rem;
@@ -993,19 +966,6 @@
 
 .bl4dex_root .bl4dex_section.bl4dex_section_top {
     margin-top: 0;
-}
-
-/* An item's picture above its name, the width of the column */
-.bl4dex_cols_item .bl4dex_col_left .bl4dex_item_picture {
-    flex: 0 0 auto;
-    width: 100%;
-    height: 22rem;
-    margin-bottom: 1.2rem;
-}
-
-.bl4dex_cols_item .bl4dex_game_card {
-    margin-top: 0;
-    justify-content: flex-start;
 }
 
 /* A boss's drop rows: the item's inventory picture (2:1) left of its name */
@@ -1056,57 +1016,7 @@
 
 /* region Bosses beside items */
 
-/* An item list entry's name with the item's small picture after it; the bosses that drop it sit
-   at the entry's right end */
-.bl4dex_entry_name_row {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    min-width: 0;
-}
-
-.bl4dex_mini_item {
-    flex: 0 0 6.8rem;
-    width: 6.8rem;
-    height: 3.4rem;
-    margin-left: 1rem;
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-}
-
-.bl4dex_mini_bosses {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-}
-
-.bl4dex_mini_boss {
-    position: relative;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 3.4rem;
-    width: 3.4rem;
-    height: 3.4rem;
-    margin-left: 0.8rem;
-    background-color: rgba(0, 20, 32, 0.8);
-    border: 0.1rem solid rgba(63, 118, 157, 0.45);
-}
-
-.bl4dex_root .bl4dex_mini_boss .bl4dex_picture_missing {
-    font-size: 1.6rem;
-}
-
-.bl4dex_root .bl4dex_mini_more {
-    margin-left: 0.6rem;
-    font-family: Industry-Normal;
-    font-size: 1.4rem;
-    color: #8fa0a4;
-}
-
-/* An item's "Dropped by": one block per boss, its picture left of its name, chances and buttons */
+/* A Collection item's farm cards: one block per boss, its picture left of its name, chances and buttons */
 .bl4dex_dropper {
     display: flex;
     flex-direction: row;
@@ -1252,37 +1162,6 @@
    manufacturer logos, the item card's comparison backings and arrows, element backings, stat and
    skill icons. */
 
-.bl4dex_item_picture_parts {
-    cursor: pointer;
-}
-
-.bl4dex_item_picture_parts:hover {
-    border-color: rgba(0, 198, 255, 0.9);
-}
-
-.bl4dex_parts_hint {
-    position: absolute;
-    right: 0.8rem;
-    bottom: 0.8rem;
-    display: flex;
-    flex-direction: row;
-    padding: 0.4rem 1.2rem;
-    background-color: rgba(3, 16, 25, 0.85);
-    border: 0.12rem solid rgba(0, 198, 255, 0.6);
-}
-
-.bl4dex_root .bl4dex_parts_hint_text {
-    font-family: Industry-DemiBold;
-    font-size: 1.5rem;
-    letter-spacing: 0.2rem;
-    color: #00c6ff;
-}
-
-.bl4dex_item_picture_parts:hover .bl4dex_parts_hint {
-    background-color: rgba(0, 60, 85, 0.9);
-    border-color: #00c6ff;
-}
-
 .bl4dex_parts {
     position: absolute;
     left: 0;
@@ -1291,7 +1170,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    background-color: rgba(2, 12, 19, 0.98);
+    background-color: rgb(2, 12, 19);  /* (opaque: at 0.98 the Collection's text showed through) */
     z-index: 10;
 }
 
@@ -1467,6 +1346,42 @@
     font-size: 5rem;
 }
 
+/* A part's render, centred on the part (dex.js partPicture): a 2:1 frame (the render's shape),
+   vertically centred in the picture box, the render zoomed and moved inside it */
+.bl4dex_part_frame {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 100%;
+    height: 0;
+    padding-top: 50%;
+    transform: translateY(-50%);
+    overflow: hidden;
+}
+
+.bl4dex_part_zoomed {
+    position: absolute;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+}
+
+/* A part with no model: its icon (a skill's, a stat augment's), centered */
+.bl4dex_part_picture_icons {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.bl4dex_part_picture_icon_one {
+    width: 7rem;
+    height: 7rem;
+    margin: 0 0.3rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
 .bl4dex_root .bl4dex_part_picture_none {
     font-family: Industry-DemiBold;
     font-size: 2rem;
@@ -1490,12 +1405,16 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    padding: 0.4rem 1rem;
+    /* (No right padding: Gameface laid the tally past it, ~1rem past the row's edge, and the row cut
+       "60%" / "of rolls"; the tally keeps that room inside its own width instead) */
+    padding: 0.4rem 0 0.4rem 1rem;
     overflow: hidden;
 }
 
+/* (May shrink: in a narrow column, rows in a slot's frame cut the chance at the right edge to "Al"
+   for "Always"; a long name is trimmed instead) */
 .bl4dex_part_who {
-    flex: 0 0 26rem;
+    flex: 0 1 26rem;
     width: 26rem;
     min-width: 0;
     display: flex;
@@ -1932,18 +1851,18 @@
     margin: 0.3rem 0;
 }
 
-.bl4dex_part_element_backing {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-size: 100% 100%;
-    opacity: 0.8;
+.bl4dex_part_element_icon {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.bl4dex_part_element_icon p,
+.bl4dex_part_element_icon span {
+    font-size: 2.6rem;
 }
 
 .bl4dex_root .bl4dex_part_element_text {
-    position: relative;
     font-family: Industry-DemiBold;
     font-size: 1.8rem;
     color: #ffffff;
@@ -2083,8 +2002,9 @@
 
 /* Tally: better / worse counts over the chance a roll has this part */
 .bl4dex_part_tally {
-    flex: 0 0 10rem;
-    width: 10rem;
+    flex: 0 0 12rem;
+    width: 12rem;
+    padding-right: 2rem;
     flex-direction: column;
     align-items: flex-end;
     justify-content: center;
@@ -2294,10 +2214,17 @@
     height: auto;
 }
 
+/* The name takes what's left; the effect lines ("Accuracy +12%") get room of their own: squeezed to
+   ~5rem they read "Acc", "Dai", "Cri" (the user's report 2026-11-06). A long name is trimmed instead. */
 .bl4dex_slot_drop .bl4dex_slot_part .bl4dex_part_who {
-    flex: 0 0 22rem;
-    width: 22rem;
+    flex: 1 1 0;
+    width: auto;
     padding-left: 1rem;
+}
+
+.bl4dex_slot_drop .bl4dex_slot_part .bl4dex_part_chips {
+    flex: 0 0 16.5rem;
+    width: 16.5rem;  /* ("Crit Damage +100%" lost its % at 15rem) */
 }
 
 .bl4dex_slot_drop .bl4dex_slot_part .bl4dex_part_chance {
@@ -2405,4 +2332,746 @@
     font-size: 1.3rem;
     color: #6d7c80;
     margin-left: 1rem;
+}
+
+
+/* region Collection: the binder */
+
+/* A chip's count ("Rafa 93"), a holder's icon in a chip, a manufacturer's logo in a chip */
+/* Owner chips all as tall as the two-line ones (Everyone and Bank have one line) */
+.bl4dex_owner_row {
+    align-items: stretch;
+}
+
+.bl4dex_owner_row .bl4dex_row_label {
+    align-self: center;
+}
+
+/* The owner chips: one line, scrolled sideways (dex.js: the wheel, the arrows) */
+.bl4dex_owner_row {
+    flex-wrap: nowrap;
+}
+
+.bl4dex_owner_box {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* The bar under the owner chips (dex.js sideBar): a track, its handle the part in sight */
+.bl4dex_hbar {
+    position: relative;
+    height: 0.8rem;
+    margin: 0 0.8rem 0.4rem 0;
+    background-color: rgba(10, 30, 44, 0.75);
+    border-top: 0.1rem solid rgba(63, 118, 157, 0.4);
+    border-bottom: 0.1rem solid rgba(63, 118, 157, 0.4);
+}
+
+.bl4dex_hbar_handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 4rem;
+    background-color: rgba(0, 198, 255, 0.55);
+}
+
+.bl4dex_hbar_handle:hover,
+.bl4dex_hbar_handle.bl4dex_sbar_drag {
+    background-color: rgba(0, 198, 255, 0.95);
+}
+
+.bl4dex_owner_scroll {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    overflow: hidden;
+}
+
+.bl4dex_owner_scroll > .bl4dex_chip {
+    flex: 0 0 auto;
+}
+
+.bl4dex_chip.bl4dex_scroll_arrow {
+    flex: 0 0 auto;
+    justify-content: center;
+    padding: 0 0.9rem;
+}
+
+.bl4dex_scroll_left,
+.bl4dex_scroll_right {
+    width: 0;
+    height: 0;
+    border-top: 0.6rem solid transparent;
+    border-bottom: 0.6rem solid transparent;
+}
+
+.bl4dex_scroll_left {
+    border-right: 0.8rem solid #c9d3d5;
+}
+
+.bl4dex_scroll_right {
+    border-left: 0.8rem solid #c9d3d5;
+}
+
+/* An owner chip's name over "Lv 55   2h ago" */
+.bl4dex_chip_lines {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.bl4dex_root .bl4dex_chip_sub {
+    font-family: Industry-Normal;
+    font-size: 1.2rem;
+    color: #7f9aa8;
+    margin-top: -0.2rem;
+}
+
+.bl4dex_root .bl4dex_chip_count {
+    font-family: Industry-Normal;
+    font-size: 1.4rem;
+    color: #7f9aa8;
+    margin-left: 0.8rem;
+}
+
+.bl4dex_chip.bl4dex_active .bl4dex_chip_count {
+    color: #bfe9ff;
+}
+
+.bl4dex_chip_holder .bl4dex_holder,
+.bl4dex_chip_logo {
+    flex: 0 0 2.6rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    margin-right: 0.8rem;
+}
+
+.bl4dex_chip_logo {
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* Choices that go together (Show, Group, a copy sort): joined, each with all four edges, the edges
+   between two laid over each other (the lit one on top). Until 2026-11-05 a seg had no right edge
+   and leant on the next one's left: the last of a row ("Missing", before GROUP) had none. */
+.bl4dex_chip.bl4dex_seg {
+    position: relative;
+    margin-right: 0;
+}
+
+.bl4dex_chip.bl4dex_seg + .bl4dex_chip.bl4dex_seg {
+    margin-left: -0.15rem;
+}
+
+.bl4dex_chip.bl4dex_seg:hover,
+.bl4dex_chip.bl4dex_seg.bl4dex_active {
+    z-index: 1;
+}
+
+.bl4dex_row_label.bl4dex_row_label_inline {
+    flex: 0 0 auto;
+    width: auto;
+    margin: 0 1.4rem 0.6rem 3rem;
+}
+
+/* The grouping's direction: a triangle after its name (down: the usual way, up: reversed) */
+.bl4dex_arrow {
+    width: 0;
+    height: 0;
+    margin-left: 0.8rem;
+    border-left: 0.55rem solid transparent;
+    border-right: 0.55rem solid transparent;
+    border-top: 0.7rem solid #ffffff;
+}
+
+.bl4dex_arrow.bl4dex_arrow_up {
+    border-top: 0;
+    border-bottom: 0.7rem solid #ffffff;
+}
+
+/* A drop-down filter (the Collection's Show / Group / Type / Maker) and its panel of choices, laid
+   under it over the binder (.bl4dex_filters is the panel's positioned parent) */
+.bl4dex_chip.bl4dex_drop.bl4dex_drop_open {
+    border-color: #00c6ff;
+}
+
+.bl4dex_drop_caret {
+    width: 0;
+    height: 0;
+    margin-left: 1rem;
+    border-left: 0.45rem solid transparent;
+    border-right: 0.45rem solid transparent;
+    border-top: 0.55rem solid #7f9aa8;
+}
+
+.bl4dex_drop_panel {
+    position: absolute;
+    z-index: 20;
+    min-width: 24rem;
+    margin-top: -0.3rem;
+    padding: 0.4rem 0;
+    display: flex;
+    flex-direction: column;
+    background-color: rgba(3, 16, 25, 0.97);
+    border: 0.15rem solid #00c6ff;
+}
+
+.bl4dex_drop_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 3.6rem;
+    padding: 0 1.4rem;
+}
+
+.bl4dex_drop_row:hover {
+    background-color: rgba(0, 198, 255, 0.18);
+}
+
+.bl4dex_drop_row.bl4dex_active {
+    background-color: rgba(0, 198, 255, 0.3);
+}
+
+.bl4dex_drop_row.bl4dex_active .bl4dex_chip_text {
+    color: #ffffff;
+    font-family: Industry-DemiBold;
+}
+
+.bl4dex_chip_type {
+    flex: 0 0 3.6rem;
+    width: 3.6rem;
+    height: 2.2rem;
+    margin-right: 0.7rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* A Vault Hunter's portrait icon (the game's), the bank's icon, or a letter if neither */
+.bl4dex_holder {
+    flex: 0 0 3rem;
+    width: 3rem;
+    height: 3rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_holder.bl4dex_holder_small {
+    flex: 0 0 2.2rem;
+    width: 2.2rem;
+    height: 2.2rem;
+}
+
+.bl4dex_root .bl4dex_holder_letter {
+    font-family: Industry-DemiBold;
+    font-size: 1.5rem;
+    color: #e2ddff;
+}
+
+/* A group: its header (icon, name, held / all, a bar), then its tiles */
+.bl4dex_group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 1.2rem;
+}
+
+.bl4dex_group_head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 4.6rem;
+    margin-bottom: 0.8rem;
+    border-bottom: 0.12rem solid rgba(63, 118, 157, 0.35);
+}
+
+.bl4dex_group_icon {
+    flex: 0 0 4.4rem;
+    width: 4.4rem;
+    height: 3rem;
+    margin-right: 1.2rem;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_group_head .bl4dex_holder,
+.bl4dex_group_boss {
+    flex: 0 0 3.6rem;
+    width: 3.6rem;
+    height: 3.6rem;
+    margin-right: 1.2rem;
+}
+
+.bl4dex_group_boss {
+    position: relative;
+    border: 0.12rem solid rgba(63, 118, 157, 0.45);
+}
+
+.bl4dex_root .bl4dex_group_name {
+    font-family: Industry-DemiBold;
+    font-size: 2.1rem;
+    letter-spacing: 0.3rem;
+    color: #e8f2f8;
+    margin-right: 1.6rem;
+}
+
+.bl4dex_root .bl4dex_group_count {
+    font-family: Industry-DemiBold;
+    font-size: 2rem;
+    color: #ffb13b;
+    margin-right: 1.6rem;
+}
+
+.bl4dex_group_bar {
+    flex: 0 0 22rem;
+    width: 22rem;
+    height: 0.6rem;
+    margin-right: 1.6rem;
+    background-color: rgba(63, 118, 157, 0.3);
+}
+
+.bl4dex_group_fill {
+    height: 100%;
+    background-color: #ffb13b;
+}
+
+.bl4dex_root .bl4dex_group_note {
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #6f8ea4;
+}
+
+.bl4dex_tiles {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+/* A tile far from sight keeps its box, its insides aren't drawn (dex.js cullTiles) */
+.bl4dex_tile_off > * {
+    display: none !important;
+}
+
+/* A tile: picture, name, best level and holders (held); dark with where to farm it (not held) */
+.bl4dex_tile {
+    position: relative;
+    flex: 0 0 15.6rem;
+    width: 15.6rem;
+    height: 15rem;
+    margin: 0 0.9rem 0.9rem 0;
+    padding: 0.6rem 0.8rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: rgba(14, 40, 58, 0.9);
+    border: 0.15rem solid rgba(63, 118, 157, 0.55);
+    border-bottom: 0.4rem solid #ffb13b;
+}
+
+.bl4dex_tile.bl4dex_tile_pearlescent {
+    border-bottom-color: #9ef0ff;
+}
+
+.bl4dex_tile:hover {
+    border-color: #00c6ff;
+}
+
+.bl4dex_tile.bl4dex_selected {
+    border-color: #ffb13b;
+    background-color: rgba(60, 46, 14, 0.75);
+}
+
+.bl4dex_tile.bl4dex_tile_missing,
+.bl4dex_tile.bl4dex_tile_had {
+    background-color: rgba(8, 22, 32, 0.6);
+    border-style: dashed;
+    border-color: rgba(52, 85, 107, 0.7);
+    border-bottom: 0.15rem dashed rgba(52, 85, 107, 0.7);
+}
+
+.bl4dex_tile.bl4dex_tile_missing.bl4dex_selected,
+.bl4dex_tile.bl4dex_tile_had.bl4dex_selected {
+    border-color: #ffb13b;
+}
+
+.bl4dex_tile_picture {
+    position: relative;
+    flex: 0 0 7.4rem;
+    width: 100%;
+    height: 7.4rem;
+    margin-top: 1.2rem;
+}
+
+.bl4dex_tile_had .bl4dex_tile_picture {
+    opacity: 0.45;
+}
+
+.bl4dex_tile_logo {
+    position: absolute;
+    left: 0.6rem;
+    top: 0.6rem;
+    width: 2.4rem;
+    height: 2.4rem;
+    opacity: 0.75;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.bl4dex_root .bl4dex_tile_count {
+    position: absolute;
+    right: 0.6rem;
+    top: 0.4rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #ffffff;
+}
+
+.bl4dex_root .bl4dex_tile_name {
+    width: 100%;
+    font-family: Industry-DemiBold;
+    font-size: 1.6rem;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bl4dex_tile_missing .bl4dex_tile_name,
+.bl4dex_tile_had .bl4dex_tile_name {
+    color: #6f8ea4;
+}
+
+.bl4dex_tile_foot {
+    width: 100%;
+    margin-top: auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.bl4dex_root .bl4dex_tile_level {
+    font-family: Industry-DemiBold;
+    font-size: 1.5rem;
+    color: #a9c5d8;
+    margin-right: auto;
+}
+
+.bl4dex_tile_holders {
+    display: flex;
+    flex-direction: row;
+    margin-left: auto;
+}
+
+.bl4dex_root .bl4dex_tile_where {
+    width: 100%;
+    font-family: Industry-Normal;
+    font-size: 1.3rem;
+    color: #c9894a;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The picked item: its copies and who drops it on the left; its game card on the right */
+/* The copies take all the card leaves. No min-width: with one Gameface kept the column at that
+   width and never grew it (probed: 376 px with min-width 30rem, 533 px, the whole free room,
+   without); a wrapping row did the same. (fitList keeps the pane >= 96rem when it can.) */
+.bl4dex_cols_own .bl4dex_col_left {
+    flex: 1 1 0;
+}
+
+.bl4dex_cols_own .bl4dex_col_right {
+    flex: 0 0 56rem;
+    width: 56rem;
+}
+
+/* (Room above for its hover frame and lift) */
+.bl4dex_cols_own .bl4dex_col_right .bl4dex_peek {
+    margin-top: 0.8rem;
+}
+
+/* The game's card, a button to its parts. Hovered: a cyan frame and a "SEE PARTS" tab under it fade
+   in; the card itself doesn't move. Pressed: it sinks a little and comes back on release. (A
+   squeeze under a label, then a lift with an overshoot that settled visibly: both disliked.) */
+.bl4dex_peek {
+    position: relative;
+    z-index: 0;  /* (its own stacking: the frame's z-index stays inside the card) */
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    margin: 1rem 0;
+    transform: scale(1, 1);
+    transition: transform 0.12s ease-out;
+}
+
+.bl4dex_peek.bl4dex_peek_on.bl4dex_peek_down {
+    transform: scale(0.98, 0.98);
+    transition: transform 0.06s ease-out;
+}
+
+.bl4dex_peek .bl4dex_game_card {
+    margin: 0;
+    justify-content: flex-start;
+}
+
+/* (Placed on the card by dex.js cardPeek on each hover) */
+.bl4dex_peek_frame {
+    position: absolute;
+    /* Over the card: the game's card styles layer its parts, which drew over the frame (only a dim
+       line above the card showed) */
+    z-index: 20;
+    pointer-events: none;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    border: 0.2rem solid #00c6ff;
+    background-color: rgba(0, 198, 255, 0.05);
+    opacity: 0;
+    transition: opacity 0.16s ease-out;
+}
+
+.bl4dex_peek.bl4dex_peek_on .bl4dex_peek_frame {
+    opacity: 1;
+}
+
+.bl4dex_peek.bl4dex_peek_on.bl4dex_peek_down .bl4dex_peek_frame {
+    background-color: rgba(0, 198, 255, 0.14);
+}
+
+/* The tab under the card: held in, slides down and fades in on hover */
+.bl4dex_peek_hint {
+    height: 3.6rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.16s ease-out;
+}
+
+.bl4dex_peek.bl4dex_peek_on .bl4dex_peek_hint {
+    opacity: 1;
+}
+
+.bl4dex_root .bl4dex_peek_text {
+    font-family: Industry-DemiBold;
+    font-size: 1.7rem;
+    letter-spacing: 0.3rem;
+    color: #031019;
+    padding: 0.4rem 2.4rem;
+    background-color: #00c6ff;
+}
+
+/* Farm More's kept cards (dex.js farmCard): the portrait sits in a slot that's refilled */
+.bl4dex_dropper_picture_slot {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+}
+
+/* The copies list's pager: < Page [n] of N > (the number box types a page number) */
+.bl4dex_pager {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    margin: 0.8rem 0 0.4rem 0;
+}
+
+.bl4dex_pager .bl4dex_chip.bl4dex_scroll_arrow {
+    height: 3.2rem;
+    margin: 0 0.8rem;
+}
+
+.bl4dex_chip.bl4dex_pager_off {
+    opacity: 0.3;
+}
+
+.bl4dex_root .bl4dex_pager_text {
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #a0aeb1;
+    margin: 0 0.8rem;
+}
+
+.bl4dex_pager_box {
+    min-width: 5rem;
+    height: 3.2rem;
+    padding: 0 1rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(3, 16, 25, 0.85);
+    border: 0.15rem solid rgba(63, 118, 157, 0.55);
+}
+
+.bl4dex_pager_box:hover,
+.bl4dex_pager_box.bl4dex_typing {
+    border-color: #00c6ff;
+}
+
+.bl4dex_root .bl4dex_pager_num {
+    font-family: Industry-DemiBold;
+    font-size: 1.7rem;
+    color: #ffffff;
+}
+
+/* The copies: a heading with the sort, rows (a group or a copy), a group's copies under it */
+.bl4dex_root .bl4dex_section.bl4dex_copies_head {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    padding-bottom: 0.4rem;
+    margin-top: 0.8rem;  /* level with the card's top (.bl4dex_peek), not a section's 2.2rem */
+}
+
+.bl4dex_copy_sorts {
+    display: flex;
+    flex-direction: row;
+}
+
+.bl4dex_copy_sorts .bl4dex_chip {
+    margin-bottom: 0;
+    padding: 0.3rem 1rem;
+}
+
+/* Hide sold: a toggle after the sorts */
+.bl4dex_chip.bl4dex_copy_hide {
+    margin: 0 0 0 1.2rem;
+    padding: 0.3rem 1rem;
+}
+
+.bl4dex_copy,
+.bl4dex_copy_sub {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 4rem;
+    padding: 0 1rem;
+    border-bottom: 0.1rem solid rgba(63, 118, 157, 0.2);
+}
+
+.bl4dex_copy:hover,
+.bl4dex_copy_sub:hover {
+    background-color: rgba(0, 120, 160, 0.3);
+}
+
+.bl4dex_copy.bl4dex_selected,
+.bl4dex_copy_sub.bl4dex_selected {
+    background-color: rgba(255, 177, 59, 0.14);
+}
+
+.bl4dex_copy_sub {
+    margin-left: 4rem;
+    border-left: 0.15rem solid rgba(63, 118, 157, 0.5);
+}
+
+/* Every row of the copies list is 4rem (a group's copies and the "no longer held" heading too), so
+   a page of 10 is always as tall; the last page is filled with blank ones */
+.bl4dex_root .bl4dex_section.bl4dex_copy_row_head {
+    height: 4rem;
+    margin: 0;
+    padding: 1.6rem 0 0 0.2rem;
+}
+
+.bl4dex_copy.bl4dex_copy_blank:hover {
+    background-color: transparent;
+}
+
+.bl4dex_copy.bl4dex_copy_gone {
+    opacity: 0.6;
+}
+
+.bl4dex_copy_caret {
+    flex: 0 0 2rem;
+    width: 2rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.bl4dex_caret_shut {
+    width: 0;
+    height: 0;
+    border-top: 0.45rem solid transparent;
+    border-bottom: 0.45rem solid transparent;
+    border-left: 0.6rem solid #7fa3bb;
+}
+
+.bl4dex_caret_open {
+    width: 0;
+    height: 0;
+    border-left: 0.45rem solid transparent;
+    border-right: 0.45rem solid transparent;
+    border-top: 0.6rem solid #7fa3bb;
+}
+
+.bl4dex_root .bl4dex_copy_level {
+    flex: 0 0 4.4rem;
+    width: 4.4rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.9rem;
+    color: #ffffff;
+}
+
+.bl4dex_root .bl4dex_copy_name {
+    flex: 1 1 0;
+    margin-left: 1rem;
+    font-family: Industry-Normal;
+    font-size: 1.9rem;
+    color: #cfe6f5;
+}
+
+.bl4dex_root .bl4dex_copy_count {
+    flex: 0 0 5rem;
+    width: 5rem;
+    font-family: Industry-DemiBold;
+    font-size: 1.8rem;
+    color: #ffb13b;
+}
+
+.bl4dex_root .bl4dex_copy_when,
+.bl4dex_root .bl4dex_copy_n {
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #7fa3bb;
+}
+
+.bl4dex_root .bl4dex_copy_n {
+    flex: 0 0 9rem;
+    width: 9rem;
+    color: #cfe6f5;
+}
+
+/* endregion */
+
+/* The Level filter while it's typed into (dex.js liveChip "Level", patchLevel) */
+.bl4dex_chip.bl4dex_level_chip.bl4dex_typing {
+    border-color: #00c6ff;
+    background-color: rgba(0, 198, 255, 0.18);
+}
+
+/* Its example while nothing's typed ("e.g. 40-60"), dimmer than a typed level */
+.bl4dex_root .bl4dex_level_chip.bl4dex_level_hint .bl4dex_chip_text {
+    color: #6f8ea4;
 }

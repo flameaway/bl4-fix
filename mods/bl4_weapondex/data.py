@@ -38,6 +38,12 @@ def _by_display() -> dict[str, str]:
 
 
 @cache
+def item_by_comp() -> dict[tuple[int, int], str]:
+    """(item type index, composition index) -> dex item key: what a serial's header says it is."""
+    return {(item["ti"], item["si"]): key for key, item in dex()["items"].items() if "ti" in item and "si" in item}
+
+
+@cache
 def boss_ids() -> frozenset[str]:
     return frozenset(boss["id"] for boss in dex()["bosses"])
 

@@ -4,8 +4,10 @@ The legendaries the player has had, account-wide: the dex's "Obtained only" mode
 `loot_legendaries`), so this collects what it can see and remembers it:
 
 - every save (savegame.py, on its worker thread, whenever the saves change): each character's
-  backpack and equipped gear, and the profile's shared bank;
-- the live backpack when the dex opens (a few slots per frame), for what the saves don't have yet.
+  backpack (its equipped gear is in it too; the save's equipped_inventory repeats those, so it's
+  skipped: `MIRROR`), and the profile's shared bank;
+- the live backpack when the dex opens (a few slots per frame), for what the saves don't have yet
+  (the Collection follows the live backpack itself: celebrate.py).
 
 Lost loot doesn't count: it's drops the player left on the ground (and, on a modding setup,
 everything spawned and never picked up), so a pearl showed as obtained that was never held.
@@ -48,6 +50,7 @@ START_CHECK_S = 1.0  # how often to look for a character that has no record yet 
 SERIAL = re.compile(r"serial:\s*'(@U[^']+)'")
 SAVE_KEY = re.compile(r"^( *)(?:- )?(\w+):")
 HELD = "inventory"  # characters' state.inventory (backpack, equipped), the profile's shared inventory (bank)
+MIRROR = "equipped_inventory"  # inside a character's inventory: the equipped items again (also in the backpack)
 SLOTS_PER_TICK = 25  # live backpack walk: slots read per frame
 SERIAL_PTR, SERIAL_LEN = 0xA0, 0xB0  # FInventoryIdentity: the serial's text pointer and length
 
@@ -229,19 +232,28 @@ def rebuild(held: list[str]) -> bool:
 
 
 def from_save_text(text: str) -> list[str]:
-    """Serials of the items held (backpack, equipped, bank) in a save's YAML; lost loot and the rest are skipped."""
+    """
+    Serials of the items held (backpack with equipped gear, bank) in a save's YAML, one per item;
+    lost loot and the rest are skipped. `equipped_inventory` is skipped too: it lists the equipped
+    items again, each also in the backpack (every save checked, 2026-11-05).
+    """
     held: list[str] = []
     inside = -1  # the inventory key's indent while inside it
+    mirror = -1  # equipped_inventory's indent while inside it
     for line in text.splitlines():
         if (found := SAVE_KEY.match(line)) is None:
             continue
         indent, key = len(found.group(1)), found.group(2)
         if inside >= 0 and indent <= inside:
             inside = -1
+        if mirror >= 0 and indent <= mirror:
+            mirror = -1
         if inside < 0:
             if key == HELD:
                 inside = indent
-        elif key == "serial" and (serial := SERIAL.search(line)):
+        elif key == MIRROR:
+            mirror = indent
+        elif mirror < 0 and key == "serial" and (serial := SERIAL.search(line)):
             held.append(serial.group(1))
     return held
 
@@ -349,12 +361,6 @@ def _walk(state_address: int, start: str | None) -> Any:
                 serials.append(serial)
         first += SLOTS_PER_TICK
         yield
-    try:
-        from . import collection  # noqa: PLC0415 - imported here: hot reloads replace it
-
-        collection.from_backpack(serials, progress.character())
-    except Exception as ex:  # noqa: BLE001 - the obtained record still counts
-        logging.dev_warning(f"[Kairosdex] Collection from the backpack: {ex!r}")
     if start is None:
         add_serials(serials, progress.scope())
     elif serials:  # an empty backpack is more likely still loading: tried again in a second

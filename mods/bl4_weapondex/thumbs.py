@@ -80,6 +80,7 @@ INTERVAL_CVAR = "OakUI.Thumbnails.RenderInterval"  # the manager's pace: 0 durin
 PRERENDER_CVAR = "OakUI.Thumbnails.NumPreRenderItemThumbnails"
 PRERENDER = 12
 RETRIES = 2
+FAINT_ALPHA = 16  # drawn_box: fainter pixels (a part's soft edge or glow) don't count as drawn
 KEEP_BUFFERS = 64  # _keep
 # A roll's picture is looked for every tick (a cheap memory read; ticks run every frame while one is
 # pending) and handed on as soon as it's there: the page shows the game's render target itself, live,
@@ -460,6 +461,34 @@ def _read_bgra(target: Any) -> bytes | None:
     ~15 ms, 13 of them letting go of its array.
     """
     return readback.colors(ENGINE.GameViewport.World, target, WIDTH * HEIGHT)
+
+
+_FAINT = bytes(0 if a < FAINT_ALPHA else a for a in range(256))  # alpha below FAINT_ALPHA counts as nothing
+
+
+def drawn_box(target: Any) -> list[float] | None:
+    """
+    Where something is drawn in a thumbnail: [left, top, right, bottom] as shares of its width and
+    height, or None (nothing drawn, or it couldn't be read). One 8-bit read back. Game thread.
+    """
+    bgra = _read_bgra(target)
+    if bgra is None:
+        return None
+    alpha = bgra[3::4].translate(_FAINT)
+    left, top, right, bottom = WIDTH, -1, 0, 0
+    for y in range(HEIGHT):
+        row = alpha[y * WIDTH : (y + 1) * WIDTH]
+        rest = row.lstrip(b"\0")
+        if not rest:
+            continue
+        if top < 0:
+            top = y
+        bottom = y + 1
+        left = min(left, WIDTH - len(rest))
+        right = max(right, len(row.rstrip(b"\0")))
+    if top < 0:
+        return None
+    return [left / WIDTH, top / HEIGHT, right / WIDTH, bottom / HEIGHT]
 
 
 def _rendered_all(serials: list[str]) -> dict[str, int]:

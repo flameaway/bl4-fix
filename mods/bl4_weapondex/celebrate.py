@@ -5,13 +5,16 @@ the first time on this account, or a legendary or pearl is obtained for the firs
 "Per-character Kairosdex" on: the first time for the character being played).
 
 - Bosses: __init__.beaten() asks first_kill() before it records the win, then calls boss().
-- Items: the backpack is checked twice a second for items that weren't in it before (with
-  Celebrations off too: the Collection records each new legendary's serial and pickup time). One raw read
+- Items: the backpack is checked twice a second for items that came in or left (with
+  Celebrations off too: the Collection follows every copy, collection.live_changes). One raw read
   of every slot's item handle (the slot layout is learned once per world from the reflected
-  fields, and checked against them), so a check costs a few hundredths of a millisecond. A new
-  handle's serial says which item it is; a dex item never obtained before (owned.py) is recorded
-  and celebrated. What's in the backpack when the check starts (a world load, the mod starting) is
-  the baseline and never celebrated, so a world load or a hot reload can't replay anything.
+  fields, and checked against them), so a check costs a few hundredths of a millisecond. Only a
+  changed handle's item is read (its serial, ~35 us); when the backpack
+  changed, the bank's handles are read the same way (an item that left into the bank is a move).
+  A dex item never obtained before (owned.py) is celebrated. What's in the backpack when the check
+  starts (a world load, the mod starting) is the baseline, read a few slots per frame
+  (collection.live_baseline) and never celebrated, so a world load or a hot reload can't replay
+  anything.
 
 Local only: each player sees their own banners, host or client (the backpack replicates to its
 owner).
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import ctypes
 import threading
+from collections import Counter
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -29,10 +33,11 @@ from typing import Any
 from mods_base import get_pc
 from unrealsdk import logging
 
-from . import celebrate_page, data, owned, progress, savegame, stats, uilink
+from . import celebrate_page, collection, data, owned, progress, savegame, stats, uilink
 
 CHECK_S = 0.5
 MAX_NEW_PER_CHECK = 8  # a full backpack showing up at once (a load) is a baseline, not 90 banners
+BASELINE_SLOTS_PER_TICK = 20  # the baseline read: items read per frame (~35 us each)
 PUBLISH_S = 1.0  # dev: our page files are copied again this often when they change
 UI_DIR = "OakGame/Content/uiresources/bl4weapondex"
 ICON_BOSS = "coui://uiresources/_shared/assets/ico_ui_art_discovery/ico_menu_target_dummies.png"
@@ -60,6 +65,9 @@ class S:
     offset = 0  # the item handle's offset in a slot
     width = 0  # the handle's size in bytes; 0 = the raw read didn't check out (reflected reads)
     handles: frozenset[int] | None = None  # the items in it at the last check; None = take a baseline
+    items: dict[int, str] = {}  # noqa: RUF012 - handle -> serial of what's in it
+    walk: Any = None  # the baseline read in progress (a generator)
+    bank: frozenset[int] | None = None  # the bank's item handles at the last look
 
 
 def setup(game_dir: Path, enabled: Callable[[], bool]) -> None:
@@ -104,7 +112,7 @@ def _link(on: bool) -> None:
 
 
 def forget() -> None:
-    S.layout, S.handles = None, None
+    S.layout, S.handles, S.walk, S.bank, S.items = None, None, None, None, {}
 
 
 # region Events
@@ -222,6 +230,9 @@ def tick() -> None:
     if S.game_dir is None:
         S.handles = None
         return
+    if S.walk is not None:
+        _step_walk()  # the baseline read: a few slots every frame until it's done
+        return
     now = time.monotonic()
     if now < S.next_check:
         return
@@ -299,7 +310,7 @@ def _check() -> None:
         # moved is a pickup into a full backpack (the array has no empty slots then): keep the
         # handles, or the baseline would swallow the new item
         if S.layout is None or S.layout[0] != layout[0]:
-            S.handles = None
+            forget()
         S.layout = layout
         _learn(slots, count, first)
     handles = _handles(slots, count, first)
@@ -308,34 +319,106 @@ def _check() -> None:
     present = frozenset(h for h in handles if h != -1)
     if S.handles is None:
         S.handles = present
+        S.bank = None
+        _bank_changes(state)  # the bank's baseline (its handles only)
+        S.walk = _baseline(layout[0], [(i, h) for i, h in enumerate(handles) if h != -1])
         return
-    new = present - S.handles
+    came = present - S.handles
+    went = S.handles - present
+    if not came and not went:
+        return
+    if len(came) > MAX_NEW_PER_CHECK:
+        S.handles = None  # a whole backpack at once (a load): a new baseline
+        return
     S.handles = present
-    if not new or len(new) > MAX_NEW_PER_CHECK:
-        return
+    arrived: list[str] = []
     for index, handle in enumerate(handles):
-        if handle in new:
-            _new_item(slots[index], handle)
+        if handle in came:
+            read = _read_item(slots[index], handle)
+            if read is None:
+                forget()  # the raw read was off: learn the layout again
+                return
+            S.items[handle] = read
+            arrived.append(read)
+    left = [S.items.pop(h) for h in went if h in S.items]
+    # An item under a new handle (moved between slots) left and came with the same serial: neither
+    same = Counter(left) & Counter(arrived)
+    if same:
+        left = list((Counter(left) - same).elements())
+        arrived = list((Counter(arrived) - same).elements())
+    banked, unbanked = _bank_changes(state)
+    collection.live_changes(progress.character() or "", left, arrived, banked, unbanked)
+    for serial in arrived:
+        # Per character: new to this character's record (none while it hasn't started)
+        for key in owned.add_serials([serial], progress.scope()):
+            logging.info(f"[Kairosdex] First time: {(data.dex()['items'].get(key) or {}).get('name', key)}")
+            item(key)
 
 
-def _new_item(slot: Any, handle: int) -> None:
+def _read_item(slot: Any, handle: int) -> str | None:
+    """A slot's serial ("" if unreadable); None if the slot doesn't hold `handle` (a stale layout)."""
     item_ = slot.InventoryItem
-    if int(item_.Handle.Handle) != handle:  # the raw read was off: learn the layout again
-        forget()
-        return
-    serial = owned.serial_of(item_)
-    if not serial:
-        return
-    try:
-        from . import collection  # noqa: PLC0415 - imported here: hot reloads replace it
+    if int(item_.Handle.Handle) != handle:
+        return None
+    return owned.serial_of(item_) or ""
 
-        collection.from_pickup(serial, progress.character())
-    except Exception as ex:  # noqa: BLE001 - the banner still shows
-        logging.dev_warning(f"[Kairosdex] Collection pickup: {ex!r}")
-    # Per character: new to this character's record (none while it hasn't started)
-    for key in owned.add_serials([serial], progress.scope()):
-        logging.info(f"[Kairosdex] First time: {(data.dex()['items'].get(key) or {}).get('name', key)}")
-        item(key)
+
+def _baseline(state_address: int, wanted: list[tuple[int, int]]) -> Any:
+    """Reads the backpack's items a few per frame, then hands them to the Collection."""
+    items: dict[int, str] = {}
+    for start in range(0, len(wanted), BASELINE_SLOTS_PER_TICK):
+        # Looked up again every frame: never hold the array across frames (a world change frees it)
+        pc = get_pc(possibly_loading=True)
+        state = getattr(pc, "PlayerState", None) if pc is not None else None
+        if state is None or state._get_address() != state_address:  # noqa: SLF001
+            return
+        slots = state.BackpackItems.items
+        for index, handle in wanted[start : start + BASELINE_SLOTS_PER_TICK]:
+            read = _read_item(slots[index], handle) if index < len(slots) else None
+            if read is None:
+                S.handles = None  # it changed under us: start again
+                return
+            items[handle] = read
+        yield
+    S.items = items
+    collection.live_baseline(progress.character() or "", list(items.values()))
+
+
+def _step_walk() -> None:
+    try:
+        next(S.walk)
+    except StopIteration:
+        S.walk = None
+    except Exception as ex:  # noqa: BLE001 - never break the tick; start over next time
+        forget()
+        logging.dev_warning(f"[Kairosdex] backpack baseline: {ex!r}")
+
+
+def _bank_changes(state: Any) -> tuple[Counter[str], int]:
+    """
+    The bank since the last look: the serials that came into it and how many items left it. Its
+    slots are the backpack's kind, so the backpack's learned layout reads their handles too.
+    """
+    slots = state.BankItems.items
+    count = len(slots)
+    if S.stride > 0:
+        handles = _handles(slots, count, slots[0]._get_address()) if count else []  # noqa: SLF001
+    else:  # a one-item backpack taught no stride: read the handles one by one
+        handles = [int(slots[i].InventoryItem.Handle.Handle) for i in range(count)]
+    if handles is None:
+        return Counter(), 0
+    present = frozenset(h for h in handles if h != -1)
+    if S.bank is None:
+        S.bank = present
+        return Counter(), 0
+    came = present - S.bank
+    unbanked = len(S.bank - present)
+    S.bank = present
+    banked: Counter[str] = Counter()
+    for index, handle in enumerate(handles):
+        if handle in came and (read := _read_item(slots[index], handle)) is not None:
+            banked[read] += 1
+    return banked, unbanked
 
 
 # endregion

@@ -1,6 +1,7 @@
 """
 Bosses the game's own save shows you've beaten, so the dex isn't empty for everything beaten
-before the mod was installed. Read only: we never write a save.
+before the mod was installed. Read only, except transfer.py's Take (the user's ask 2026-11-06): it
+writes another character's save, with encrypt() below.
 
 The game's .sav files (Documents/My Games/Borderlands 4/Saved/SaveGames/<Steam ID>/Profiles/client:
 profile.sav plus one <n>.sav per character) are AES-256-ECB encrypted, then zlib, then YAML text.
@@ -57,6 +58,10 @@ _KEY_LINE = re.compile(r"^( *)(\w+): *(.*?)\s*$")
 _CHAR_GUID = re.compile(r"^\s*char_guid:\s*'?([0-9A-Fa-f]{32})'?\s*$", re.MULTILINE)
 _CHAR_NAME = re.compile(r"^\s*char_name:\s*'?(.*?)'?\s*$", re.MULTILINE)
 _CHAR_CLASS = re.compile(r"^\s*class:\s*'?(Char_\w+)'?\s*$", re.MULTILINE)
+_CHAR_LEVEL = re.compile(r"^\s*- type: Character\s*\n\s*level: (\d+)", re.MULTILINE)
+# When the game last played the character (not the file's date: Kairosdex's Take writes another
+# character's save, and that showed them as played just now)
+_PLAYED = re.compile(r"^\s*last_played_timestamp:\s*(\d+)\s*$", re.MULTILINE)
 
 
 class S:
@@ -115,7 +120,7 @@ def _read(folder: Path, stamp: Any) -> None:
         found = _unlockables_beaten(shared)
         held = owned.from_save_text(shared)  # the shared bank
         bank = list(held)
-        named: list[tuple[str, str, str, list[str], float]] = []  # the Collection's (collection.py)
+        named: list[tuple[str, str, str, int, list[str], float, float]] = []  # the Collection's (collection.py)
         by_char: dict[str, frozenset[str]] = {}
         carried: list[tuple[str, list[str], float]] = []
         for path in folder.glob("*.sav"):
@@ -130,8 +135,11 @@ def _read(folder: Path, stamp: Any) -> None:
                     char = guid.group(1).lower()
                     by_char[char] = frozenset(missions)
                     carried.append((char, serials, saved_at))
-                    name, cls = _CHAR_NAME.search(text), _CHAR_CLASS.search(text)
-                    named.append((char, name.group(1) if name else "", cls.group(1) if cls else "", serials, saved_at))
+                    name, cls, level = _CHAR_NAME.search(text), _CHAR_CLASS.search(text), _CHAR_LEVEL.search(text)
+                    played = _PLAYED.search(text)
+                    named.append((char, name.group(1) if name else "", cls.group(1) if cls else "",
+                                  int(level.group(1)) if level else 0, serials, saved_at,
+                                  float(played.group(1)) if played else saved_at))  # fmt: skip
         if owned.rebuild(held):
             S.changed = True
         if owned.add_serials(held):
@@ -264,6 +272,50 @@ def _aes_decrypt(key: bytes, blob: bytes) -> bytes:
         return out.raw
     finally:
         _bcrypt.BCryptDestroyKey(handle)
+
+
+def _aes_encrypt(key: bytes, blob: bytes) -> bytes:
+    handle = ctypes.c_void_p()
+    if _bcrypt.BCryptGenerateSymmetricKey(_aes(), ctypes.byref(handle), None, 0, key, 32, 0):
+        raise OSError("no AES key")
+    try:
+        out = ctypes.create_string_buffer(len(blob))
+        got = wintypes.ULONG()
+        if _bcrypt.BCryptEncrypt(handle, blob, len(blob), None, None, 0, out, len(blob), ctypes.byref(got), 0):
+            raise OSError("AES encrypt failed")
+        return out.raw[: got.value]
+    finally:
+        _bcrypt.BCryptDestroyKey(handle)
+
+
+def encrypt(key: bytes, text: str) -> bytes:
+    """
+    A save file from its text, as the game writes it: zlib (default level: 78 9c), the text's length
+    (u32 little-endian), PKCS7 padding to 16 bytes, AES-256-ECB. With classic zlib that's the game's
+    own bytes for the same text (every save checked, 2026-11-06); the game's Python has zlib-ng,
+    whose stream differs but is the same deflate format. Only transfer.py writes with it.
+    """
+    raw = text.encode("utf-8")
+    body = zlib.compress(raw, 6) + struct.pack("<I", len(raw))
+    pad = 16 - len(body) % 16
+    return _aes_encrypt(key, body + bytes([pad]) * pad)
+
+
+def same_form(key: bytes, blob: bytes) -> bool:
+    """The save is laid out as encrypt() writes: zlib, the text's length, PKCS7, UTF-8 text."""
+    raw = _aes_decrypt(key, blob)
+    if not raw or len(blob) % 16 or raw[:2] != b"\x78\x9c":
+        return False
+    pad = raw[-1]
+    if not 1 <= pad <= 16 or raw[-pad:] != bytes([pad]) * pad:
+        return False
+    d = zlib.decompressobj()
+    try:
+        text = d.decompress(raw)
+        text.decode("utf-8")
+    except (zlib.error, UnicodeDecodeError):
+        return False
+    return d.eof and d.unused_data == struct.pack("<I", len(text)) + raw[-pad:]
 
 
 def _decrypt(key: bytes, blob: bytes) -> str:

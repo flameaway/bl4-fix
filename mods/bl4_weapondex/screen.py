@@ -37,7 +37,7 @@ import unrealsdk
 from mods_base import SETTINGS_DIR, get_pc
 from unrealsdk import logging
 
-from . import breakdown, collection, data, health, owned, pause_page, picture, progress, roll, savegame, thumbs, travel, uilink
+from . import breakdown, collection, data, health, owned, pause_page, picture, progress, roll, savegame, thumbs, transfer, travel, uilink
 
 KEY = "weapondex"
 VIEW_FILE = SETTINGS_DIR / "weapondex_view.json"
@@ -77,7 +77,13 @@ class S:
     waiting_until = 0.0
     close_request = 0
     search = ""
-    typing: uilink.TextBox | None = None  # while the search box is being typed in
+    typing: uilink.TextBox | None = None  # while the search box (or a page number) is being typed in
+    typing_page = False  # the typing is a page number for the page's pager, not the search
+    page_text = ""
+    # The Collection's level filter being typed ("50", ">50", "<=40", "40-60"): the page applies it
+    typing_level = False
+    level_text = ""
+    page_go: dict[str, int] = {"id": 0, "page": 0}  # Enter on a page number: the page jumps there
     toast: dict[str, Any] = {"id": 0, "text": ""}  # noqa: RUF012
     view: dict[str, Any] | None = None  # the page's view, as it last sent it
     hover: str | None = None  # the item the mouse is over
@@ -95,8 +101,6 @@ class S:
     obtained: Callable[[], bool] = lambda: True  # noqa: E731
     # Set by __init__: whether "Spoiler free" is on (hidden items and bosses: no outline, no type)
     spoiler_free: Callable[[], bool] = lambda: False  # noqa: E731
-    # Set by __init__: whether hovering an Items list entry shows its card (boss drop rows always do)
-    list_hover: Callable[[], bool] = lambda: False  # noqa: E731
     # Something may have started that needs every frame (a page poll or action, F8): the mod's
     # tick runs the full pass next frame and looks at busy() again
     wake = False
@@ -160,7 +164,12 @@ def state() -> dict[str, Any]:
         "character": progress.character() is not None,
         "unlock": S.unlocked(),
         "search": S.search,
-        "typing": S.typing is not None,
+        "typing": S.typing is not None and not S.typing_page and not S.typing_level,
+        "typing_page": S.typing is not None and S.typing_page,
+        "typing_level": S.typing is not None and S.typing_level,
+        "level_text": S.level_text,
+        "page_text": S.page_text,
+        "page_go": S.page_go,
         "outdated": S.game_dir is not None and not data.data_current(S.game_dir),
         "toast": S.toast,
         "view": _view(),
@@ -178,13 +187,14 @@ def state() -> dict[str, Any]:
         "owned": sorted(owned.items(char)),
         # The page rebuilds its set when this changes: switching account <-> character must too
         "owned_v": f"{owned.S.version}/{char or ''}",
-        # "Item card on hover in the item list" option (off: only a boss's drop rows show a hover card)
-        "list_hover": S.list_hover(),
         # The drop chances shown are at this UVH level
         "uvh": _uvh(),
         # The Collection tab (collection.py): the list's version (the page reads collection.json when
-        # it changes), the character played, and the shown entry's card and picture
+        # it changes), the character played, and the shown copy's card and picture (by serial id:
+        # identical copies share one)
         "collection": collection.state(),
+        # The copy being taken to the character played (transfer.py), as a page serial id
+        "taking": collection.page_id(transfer.S.job["serial"]) if transfer.S.job else None,
         "trip": S.trip,
     }
 
@@ -198,20 +208,22 @@ def act(action: dict[str, Any]) -> None:
             # What's in the backpack now (the saves can be behind): read over the next frames
             owned.scan_backpack(get_pc(possibly_loading=True))
         case "type":
-            if action.get("on"):
-                start_typing()
+            if action.get("on") and action.get("field") == "level":
+                start_typing(level=str(action.get("text") or ""))
+            elif action.get("on"):
+                start_typing(page=action.get("field") == "page")
             else:
                 stop_typing()
         case "search":
             S.search = str(action.get("text") or "")[:MAX_SEARCH]
-            if S.typing is not None:
+            if S.typing is not None and not S.typing_page and not S.typing_level:
                 S.typing.text = S.search
         case "roll":
             if isinstance(action.get("item"), str):
                 roll.request(action["item"], int(action.get("count") or 1))
         case "parts":
             # The parts screen opened (or its item's roll changed): break the latest roll down, or
-            # with "own", that Collection entry's exact item
+            # with "own" (a page serial id), that Collection copy's exact item
             own = action.get("own")
             if isinstance(own, str):
                 serial = collection.serial_of(own)
@@ -245,9 +257,16 @@ def act(action: dict[str, Any]) -> None:
             if S.hover and not roll.S.results.get(S.hover) and not roll.S.status.get(S.hover):
                 roll.request(S.hover, 1, picture=False)
         case "inspect":
-            # A Collection entry the details show: its card (and picture) made on demand
+            # The Collection copy the details show (its page serial id): its card and picture, made on demand
             entry = action.get("id")
             collection.show(entry if isinstance(entry, str) else None)
+        case "take":
+            # A copy another character holds, to the one played (transfer.py: the user's ask)
+            entry, holder = action.get("id"), action.get("from")
+            serial = collection.serial_of(entry) if isinstance(entry, str) else None
+            if serial and isinstance(holder, str):
+                why = transfer.take(serial, holder)
+                say(why or "Moving it to you...")
         case "copy_serial":
             entry = action.get("id")
             if isinstance(entry, str) and collection.copy(entry):
@@ -292,7 +311,7 @@ def _uvh() -> int | None:
 
 
 def _shown_item() -> str | None:
-    return S.shown or (S.view or {}).get("item")
+    return S.shown or (S.view or {}).get("coll")
 
 
 def _view() -> dict[str, Any] | None:
@@ -563,9 +582,25 @@ def _trace_tick() -> None:
 # region Per frame
 
 
-def start_typing() -> None:
+LEVEL_CHARS = set("0123456789-")  # (the comparison is the page's Level drop-down; "-" for Between)
+
+
+def start_typing(page: bool = False, level: str | None = None) -> None:
+    """
+    The search box; with page=True a page number for the page's pager (digits; Enter jumps); with
+    level (its text now) the Collection's level filter (digits and < > = -, applied as typed).
+    """
     stop_typing()
-    S.typing = uilink.TextBox(S.search, MAX_SEARCH)
+    S.typing_page = page
+    S.typing_level = level is not None
+    if level is not None:
+        S.level_text = level[:9]
+        S.typing = uilink.TextBox(S.level_text, 9, allowed=LEVEL_CHARS.__contains__, spaces=False)
+    elif page:
+        S.page_text = ""
+        S.typing = uilink.TextBox("", 4, allowed=str.isdigit, spaces=False)
+    else:
+        S.typing = uilink.TextBox(S.search, MAX_SEARCH)
     _changed()
 
 
@@ -574,7 +609,15 @@ def stop_typing() -> None:
     if typing is None:
         return
     typing.stop()
-    S.search = typing.text
+    if S.typing_level:
+        S.level_text = typing.text
+        S.typing_level = False
+    elif S.typing_page:
+        if typing.done is True and typing.text:  # Enter
+            S.page_go = {"id": S.page_go["id"] + 1, "page": int(typing.text)}
+        S.page_text = ""
+    else:
+        S.search = typing.text
     _changed()
 
 
@@ -587,7 +630,12 @@ def _poll_typing() -> None:
         stop_typing()
         return
     if typing.poll():
-        S.search = typing.text
+        if S.typing_level:
+            S.level_text = typing.text
+        elif S.typing_page:
+            S.page_text = typing.text
+        else:
+            S.search = typing.text
         _changed()
     if typing.done is not None:  # Enter, Esc or Tab
         stop_typing()
@@ -655,6 +703,7 @@ def busy() -> bool:
         S.typing is not None or _Trace.watching is not None or S.trip_request is not None
         or travel.S.trip is not None or travel.S.hop is not None or roll.S.queue or breakdown.busy()
         or thumbs.Shots.pending or thumbs.S.active or owned.S.walk is not None or collection.busy()
+        or transfer.busy()
     )  # fmt: skip
 
 
@@ -671,6 +720,8 @@ def tick() -> None:
     breakdown.tick()
     collection.S.on_change = _changed
     collection.tick()
+    transfer.S.on_done = say
+    transfer.tick()
     thumbs.tick()
     owned.tick()
     if S.waiting_until and time.monotonic() > S.waiting_until:

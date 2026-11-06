@@ -14,7 +14,7 @@
 //
 // Legendary cards get a "Drops from" block from drops.json (made from the game's loot data by
 // tools/gen_item_cards.py): each boss with its drop chance at your UVH level and its Big Encore
-// chance and location, or "World drop".
+// chance and location (world drops get no line: a world-only item shows no block).
 //
 // Cards can be scaled (the mod's "Card size" option), and one taller than the screen scrolls with
 // the mouse wheel.
@@ -726,14 +726,20 @@
         // Clear out red text copies an earlier version of this script caused (keep the game's own)
         var reds = bottom.querySelectorAll("#item_card_red_text");
         for (var r = 1; r < reds.length; r++) reds[r].parentNode.removeChild(reds[r]);
-        box.innerHTML = "";
-        box.style.display = "none";
         var data = card.DataModel;
-        if (!data || data.abbreviated) return;
-        var entries = dropEntries(data);
-        if (!entries) return;
+        var entries = data && !data.abbreviated ? dropEntries(data) : null;
         var player = ns.live && ns.live[PLAYER_KEY];
         var uvh = player ? player.uvh : null;
+        // Made again only when what it shows changed: a card gets several data updates for one
+        // item (the Kairosdex pushes its model until the card has bound it), and each refill made
+        // new icons, which Gameface shows blank for a moment: the per kill and Big Encore icons
+        // flickered a few times on every item (user report 2026-11-06)
+        var sig = JSON.stringify([entries, uvh, ns.hotkey && ns.hotkey.pinned]);
+        if (box.bl4dSig === sig) return;
+        box.bl4dSig = sig;
+        box.innerHTML = "";
+        box.style.display = "none";
+        if (!entries) return;
 
         box.style.display = "";
         box.appendChild(element("p", "bl4d_drops_title", "Drops from"));
@@ -747,7 +753,9 @@
                 any = true;
             }
         }
-        if (world) box.appendChild(element("p", "bl4d_drops_line", any ? "Also a world drop" : "World drop"));
+        // No "world drop" line (the user's ask 2026-11-06): a world-only item shows no block at all
+        // (saying "no drop source" would be wrong)
+        if (!any && world) box.style.display = "none";
         if (!any && !world) box.appendChild(element("p", "bl4d_drops_line", "No drop source (pack, reward or vendor item)"));
     }
 

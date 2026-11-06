@@ -75,6 +75,7 @@ MODS: tuple[ModInfo, ...] = (
         paks=(_pak(4246),), ui_dirs=("bl4instanttabs",), link=True,
     ),
     ModInfo("bl4_echo_anywhere", "ECHO Anywhere", "Open the ECHO menu when the game refuses (falling, ...)."),
+    ModInfo("bl4_bank_anywhere", "Bank Anywhere", "Open the bank anywhere (F10)."),
     ModInfo(
         "bl4_respec", "Easy Respec", "Right-click a skill to take a point back.",
         paks=(_pak(4244),), ui_dirs=("bl4respec",), link=True,
