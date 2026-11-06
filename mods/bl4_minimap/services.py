@@ -17,6 +17,8 @@ from typing import Any
 import unrealsdk
 from unrealsdk.unreal import UObject
 
+from . import markers
+
 SCAN_INTERVAL = 5.0  # s between the cheap lookups (by class); these only stream in and out
 NAME_SCAN_PAUSED_S = 10.0  # between the slow lookups (by name) while paused
 _ICONS = "/Game/uiresources/_shared/assets/ico_ui_art_discovery/"
@@ -58,12 +60,10 @@ class Services:
 
     @classmethod
     def _vendor_icon(cls, machine: UObject) -> str:
-        shop = str(getattr(machine.ShopDef, "Name", "") or "")
-        if not shop:
-            text = str(machine.ShopDef)
-            shop = text.split("'", 2)[1] if "'" in text else text
+        # (The def pointer's own name: its str() writes out the whole def, ~0.25 ms a machine)
+        shop = machine.ShopDef._name.lower()
         for key, icon in VENDORS:
-            if key.lower() in shop.lower():
+            if key.lower() in shop:
                 return icon
         return DEFAULT_VENDOR
 
@@ -75,8 +75,8 @@ class Services:
 
     @staticmethod
     def _item(actor: UObject, icon: str) -> dict[str, Any]:
-        loc = actor.K2_GetActorLocation()
-        return {"x": loc.X, "y": loc.Y, "z": loc.Z, "texture": icon}
+        x, y, z = markers.location(actor)
+        return {"x": x, "y": y, "z": z, "texture": icon}
 
     @classmethod
     def scan(cls, pc: UObject, world_name: str, paused: bool) -> None:

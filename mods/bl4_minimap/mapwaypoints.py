@@ -50,6 +50,7 @@ The struct pointers in the GbxDefPtrs are checked, so a patch that moves the str
 from __future__ import annotations
 
 import struct
+import threading
 import time
 
 import unrealsdk
@@ -78,6 +79,7 @@ KIND_ENTRY = 0x18
 # Globals the level lookup (0x60EDEE) uses: an FName number to skip, the "no level" default
 NAME_SKIP, NAME_DEFAULT, NAME_DEFAULT_NUMBER, NAME_SPECIAL = 0xC948000, 0xC948618, 0xC948620, 0xC948034
 MAX_SLOTS = 100000  # a sanity bound on sparse array sizes
+MAX_LEVELS = 4096  # MapWaypoints.levels is started over past this many
 DISCOVERY_GLOBALS = 0xCBC83A8  # the static OakDiscoveryGlobals
 SUBTYPE_ENTRY = 0x28  # a kind -> location type entry: {kind FName, GbxDefPtr {name, struct, def}, hash link}
 DEF_PTR = 0x18  # a GbxDefPtr: {name FName, struct, def}
@@ -121,20 +123,22 @@ def _alive(counter: int | None) -> bool:
     return bool(count and count > 0)
 
 
-def _slots(array: int) -> list[int]:
-    """The allocated indices of a TSparseArray at `array` (data, num, max, bits inline/heap, bit count)."""
+def _slots(array: int) -> tuple[int, list[int]]:
+    """The data pointer and allocated indices of a TSparseArray at `array` (data, num, max, bits
+    inline/heap, bit count). Inline bits (up to 128 slots) come with the head's read."""
     head = _read(array, 0x2C)
     if head is None:
-        return []
+        return 0, []
     data, num, cap = struct.unpack_from("<Qii", head, 0)
     heap_bits = struct.unpack_from("<Q", head, 0x20)[0]
     count = struct.unpack_from("<i", head, 0x28)[0]
     if not data or num <= 0 or not 0 < count <= cap <= MAX_SLOTS:
-        return []
-    bits = _read(heap_bits or array + 0x10, (count + 7) // 8)
+        return 0, []
+    size = (count + 7) // 8
+    bits = head[0x10 : 0x10 + size] if not heap_bits and size <= 0x10 else _read(heap_bits or array + 0x10, size)
     if bits is None:
-        return []
-    return [i for i in range(count) if bits[i >> 3] >> (i & 7) & 1]
+        return 0, []
+    return data, [i for i in range(count) if bits[i >> 3] >> (i & 7) & 1]
 
 
 class MapWaypoints:
@@ -151,6 +155,17 @@ class MapWaypoints:
     pictures: dict[str, str] = {}  # noqa: RUF012  # mission type -> the map's picture for its waypoints
     picture_broken = ""  # why pictures are off ("" = working or not set up yet)
     picture_layout: tuple[int, int, frozenset[int]] | None = None  # (subtypes map, found presentation, structs)
+    # A holder's level info -> its level FName bytes (_level): neither changes while the level is
+    # loaded (3 reads a holder, ~15 holders, each read before)
+    levels: dict[int, bytes | None] = {}  # noqa: RUF012
+    # The worker: one request waiting at most (a newer one replaces it), its answer a whole-object swap
+    asked: tuple[int, int, int] | None = None  # (ticket, shard address, provider address)
+    answer: tuple[int, list[tuple[float, float, float, str]] | None] | None = None  # (ticket, points)
+    ticket = 0
+    taken = 0  # answers to older tickets were asked in a world since left: dropped
+    wake = threading.Event()
+    generation = 0  # a worker of an older generation stops (mod disabled, reloaded)
+    thread: threading.Thread | None = None
 
     @classmethod
     def _fail(cls, why: str) -> None:
@@ -195,8 +210,7 @@ class MapWaypoints:
         assert cls.picture_layout is not None
         subtypes, found, structs = cls.picture_layout
         subtypes_at = cls.base + DISCOVERY_GLOBALS + subtypes
-        slots = _slots(subtypes_at)
-        data = _u64(subtypes_at)
+        data, slots = _slots(subtypes_at)
         entries = _read(data, (max(slots) + 1) * SUBTYPE_ENTRY) if data and slots and max(slots) < MAX_KINDS else None
         if entries is None:
             return
@@ -219,7 +233,8 @@ class MapWaypoints:
                 cls.pictures[kind] = f"{name_of(look[discovery.ICON_PACKAGE : discovery.ICON_PACKAGE + 8])}.{name_of(asset)}"
 
     @classmethod
-    def _source(cls, paused: bool, new_world: bool) -> int | None:
+    def _shard(cls, paused: bool, new_world: bool) -> int | None:
+        """The OakShard's address (game thread: it's looked up through the SDK)."""
         shard = cls.shard()
         if shard is None:
             now = time.monotonic()
@@ -234,11 +249,7 @@ class MapWaypoints:
                     break
             if shard is None:
                 return None
-        holder = _u64(shard._get_address() + SHARD_SOURCE)  # noqa: SLF001
-        source = _u64(holder + SOURCE_SET) if holder else None
-        if not source or _u64(source) != cls.base + SOURCE_VTABLE:
-            return None  # (not there yet: loading)
-        return source
+        return shard._get_address()  # noqa: SLF001
 
     @classmethod
     def _hidden_kinds(cls) -> tuple[int, ...] | None:
@@ -254,47 +265,73 @@ class MapWaypoints:
         if raw is None:
             return None
         if not cls.kinds:
-            data = _u64(registry)
-            for i in _slots(registry):
+            data, slots = _slots(registry)
+            for i in slots:
                 name = _read(data + i * KIND_ENTRY, 8) if data else None
                 if name:
                     cls.kinds[name] = i
         return struct.unpack(f"<{count}Q", raw)
 
     @classmethod
-    def _level(cls, holder: int) -> bytes | None:
-        """The level FName (8 bytes) of a location holder: function 0x60EDEE, as reads."""
+    def _level(cls, holder: int, skip: int | None, levels: dict[int, bytes | None]) -> bytes | None:
+        """The level FName (8 bytes) of a location holder: function 0x60EDEE, as reads. `skip`: the
+        NAME_SKIP global. Found through the holder's level info: kept by info (`levels`)."""
         raw = _read(holder, 0x80)
         if raw is None:
             return None
         if raw[0x78] == 1:
             name, number = struct.unpack_from("<Qi", raw, 0x48)
         else:
-            name = number = None
             info = struct.unpack_from("<Q", raw, 0x18)[0]
-            head = _read(info, 0x58) if info else None
-            if head is not None:
-                index, count = struct.unpack_from("<ii", head, 0x30)
-                skip = _i32(cls.base + NAME_SKIP)
-                if index and count > 1 and index != skip:
-                    where = struct.unpack_from("<Q", head, 0x48)[0]
-                    found = _read(where + 0xC, 0xC) if where else None
-                    if found is not None:
-                        name, number = struct.unpack_from("<Qi", found, 0)
-            if name is None:
-                name, number = _u64(cls.base + NAME_DEFAULT), _i32(cls.base + NAME_DEFAULT_NUMBER)
-                if name is None or number is None:
-                    return None
+            if info not in levels:
+                levels[info] = cls._info_level(info, skip)
+            return levels[info]
+        out = struct.pack("<Qi", name, number)
+        return out[4:12] if out[0:4] != b"\0\0\0\0" else None
+
+    @classmethod
+    def _info_level(cls, info: int, skip: int | None) -> bytes | None:
+        """_level's lookup through a holder's level info (3 reads)."""
+        name = number = None
+        head = _read(info, 0x58) if info else None
+        if head is not None:
+            index, count = struct.unpack_from("<ii", head, 0x30)
+            if index and count > 1 and index != skip:
+                where = struct.unpack_from("<Q", head, 0x48)[0]
+                found = _read(where + 0xC, 0xC) if where else None
+                if found is not None:
+                    name, number = struct.unpack_from("<Qi", found, 0)
+        if name is None:
+            name, number = _u64(cls.base + NAME_DEFAULT), _i32(cls.base + NAME_DEFAULT_NUMBER)
+            if name is None or number is None:
+                return None
         out = struct.pack("<Qi", name, number)
         return out[4:12] if out[0:4] != b"\0\0\0\0" else None
 
     @classmethod
     def update(cls, pawn: UObject, *, paused: bool, new_world: bool) -> None:
-        """Re-reads the map's waypoints every READ_INTERVAL. Read `points` afterwards."""
+        """
+        Every READ_INTERVAL, asks the worker to read the map's waypoints again; takes its answer
+        (`points`, `read_ok`) on a later call. The worker only reads memory (~250 system calls:
+        0.7-2 ms a read on the game thread, 2026-11-06); the SDK lookups stay here.
+        """
+        answer = cls.answer
+        if answer is not None:
+            cls.answer = None
+            if answer[0] >= cls.taken:  # (not asked in a world since left)
+                points = answer[1]
+                cls.points, cls.read_ok = (points, True) if points is not None else ([], False)
+                wanted = {p[3] for p in cls.points if p[3]} - cls.pictures.keys()
+                if wanted:
+                    cls._read_pictures(wanted)
         now = time.monotonic()
         if cls.broken or now < cls.next_read:
             return
         cls.next_read = now + READ_INTERVAL
+        if new_world:
+            cls.taken = cls.ticket + 1
+            cls.levels = {}
+            cls.points = []
         live = objectives.Objectives
         provider = live.provider()
         if not live.checked or live.broken or provider is None:
@@ -302,27 +339,59 @@ class MapWaypoints:
             return  # (objectives.py checks GUObjectArray and finds the provider: we use both)
         if not cls.checked and not cls._setup():
             return
-        source = cls._source(paused, new_world)
-        hidden = cls._hidden_kinds() if source else None
-        level = _read(provider._get_address() + PROVIDER_LEVEL, 8)  # noqa: SLF001
-        if source is None or hidden is None or level is None:
+        shard = cls._shard(paused, new_world)
+        if shard is None:
             cls.points, cls.read_ok = [], False
             return
+        cls.ticket += 1
+        cls.asked = (cls.ticket, shard, provider._get_address())  # noqa: SLF001
+        if cls.thread is None:
+            cls.wake = threading.Event()  # (each worker its own: an old one can't take a new one's wake-up)
+            cls.thread = threading.Thread(target=cls._run, args=(cls.generation, cls.wake), name="bl4_minimap waypoints", daemon=True)
+            cls.thread.start()
+        cls.wake.set()
+
+    @classmethod
+    def _run(cls, generation: int, wake: threading.Event) -> None:
+        while True:
+            wake.wait()
+            wake.clear()
+            if generation != cls.generation:
+                return
+            job, cls.asked = cls.asked, None
+            if job is not None:
+                cls.answer = (job[0], cls._points(job[1], job[2]))
+
+    @classmethod
+    def _points(cls, shard: int, provider: int) -> list[tuple[float, float, float, str]] | None:
+        """The waypoints the map shows (worker: memory reads only); None if they can't be read."""
+        holder = _u64(shard + SHARD_SOURCE)
+        source = _u64(holder + SOURCE_SET) if holder else None
+        if not source or _u64(source) != cls.base + SOURCE_VTABLE:
+            return None  # (not there yet: loading)
+        hidden = cls._hidden_kinds()
+        level = _read(provider + PROVIDER_LEVEL, 8)
+        if hidden is None or level is None:
+            return None
         special = _read(cls.base + NAME_SPECIAL, 8)
+        skip = _i32(cls.base + NAME_SKIP)
+        levels = cls.levels  # (this world's: update swaps in a new one for the next)
+        if len(levels) > MAX_LEVELS:
+            levels = cls.levels = {}
         data_vtable = cls.base + WAYPOINT_DATA_VTABLE
         points: list[tuple[float, float, float, str]] = []
-        elements = _u64(source + WAYPOINTS)
-        for i in _slots(source + WAYPOINTS):
-            element = _read(elements + i * ELEMENT, ELEMENT) if elements else None
-            if element is None:
-                continue
-            record, counter = struct.unpack_from("<QQ", element, 0x10)
+        # (Each sparse array's elements in one read: a read is a system call, ~4 us)
+        elements, slots = _slots(source + WAYPOINTS)
+        table = _read(elements, (slots[-1] + 1) * ELEMENT) if slots else None
+        for i in slots if table else ():
+            record, counter = struct.unpack_from("<QQ", table, i * ELEMENT + 0x10)
             if not record or not _alive(counter):
                 continue
-            entries = _u64(record + RECORD_ENTRIES)
-            for j in _slots(record + RECORD_ENTRIES):
-                holder = _u64(entries + j * ELEMENT + ENTRY_HOLDER) if entries else None
-                name = cls._level(holder) if holder else None
+            entries, rows = _slots(record + RECORD_ENTRIES)
+            holders = _read(entries, (rows[-1] + 1) * ELEMENT) if rows else None
+            for j in rows if holders else ():
+                holder = struct.unpack_from("<Q", holders, j * ELEMENT + ENTRY_HOLDER)[0]
+                name = cls._level(holder, skip, levels) if holder else None
                 if name is None or name != level or name == special:
                     continue  # another map's (or one we can't place)
                 head = _read(holder + HOLDER_WAYPOINTS, 12)
@@ -337,10 +406,7 @@ class MapWaypoints:
                     point = cls._point(data_at, data_vtable, hidden)
                     if point is not None and not any(objectives._near(point[:3], p[:3]) for p in points):  # noqa: SLF001
                         points.append(point)
-        cls.points, cls.read_ok = points, True
-        wanted = {p[3] for p in points if p[3]} - cls.pictures.keys()
-        if wanted:
-            cls._read_pictures(wanted)
+        return points
 
     @classmethod
     def _point(cls, data_at: int, data_vtable: int, hidden: tuple[int, ...]) -> tuple[float, float, float, str] | None:
@@ -372,6 +438,13 @@ class MapWaypoints:
 
     @classmethod
     def clear(cls) -> None:
+        """Stops the worker (it ends after a read in progress) and drops what it was asked."""
+        cls.generation += 1
+        cls.asked = cls.answer = None
+        cls.thread = None
+        cls.wake.set()
+        cls.taken = cls.ticket + 1
         cls.shard = WeakPointer()
+        cls.levels = {}
         cls.points, cls.read_ok = [], False
         cls.next_read = 0.0
