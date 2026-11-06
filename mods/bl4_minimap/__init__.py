@@ -269,7 +269,7 @@ margin_x_option = SliderOption("Distance from right edge (px)", 40, 0, 1500, 5, 
 margin_y_option = SliderOption("Distance from top edge (px)", 110, 0, 1000, 5, True)
 page_option = BoolOption(
     "Draw in the HUD (lighter)",
-    False,
+    True,  # (the default for new installs since 0.1.13: the user's pick; saved settings keep theirs)
     description=(
         "Draws the minimap in the game's own HUD instead of a widget of ours: the same map, icons and"
         " settings, but no camera filming the map as you move and nothing redrawn by the mod each"
