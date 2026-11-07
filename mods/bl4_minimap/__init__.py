@@ -280,7 +280,9 @@ page_option = BoolOption(
 
 
 def _still_hud_changed(_: BoolOption, value: bool) -> None:
-    if mod.is_enabled:  # settings load before the mod is on: _enable applies it then
+    # Settings load inside build_mod, before `mod` exists (issue #6: a saved "on" raised NameError
+    # there, so the module never finished loading); _enable applies it then
+    if State.enabled:
         hudsway.set_wanted(value)
 
 
@@ -422,6 +424,7 @@ class State:
     route_at = 0.0  # when it was asked for
     route_ticket = 0  # the request it's the answer to (echoloc.Echoloc.ask)
     error_logged = False
+    enabled = False  # between _enable and _disable
     north_yaw: float | None = None
     statics: Any = None  # GameplayStatics' default object, looked up once
     layout: Any = None  # WidgetLayoutLibrary's
@@ -1425,10 +1428,12 @@ def _enable() -> None:
     State.givers = []
     State.covered = set()
     Keys.was_down.clear()
+    State.enabled = True
     hudsway.set_wanted(still_hud_option.value)
 
 
 def _disable() -> None:
+    State.enabled = False
     if State.page_on:
         page.stop()
         page.unregister()
