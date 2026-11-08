@@ -103,7 +103,7 @@ except ImportError:  # the setup app imports this module for sync() and check() 
 
 
 # Bump on every change to this package: the newest copy loaded runs the link
-VERSION = 10
+VERSION = 11
 HUB = "_bl4_uilink"
 PAK_NAME = "BL4Fix_UILink_4251_P.pak"
 UI_PREFIX = "OakGame/Content/uiresources/"
@@ -1296,14 +1296,21 @@ def game_focused() -> bool:
     return ours
 
 
+_GK: Any = None  # the carrying mod's gamekeys copy, once imported
+
+
 def _gamekeys() -> Any:
     """The carrying mod's gamekeys copy (imported when first used: the setup app imports this
     package without the SDK), else whichever copy reads keys for every mod."""
+    global _GK  # noqa: PLW0603
+    if _GK is not None:  # (v11: import_module on every call cost ~20 us a frame inside the frame tick)
+        return _GK
     parent = __name__.rpartition(".")[0]
     if parent:
         import importlib  # noqa: PLC0415
 
-        return importlib.import_module(parent + ".gamekeys")
+        _GK = importlib.import_module(parent + ".gamekeys")
+        return _GK
     owner = getattr(sys.modules.get("_bl4_gamekeys"), "owner", None)
     if owner is None:
         raise ImportError("no gamekeys loaded")

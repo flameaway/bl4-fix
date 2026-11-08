@@ -1,6 +1,6 @@
 [project]
 name = "BL4 Less Fog"
-version = "0.1.3"
+version = "0.1.4"
 description = "Remove the fog and the distance haze (the default), or thin them out and push them further away, live."
 authors = [{ name = "flame" }]
 

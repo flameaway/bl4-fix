@@ -57,7 +57,7 @@ from mods_base import HookType
 from unrealsdk import find_class, find_object, logging
 from unrealsdk.hooks import Type, add_hook, has_hook, remove_hook
 
-VERSION = 2
+VERSION = 3
 HUB = "_bl4_frametick"
 TICK_FUNC = "/Script/Engine.CameraModifier:BlueprintModifyCamera"
 HOOK_ID = "bl4_frametick"
@@ -109,6 +109,10 @@ def _hub() -> types.ModuleType:
     if not hasattr(hub, "frame_ptr"):  # v2 (a v1 copy may have made the hub)
         hub.frame_ptr = None  # ctypes.c_uint64 over GFrameCounter, once found and checked
         hub.frame_ptr_tried = False
+    if not hasattr(hub, "next_due"):  # v3
+        hub.split_of = None  # the `order` tuple frame_order was made from
+        hub.frame_order = ()  # its every-frame callbacks (no `every`), in order
+        hub.next_due = 0.0  # perf_counter at which the first `every=` callback is due
     return hub
 
 
@@ -172,9 +176,11 @@ def remove(key: str) -> None:
 
 def soon(key: str) -> None:
     """Runs an `every=` callback at the next frame (a setting changed), then at its pace again."""
-    entry = _hub().entries.get(key)
+    hub = _hub()
+    entry = hub.entries.get(key)
     if entry is not None:
         entry.next_at = 0.0
+        hub.next_due = 0.0  # (v3: the dispatcher looks at the timed callbacks only once one is due)
 
 
 def frame() -> int:
@@ -282,19 +288,40 @@ def _dispatch(_obj: Any, _args: Any, _ret: Any, _func: Any, hub: types.ModuleTyp
     hub.frame = n
     hub.now = t
     hub.ticks += 1
-    for e in hub.order:
+    order = hub.order
+    if order is not hub.split_of:  # a callback added or removed (by any copy)
+        hub.split_of, hub.next_due = order, 0.0
+        hub.frame_order = tuple(e for e in order if not e.every)
+    if t < hub.next_due:
+        # v3: no `every=` callback is due: only the every-frame ones (same order), no timer checks
+        for e in hub.frame_order:
+            try:
+                e.fn()
+            except Exception as ex:  # noqa: BLE001 - one mod's error mustn't stop the others
+                _failed(hub, e, ex)
+        return
+    due = float("inf")
+    for e in order:
         if e.every:
             if t < e.next_at:
+                due = min(due, e.next_at)
                 continue
             e.next_at = t + e.every
+            due = min(due, e.next_at)
         try:
             e.fn()
         except Exception as ex:  # noqa: BLE001 - one mod's error mustn't stop the others
-            sig = f"{e.key}: {ex!r}"
-            if sig not in hub.errors and len(hub.errors) < MAX_ERRORS:
-                hub.errors.add(sig)
-                logging.error(f"[Frame Tick] {e.key} ({e.mod}) failed:")
-                logging.error("".join(traceback.format_exception(ex)))
+            _failed(hub, e, ex)
+    hub.next_due = due
+
+
+def _failed(hub: types.ModuleType, e: Any, ex: Exception) -> None:
+    """Logs a callback's error once per distinct message."""
+    sig = f"{e.key}: {ex!r}"
+    if sig not in hub.errors and len(hub.errors) < MAX_ERRORS:
+        hub.errors.add(sig)
+        logging.error(f"[Frame Tick] {e.key} ({e.mod}) failed:")
+        logging.error("".join(traceback.format_exception(ex)))
 
 
 # endregion

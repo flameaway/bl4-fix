@@ -37,7 +37,7 @@ import time
 import types
 from typing import Any
 
-VERSION = 1
+VERSION = 2
 HUB = "_bl4_gamekeys"
 PC_CHECK_S = 1.0  # the controller is looked up again this often (get_pc is 10-13 us in the tick)
 WANT_FRAMES = 30  # a key not asked about for this many frames isn't read ahead any more
@@ -131,6 +131,9 @@ def _hub() -> types.ModuleType:
         hub.status = "not checked yet"  # for reading(): why the key map is or isn't used
         hub.build = ""  # _build_id() of the running game
         hub.from_map = False
+    if not hasattr(hub, "prune_at"):  # v2 (a v1 copy may have made the hub)
+        hub.ft_hub = None  # the Frame Tick's shared state (its `frame` is this tick's engine frame)
+        hub.prune_at = 0  # the frame `wanted` is next pruned at
     return hub
 
 
@@ -151,8 +154,9 @@ def _elect(hub: types.ModuleType) -> None:
 
         frametick.add("bl4_gamekeys", _note_thread, every=1.0, mod=__name__.rpartition(".")[0])
         hub.frametick = frametick
+        hub.ft_hub = sys.modules.get(frametick.HUB)
     except Exception:  # noqa: BLE001 - outside the game (tests): no frames, every read is fresh
-        hub.frametick = None
+        hub.frametick = hub.ft_hub = None
 
 
 def _note_thread() -> None:
@@ -171,7 +175,7 @@ def down(name: str | None) -> bool:
     """
     if not name:
         return False
-    hub = _hub()
+    hub = _HUB
     if hub.owner is None:
         _elect(hub)
     return hub.owner._down(hub, name)  # noqa: SLF001
@@ -210,26 +214,23 @@ def reading() -> str:
 
 
 def _down(hub: types.ModuleType, name: str) -> bool:
+    # (Every mod asks through here, inside its own frame callback, where the CPU caches are cold:
+    # each Python call costs several times its warm cost, so the game-thread path is kept flat)
     if threading.get_ident() != hub.game_thread:
         held = hub.last.get(name, False) or hub.cache.get(name, False)
     else:
-        held = _cached(hub, name)
+        ft = hub.ft_hub
+        frame = ft.frame if ft is not None else -1
+        if frame != hub.frame or frame < 0:
+            _new_frame(hub, frame)
+        hub.wanted[name] = frame
+        held = hub.cache.get(name)
+        if held is None:
+            held = hub.cache[name] = _map_down(hub, name) if hub.from_map else _sdk_down(hub, name)
     if not held:
         return False
     now = time.monotonic()
     return now >= hub.muted_until and now >= hub.ignored.get(name, 0.0)
-
-
-def _cached(hub: types.ModuleType, name: str) -> bool:
-    ft = getattr(hub, "frametick", None)
-    frame = ft.frame() if ft is not None else -1
-    if frame != hub.frame or frame < 0:
-        _new_frame(hub, frame)
-    hub.wanted[name] = frame
-    held = hub.cache.get(name)
-    if held is None:
-        held = hub.cache[name] = _map_down(hub, name) if hub.from_map else _sdk_down(hub, name)
-    return held
 
 
 def _new_frame(hub: types.ModuleType, frame: int) -> None:
@@ -238,15 +239,19 @@ def _new_frame(hub: types.ModuleType, frame: int) -> None:
     hub.last, hub.frame = hub.cache, frame
     cache: dict[str, bool] = {}
     hub.cache = cache
-    oldest = frame - WANT_FRAMES
     wanted = hub.wanted
-    for name, at in list(wanted.items()):
-        if at < oldest:
-            del wanted[name]
+    if frame < 0 or frame >= hub.prune_at:  # (a key unasked for 30-60 frames is read a little longer)
+        hub.prune_at = frame + WANT_FRAMES
+        oldest = frame - WANT_FRAMES
+        for name, at in list(wanted.items()):
+            if at < oldest:
+                del wanted[name]
     try:
         hub.from_map = _map_ready(hub)
     except Exception:  # noqa: BLE001
         hub.from_map = False
+    # (Per key, two small reads: one copy of the whole key map and a lookup plan measured slower
+    # in-frame, 69 vs 60 us, 2026-11-07)
     read = _map_down if hub.from_map else _sdk_down
     for name in wanted:
         cache[name] = read(hub, name)
@@ -592,4 +597,5 @@ def _map_down(hub: types.ModuleType, name: str) -> bool:
 
 # endregion
 
-_elect(_hub())
+_HUB = _hub()  # (never replaced: every copy and every reload shares this one object)
+_elect(_HUB)

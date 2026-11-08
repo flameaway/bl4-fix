@@ -29,7 +29,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Block, Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import frametick, naming, native, page, popup_page, share, tracker, uilink
+from . import frametick, gamekeys, naming, native, page, popup_page, share, tracker, uilink
 
 __version__ = "0.1.0"
 __version_info__ = (0, 1, 0)
@@ -240,7 +240,7 @@ def _tick() -> None:
     # The key snapshot first (a dict read); the controller only on a press (get_pc is a chain of
     # property reads: not worth doing every frame to learn that nothing was pressed)
     key = open_key.value
-    down = bool(key) and uilink.key_down(key)
+    down = gamekeys.down(key)  # (straight to gamekeys: "" or None is never held)
     if down and not S.key_was_down and get_pc(possibly_loading=True) is not None:
         page.toggle()
     S.key_was_down = down
