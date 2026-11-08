@@ -1139,6 +1139,62 @@
     font-size: 1.5rem;
 }
 
+/* Move to <character>: above the item card, full width, in the accent colour (the user's ask) */
+.bl4dex_chip.bl4dex_take {
+    justify-content: center;
+    margin: 0 0 1rem 0;
+    padding: 1rem 1.3rem;
+    background-color: rgba(0, 198, 255, 0.22);
+    border-color: #00c6ff;
+}
+
+.bl4dex_chip.bl4dex_take:hover {
+    background-color: rgba(0, 198, 255, 0.4);
+}
+
+.bl4dex_root .bl4dex_take .bl4dex_chip_text {
+    font-family: Industry-DemiBold;
+    font-size: 2.2rem;
+    color: #ffffff;
+}
+
+.bl4dex_root .bl4dex_take .bl4dex_take_from {
+    margin: 0 0 0 1.4rem;
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #9fb3bb;
+}
+
+.bl4dex_chip.bl4dex_take.bl4dex_active {
+    background-color: rgba(0, 198, 255, 0.12);
+}
+
+/* "Held by you": where the Move bar would be, in green, not a button */
+.bl4dex_mine {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    margin: 0 0 1rem 0;
+    padding: 1rem 1.3rem;
+    background-color: rgba(84, 214, 98, 0.2);
+    border: 0.15rem solid #54d662;
+}
+
+.bl4dex_root .bl4dex_mine .bl4dex_mine_text {
+    margin: 0;
+    font-family: Industry-DemiBold;
+    font-size: 2.2rem;
+    color: #b8f5be;
+}
+
+.bl4dex_root .bl4dex_mine .bl4dex_mine_who {
+    margin: 0 0 0 1.4rem;
+    font-family: Industry-Normal;
+    font-size: 1.6rem;
+    color: #8fbf94;
+}
+
 .bl4dex_root .bl4dex_dropper_pinned {
     margin-top: 0.4rem;
     font-family: Industry-Medium;

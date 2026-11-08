@@ -412,8 +412,12 @@ def _look(now: float) -> None:
 
 
 def _read_settled(now: float) -> None:
-    """Reads back one settled picture (each read is ~15 ms of the game thread: one a tick)."""
-    ready = [(key, f) for key, f in S.flight.items() if f.address and now - f.found >= SETTLE_S][:1]
+    """
+    Reads back every settled picture in one tick: the first read back of a frame waits for the
+    render thread (~10-20 ms), the rest of that frame's ~0.6 ms each (2026-11-08), so one a tick
+    paid that wait for every picture.
+    """
+    ready = [(key, f) for key, f in S.flight.items() if f.address and now - f.found >= SETTLE_S]
     if not ready:
         return
     current = _rendered_all([f.serial for _, f in ready])

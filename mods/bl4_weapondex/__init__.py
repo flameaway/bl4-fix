@@ -52,7 +52,7 @@ from unrealsdk import logging
 from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WrappedStruct
 
-from . import bake, celebrate, data, frametick, owned, progress, savegame, screen, thumbs, titlebake, tracker, uilink
+from . import bake, celebrate, data, frametick, owned, progress, savegame, screen, thumbs, titlebake, tracker, transfer, uilink
 
 __version__ = "0.2.0"
 __version_info__ = (0, 2, 0)
@@ -519,3 +519,4 @@ mod = build_mod(
     on_enable=_enable,
     on_disable=_disable,
 )
+transfer.serve(lambda: mod.is_enabled)  # co-op friends' taken items (transfer.py)

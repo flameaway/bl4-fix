@@ -22,6 +22,12 @@ file is still the one read, copy it to settings/kairosdex_transfers/, write the 
 file, then a rename), read it back and check it decrypts to the new text. A failure before the
 item arrives changes nothing; one after it leaves a duplicate, never a loss.
 
+As a co-op client the game won't make a reward package for us (only the server does: "the game
+didn't make the package", 2026-11-08), so the host's copy of this mod gives it to our player
+(BL4 Direct's co-op channel, SERVICE below). The save we edit is still ours, on our PC; the host only
+hands over the item. Verified in the two-copy lab: the host's package with our serial landed in the
+client's backpack.
+
 The bank lives in profile.sav, which the running game holds and writes itself: a bank copy is
 moved live instead, with the game's own internal add and remove (bank.py).
 """
@@ -44,11 +50,19 @@ from unrealsdk.unreal import FGbxDefPtr
 
 from . import bank, collection, owned, progress, savegame
 
+try:
+    from bl4_direct import coop
+except Exception:  # noqa: BLE001 - BL4 Direct missing or broken: solo/host only
+    coop = None
+
 BACKUPS = SETTINGS_DIR / "kairosdex_transfers"
 # A reward package holding one random item and nothing else (a side mission's reward): its item's
 # serial is swapped for ours before it's opened
 CARRIER_REWARD = "Reward_ItemPool_AAAForEffort"
 ARRIVE_S = 3.0  # the item should be in the backpack the frame the package opens; this is slack
+FEATURE = "kairosdex.take"  # the host's copy gives a co-op client its taken items
+SERVICE = "kairosdex.give"
+ASK_S = 10.0  # the host's answer (it's given once it answers; then ARRIVE_S for it to replicate)
 
 _BACKPACK = re.compile(r"^      backpack: *$")
 _EQUIPPED = re.compile(r"^      equipped: *$")
@@ -66,6 +80,34 @@ class S:
 
 def busy() -> bool:
     return S.job is not None
+
+
+def _via_host() -> bool:
+    """As a co-op client: the host gives us the item (the game makes packages on the server only)."""
+    return coop is not None and coop.is_client()
+
+
+def serve(enabled: Any) -> None:
+    """Host side, at load: give co-op friends the items they take, while enabled()."""
+    if coop is not None:
+        coop.feature(FEATURE, enabled)
+        coop.handle(SERVICE, lambda req: _serve(req, enabled))
+
+
+def _serve(req: Any, enabled: Any) -> dict[str, Any]:
+    """On the host: a co-op friend took one of their own characters' items; give it to their player."""
+    if not enabled():
+        return {"ok": False, "error": "Kairosdex is off on the host"}
+    serial = req.data.get("serial")
+    pc = req.controller()
+    if not isinstance(serial, str) or not serial.startswith("@U") or pc is None:
+        return {"ok": False, "error": "bad request"}
+    try:
+        _open_package_with(serial, pc)
+    except Exception as ex:  # noqa: BLE001 - told to the friend
+        return {"ok": False, "error": str(ex) if isinstance(ex, TransferError) else repr(ex)}
+    logging.info(f"[Kairosdex] Gave {pc.PlayerState.PlayerNamePrivate} a taken item {serial[:24]}...")
+    return {"ok": True}
 
 
 # region The save's text (pure: tested on copies of the saves)
@@ -164,6 +206,8 @@ def take(serial: str, holder: str) -> str | None:
         return "Load a character first."
     if holder == here:
         return "It's already yours."
+    if _via_host() and holder != collection.BANK and not coop.host_has(FEATURE):
+        return "In co-op the host needs Kairosdex to move items to you."
     # Room first: with a full backpack the package may not open, or the game puts the item in Lost
     # Loot (and the source would keep theirs: two). The count the inventory shows: unequipped items
     # against the backpack's size (its MaxSize: the SDU upgrades and the Backpack Size mod change it)
@@ -255,12 +299,18 @@ def tick() -> None:
         collection.expect_move(job["serial"], job["holder"], job["char"])
         try:
             job["handles"] = _handles()
-            _open_package_with(job["serial"])
+            if _via_host():
+                job["stage"] = "asking"
+                coop.request(SERVICE, {"serial": job["serial"]}, lambda reply: _answered(job, reply), timeout=ASK_S)
+                return
+            _open_package_with(job["serial"], get_pc())
         except Exception as ex:  # noqa: BLE001 - nothing moved yet
             collection.cancel_move(job["serial"], job["holder"], job["char"])
             _finish(job, f"Couldn't give it to you: {ex}. Nothing was moved.")
             return
         job.update(stage="arriving", until=time.monotonic() + ARRIVE_S)
+    elif stage == "asking":
+        pass  # the host's answer (_answered) moves it on; coop.request times out by itself
     elif stage == "arriving":
         if _arrived(job["serial"], job["handles"]):
             collection.moved(job["serial"], job["holder"], job["char"])  # (before the save read the write starts)
@@ -273,6 +323,17 @@ def tick() -> None:
         _finish(job, "Moved to you." + (" (It was equipped there.)" if job["equipped"] else ""))
     elif stage == "failed":
         _finish(job, f"Couldn't move it: {job['error']}")
+
+
+def _answered(job: dict[str, Any], reply: dict[str, Any]) -> None:
+    """Game thread (BL4 Direct's channel): the host gave us the item, or why not."""
+    if S.job is not job or job["stage"] != "asking":
+        return
+    if reply.get("ok"):
+        job.update(stage="arriving", until=time.monotonic() + ARRIVE_S)
+        return
+    collection.cancel_move(job["serial"], job["holder"], job["char"])
+    _finish(job, f"Couldn't give it to you: the host said {reply.get('error')}. Nothing was moved.")
 
 
 def _finish(job: dict[str, Any], text: str) -> None:
@@ -310,9 +371,8 @@ def _arrived(serial: str, before: set[int]) -> bool:
     return False
 
 
-def _open_package_with(serial: str) -> None:
-    """A one-item reward package opened with our serial in it (as mods/bl4_reroll/game.py does)."""
-    pc = get_pc()
+def _open_package_with(serial: str, pc: Any) -> None:
+    """A one-item reward package for `pc`, opened with our serial in it (as mods/bl4_reroll/game.py does)."""
     manager = pc.RewardsManager
     if manager is None:
         raise TransferError("the game's reward mail isn't available")

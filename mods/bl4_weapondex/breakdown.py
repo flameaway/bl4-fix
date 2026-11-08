@@ -214,17 +214,23 @@ def picture_done(key: str, picture: dict[str, Any]) -> None:
 
 
 def _measure() -> None:
-    """One picture a tick, MEASURE_AFTER_S after it came in: where its part is drawn ("box")."""
+    """
+    Every picture in MEASURE_AFTER_S ago, in one tick: where its part is drawn ("box"). The first
+    read back of a frame waits for the render thread (~10-20 ms), the rest of that frame's ~0.6 ms
+    each (2026-11-08), so one a tick paid that wait for every picture.
+    """
     from . import thumbs  # noqa: PLC0415
 
-    if not S.unmeasured or time.monotonic() - S.unmeasured[0]["at"] < MEASURE_AFTER_S:
+    now = time.monotonic()
+    if not S.unmeasured or now - S.unmeasured[0]["at"] < MEASURE_AFTER_S:
         return
-    picture = S.unmeasured.pop(0)
-    shot = thumbs.follow(picture)
-    target = thumbs._target_at(shot["address"]) if shot else None  # noqa: SLF001
-    if target is not None and (box := thumbs.drawn_box(target)):
-        picture["box"] = box
-    picture["measured"] = True  # (shown from now on, framed or whole if it couldn't be read)
+    while S.unmeasured and now - S.unmeasured[0]["at"] >= MEASURE_AFTER_S:
+        picture = S.unmeasured.pop(0)
+        shot = thumbs.follow(picture)
+        target = thumbs._target_at(shot["address"]) if shot else None  # noqa: SLF001
+        if target is not None and (box := thumbs.drawn_box(target)):
+            picture["box"] = box
+        picture["measured"] = True  # (shown from now on, framed or whole if it couldn't be read)
     _changed()
 
 

@@ -2186,7 +2186,8 @@
             var got = rollsOf(item), last = got.rolls.length ? got.rolls[got.rolls.length - 1] : null;
             rollSig = last && last.card ? "card" : [(got.r && got.r.status) || "", got.rolls.length];
         }
-        var rightSig = JSON.stringify([item.key, ui.ownView, collState().char, rollSig]);
+        // (who holds the copy too: once it's moved to you the Move bar becomes "Held by you")
+        var rightSig = JSON.stringify([item.key, ui.ownView, collState().char, c ? [c.char, !!c.gone] : null, rollSig]);
         if (rightSig !== pane.rightSig) {
             pane.rightSig = rightSig;
             var r = pane.right;
@@ -2204,6 +2205,25 @@
                     }));
                 }
             } else if (c) {
+                // Another character's or the bank's copy (not one that went): to the one played
+                // (transfer.py moves it; the user's ask 2026-11-06). Above the card, full width, so
+                // it's the first thing seen (the user's ask 2026-11-08)
+                var here = collState().char;
+                if (!c.gone && here && c.char === here) {
+                    // Yours already (moved here, or it always was): said plainly, in green (the user's ask)
+                    var mine = el("div", "bl4dex_mine");
+                    mine.appendChild(el("p", "bl4dex_mine_text", "Held by you"));
+                    mine.appendChild(el("p", "bl4dex_mine_who", charName(here)));
+                    r.appendChild(mine);
+                } else if (!c.gone && here && (c.char === BANK || dex.coll.chars[c.char])) {
+                    var take = chip("", false, function () {
+                        if (!state.taking) send({ do: "take", id: c.sid, from: c.char });
+                    }, "bl4dex_take");
+                    take.appendChild(el("p", "bl4dex_take_from", (c.char === BANK ? "In the bank" : "Held by " + charName(c.char))));
+                    ui.take = { node: take, sid: c.sid, label: "Move to " + charName(here), shown: null };  // (the user's wording)
+                    patchTake();
+                    r.appendChild(take);
+                }
                 if (info && info.card) {
                     cardPeek(r, info.card, function () {
                         openParts(item.key, c.sid);
@@ -2216,17 +2236,6 @@
                 buttons.appendChild(chip("Copy serial", false, function () {
                     send({ do: "copy_serial", id: c.sid });
                 }));
-                // Another character's or the bank's copy (not one that went): to the one played
-                // (transfer.py moves it; the user's ask 2026-11-06)
-                var here = collState().char;
-                if (!c.gone && here && c.char !== here && (c.char === BANK || dex.coll.chars[c.char])) {
-                    var take = chip("", false, function () {
-                        if (!state.taking) send({ do: "take", id: c.sid, from: c.char });
-                    }, "bl4dex_take");
-                    ui.take = { node: take, sid: c.sid, label: "Move to " + charName(here), shown: null };  // (the user's wording)
-                    patchTake();
-                    buttons.appendChild(take);
-                }
             }
             if (buttons.firstChild) r.appendChild(buttons);
         }
