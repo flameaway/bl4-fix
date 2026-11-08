@@ -46,12 +46,11 @@ from typing import Any
 
 from unrealsdk import logging
 
-VERSION = 5
+VERSION = 6
 HUB = "_bl4_health"
 _tick_errors: set[str] = set()  # owner tick errors already logged (this copy)
-# Probes are read this often; the import scan and the notice wait for the game to settle first
+# Probes are read this often; the notice waits for the game to settle first (and for the import scan)
 PROBE_S = 2.0
-SCAN_AFTER_S = 15.0
 NOTICE_AFTER_S = 20.0
 SETTINGS_NAME = "bl4fix_health.json"
 STEAM_APP_ID = "1285190"
@@ -305,7 +304,7 @@ def _owner_tick(hub: types.ModuleType, now: float) -> None:
     if now - hub.probed_at >= PROBE_S:
         hub.probed_at = now
         _probe(hub)
-    if hub.scan is None and now - hub.started_at >= SCAN_AFTER_S and GAME_DIR is not None:
+    if hub.scan is None and GAME_DIR is not None and _imports_done():
         hub.scan = False  # running
         threading.Thread(target=_scan_imports, args=(hub, GAME_DIR / "sdk_mods"), name="bl4_health.scan", daemon=True).start()
     if isinstance(hub.scan, list):
@@ -318,7 +317,27 @@ def _owner_tick(hub: types.ModuleType, now: float) -> None:
         notice.tick()  # hides it when its time is up
 
 
+def _drop_standins(hub: types.ModuleType) -> None:
+    """
+    Takes a stand-in out once its real mod is loaded after all (a late import, a reload): otherwise
+    the mod lists show the mod twice, the real one plus a locked "Didn't load" entry with no settings.
+    """
+    from mods_base.mod_list import deregister_mod, mod_list  # noqa: PLC0415
+
+    for package, standin in list(hub.standins.items()):
+        if _mod_object(package) is None and not any(m.name == standin.name and m is not standin for m in mod_list):
+            continue
+        if standin in mod_list:
+            deregister_mod(standin)
+        del hub.standins[package]
+        if hub.applied.get(package, {}).get("mod") is standin:
+            del hub.applied[package]
+        logging.info(f"[BL4 Fix health] {standin.name} loaded after all: its stand-in is gone")
+
+
 def _probe(hub: types.ModuleType) -> None:
+    if hub.standins:
+        _drop_standins(hub)
     wanted: dict[str, list[dict[str, Any]]] = {}
     for package, probes in PROBES.items():
         if package not in sys.modules:
@@ -402,6 +421,19 @@ def _apply(hub: types.ModuleType, package: str, items: list[dict[str, Any]]) -> 
 
 # endregion
 # region Mods that didn't import
+
+
+def _imports_done() -> bool:
+    """
+    True once the SDK's loader has imported every mod: it registers its base mod ("Python SDK")
+    right after the last import. Mods tick while it's still importing (on its own thread; one
+    launch took 50 s), so a fixed wait flagged 11 mods that were still loading (2026-11-08).
+    """
+    try:
+        from mods_base.mod_list import base_mod, mod_list  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return False
+    return any(m is base_mod for m in mod_list)
 
 
 def _scan_imports(hub: types.ModuleType, sdk_mods: Path) -> None:
