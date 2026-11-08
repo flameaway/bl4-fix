@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import ctypes
 import re
 import socket
 import time
@@ -42,7 +43,7 @@ from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
 # coop loads here too, so a host running only BL4 Direct still answers friends
-from . import arrival, buddies, coop, frametick, health, mapplayers, page, smooth, ui  # noqa: F401
+from . import arrival, buddies, coop, frametick, health, mapplayers, nameplates, page, smooth, ui  # noqa: F401
 from .shared import (
     DEFAULT_PORT,
     FRIENDS_FILE_NAME,
@@ -50,6 +51,7 @@ from .shared import (
     Config,
     Friend,
     NETSH,
+    WAIT_FOR_MENU,
     compat_code,
     find_rules,
     is_ipv4,
@@ -354,6 +356,70 @@ def hosting_watchdog() -> None:
     except Exception as ex:  # noqa: BLE001
         log_error(f"ECHO map players: {ex!r} - stopped for this session")
         mapplayers.S.stopped = True  # once, not every second
+    try:
+        nameplates.tick()
+    except Exception as ex:  # noqa: BLE001
+        log_error(f"teammate names: {ex!r}")
+
+
+# endregion
+
+
+# region Not before the main menu
+#
+# A join started before the title screen reaches the main menu ("Checking patches...", the
+# photosensitivity warning, "Initializing cross-platform saves...", a cloud-save prompt) leaves the
+# joining player on a black screen for good (verified 2026-11-06, GitHub issue #2). The host sees
+# them join; their own character stays hidden with movement off.
+#
+# Why: the game instance keeps a flow state (one byte; a launch goes 2, 3, 4, then 5 at the main
+# menu, 8 in game). Joining from 5 moves it to 8 as the map loads. Joining from 3 left it at 3, and
+# the client's arrival (native, build of 2026-10-22: 0x14dc7b2) only completes once the game
+# instance reports 8 (its virtual getter at slot +0x498), so it waited for good. Forcing 8 on a
+# stuck client brought the world back (not the HUD), confirming the gate.
+#
+# The state is read where the getter reads it, after checking the getter's code is exactly
+# `mov al, [rcx+0x210]; ret` (once per session). After a game patch that changes it, the
+# TITLE_SCREEN UI state stands in: it's up for most of state 3 (the startup warnings), not all of
+# the startup (measured: 8 of 17 s).
+FLOW_GETTER_SLOT = 0x498
+FLOW_GETTER_CODE = bytes.fromhex("8a8110020000c3")  # mov al, byte ptr [rcx+0x210]; ret
+FLOW_STATE = 0x210
+FLOW_MAIN_MENU = 5
+TITLE_STATE = "UI.State.TITLE_SCREEN"
+_flow_checked: bool | None = None  # None until the getter's code was checked
+
+
+def _flow_state() -> int | None:
+    """The game instance's flow state, or None (no game instance, or the game's code changed)."""
+    global _flow_checked
+    gi = ENGINE.GameInstance
+    if gi is None or _flow_checked is False:
+        return None
+    address = gi._get_address()  # noqa: SLF001
+    if _flow_checked is None:
+        getter = ctypes.c_uint64.from_address(ctypes.c_uint64.from_address(address).value + FLOW_GETTER_SLOT).value
+        _flow_checked = ctypes.string_at(getter, len(FLOW_GETTER_CODE)) == FLOW_GETTER_CODE
+        if not _flow_checked:
+            logging.dev_warning("[BL4 Direct] the game's flow state getter changed; using the title screen state")
+            return None
+    return ctypes.c_ubyte.from_address(address + FLOW_STATE).value
+
+
+def before_main_menu() -> bool:
+    """True until the game's front end has reached the main menu (or there's no player yet)."""
+    state = _flow_state()
+    if state is not None:
+        return state < FLOW_MAIN_MENU
+    pc = get_pc(possibly_loading=True)
+    if pc is None or pc.Player is None:
+        return True
+    lib = unrealsdk.find_class("SubsystemBlueprintLibrary").ClassDefaultObject
+    sub = lib.GetLocalPlayerSubSystemFromPlayerController(pc, unrealsdk.find_class("GbxUIUMGPlayerSubsystem"))
+    if sub is None:
+        return True
+    got = sub.HasUIState(unrealsdk.make_struct("GameplayTag", TagName=TITLE_STATE))
+    return bool(got[0] if isinstance(got, tuple) else got)
 
 
 # endregion
@@ -361,6 +427,9 @@ def hosting_watchdog() -> None:
 
 def join(address: str, port: int | None = None) -> None:
     global _hosting_port, _reloading_from, _client_seen
+    if before_main_menu():
+        log_error(WAIT_FOR_MENU)
+        return
     if ":" in address:
         address, port_str = address.rsplit(":", 1)
         port = int(port_str)
@@ -459,6 +528,10 @@ class PanelApi:
     @staticmethod
     def at_main_menu() -> bool:
         return not PanelApi.in_gameplay()
+
+    @staticmethod
+    def before_main_menu() -> bool:
+        return before_main_menu()
 
     @staticmethod
     def friends() -> list[Friend]:
@@ -793,5 +866,5 @@ mod = build_mod(
     ],
     commands=[bl4host, bl4join, bl4direct, bl4ui],
     on_enable=lambda: (refresh_friends(), ui.install(), arrival.start_scan()),
-    on_disable=lambda: (ui.uninstall(), disable_direct(), smooth.cleanup()),
+    on_disable=lambda: (ui.uninstall(), disable_direct(), smooth.cleanup(), nameplates.stop()),
 )

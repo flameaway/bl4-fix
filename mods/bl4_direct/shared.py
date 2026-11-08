@@ -7,18 +7,23 @@ the SDK's settings folder; the app writes it, the mod reads it (and may update `
 
 from __future__ import annotations
 
-import base64
+import contextlib
+import ctypes
+import functools
 import hashlib
 import ipaddress
 import json
 import os
 import re
+import socket
+import struct
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
-MOD_VERSION = "0.5.4"
+MOD_VERSION = "0.5.5"
 SDK_VERSION = "0.3"
 DEFAULT_PORT = 7777
 FRIENDS_FILE_NAME = "bl4_direct_friends.json"
@@ -123,6 +128,38 @@ def is_ipv4(address: str) -> bool:
     return normalize_ipv4(address) is not None
 
 
+# STUN (RFC 8489), what games and voice chat use to learn their public address. Not a "what's my
+# IP" website: antivirus sandboxes count an exe looking itself up on one of those as spyware
+STUN_SERVERS = (("stun.cloudflare.com", 3478), ("stun.l.google.com", 19302))
+STUN_MAGIC = 0x2112A442
+
+
+def public_ip(timeout: float = 3.0) -> str | None:
+    """
+    This PC's public IPv4 address as the internet sees its UDP traffic (the address friends join):
+    one 20-byte Binding Request to a STUN server, the reply's XOR-MAPPED-ADDRESS. None when no
+    server answers. Blocks up to `timeout` per server: call it off the game/UI thread.
+    """
+    for server in STUN_SERVERS:
+        txn = os.urandom(12)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(timeout)
+                sock.sendto(struct.pack("!HHI", 0x0001, 0, STUN_MAGIC) + txn, server)
+                data = sock.recv(512)
+        except OSError:
+            continue
+        if len(data) < 20 or data[:2] != b"\x01\x01" or data[8:20] != txn:  # Binding Success, ours
+            continue
+        pos = 20
+        while pos + 4 <= len(data):
+            kind, size = struct.unpack_from("!HH", data, pos)
+            if kind == 0x0020 and size >= 8 and data[pos + 5] == 1:  # XOR-MAPPED-ADDRESS, IPv4
+                return socket.inet_ntoa(struct.pack("!I", struct.unpack_from("!I", data, pos + 8)[0] ^ STUN_MAGIC))
+            pos += 4 + (size + 3) // 4 * 4
+    return None
+
+
 def game_build_id(game_dir: Path) -> str:
     """
     Identifies the installed game build, so two players can check they match.
@@ -167,10 +204,11 @@ FIREWALL_RULE_NAME = "BL4 Direct - only friends may join"
 _SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 # Full paths: never a program found on PATH (netsh runs elevated)
 NETSH = _SYSTEM32 / "netsh.exe"
-POWERSHELL = _SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
 # Said right before the prompt (game page, panel, setup app): the name the UAC prompt shows for netsh
 UAC_NAME = "Network Command Shell"
 UAC_HINT = f'Windows will ask if "{UAC_NAME}" may make changes: that\'s the firewall update. Choose Yes.'
+# Join refuses until the title screen has reached the main menu (see bl4_direct.before_main_menu)
+WAIT_FOR_MENU = "Wait for the main menu (answer any prompts on the title screen first), then join."
 
 LOOPBACK = ["127.0.0.0/8", "::1/128"]
 # Home networks plus VPN overlays (Tailscale/ZeroTier use 100.64.0.0/10; only devices you've
@@ -241,44 +279,139 @@ def firewall_rule(port: int, allowed_ips: Iterable[str], allow_lan: bool) -> dic
     }
 
 
-# Lists our rules, one "display name<TAB>description" a line; exits non-zero if it can't read them.
-# Reading the firewall needs no admin (checked with a Basic User token, 2026-10-30). The COM policy
-# object: ~0.8 s with PowerShell's start, Get-NetFirewallRule took 2.3 s per query
-_FIND_SCRIPT = r"""
-$ErrorActionPreference = 'Stop'
-$policy = New-Object -ComObject HNetCfg.FwPolicy2
-@($policy.Rules | Where-Object { $_.Grouping -eq $group -or $_.Name -eq $name } |
-    ForEach-Object { $_.Name + "`t" + $_.Description })
-"""
+# region COM, in process through ctypes (no PowerShell: hidden PowerShell is what antivirus flags)
+
+_ole32 = ctypes.WinDLL("ole32")
+_ole32.CoInitializeEx.argtypes = (ctypes.c_void_p, ctypes.c_ulong)
+_ole32.CoInitializeEx.restype = ctypes.c_long  # not HRESULT: RPC_E_CHANGED_MODE is fine (COM is on)
+_ole32.CoCreateInstance.argtypes = (ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_void_p)
+_ole32.CoCreateInstance.restype = ctypes.HRESULT
+_ole32.CoUninitialize.argtypes = ()
+_ole32.CoUninitialize.restype = None
+_ole32.CLSIDFromString.argtypes = (ctypes.c_wchar_p, ctypes.c_void_p)
+_ole32.CLSIDFromString.restype = ctypes.HRESULT
+_oleaut32 = ctypes.WinDLL("oleaut32")
+_oleaut32.SysFreeString.argtypes = (ctypes.c_void_p,)
+_oleaut32.SysFreeString.restype = None
+_oleaut32.VariantClear.argtypes = (ctypes.c_void_p,)
+_oleaut32.VariantClear.restype = ctypes.HRESULT
 
 
-def _ps_quote(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
+@functools.cache
+def com_guid(text: str) -> ctypes.Array:
+    guid = (ctypes.c_byte * 16)()
+    _ole32.CLSIDFromString("{" + text + "}", ctypes.byref(guid))
+    return guid
+
+
+@functools.cache
+def _com_proto(restype: type, types: tuple[type, ...]) -> type:
+    return ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *types)
+
+
+def com_call(obj: ctypes.c_void_p, index: int, *args: Any, restype: type = ctypes.HRESULT) -> Any:
+    """Calls method `index` of a COM object's vtable (str: LPCWSTR, int: int, else a pointer). An HRESULT failure raises OSError."""
+    types = tuple(ctypes.c_wchar_p if isinstance(a, str) else ctypes.c_int if isinstance(a, int) else ctypes.c_void_p for a in args)
+    method = ctypes.cast(obj, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[0][index]
+    return _com_proto(restype, types)(method)(obj, *args)
+
+
+def com_release(obj: ctypes.c_void_p) -> None:
+    if obj:
+        com_call(obj, 2, restype=ctypes.c_ulong)
+
+
+def com_query(obj: ctypes.c_void_p, iid: str) -> ctypes.c_void_p:
+    out = ctypes.c_void_p()
+    com_call(obj, 0, ctypes.byref(com_guid(iid)), ctypes.byref(out))
+    return out
+
+
+def com_bstr(obj: ctypes.c_void_p, index: int) -> str:
+    """A BSTR property getter's value ("" for none)."""
+    out = ctypes.c_void_p()
+    com_call(obj, index, ctypes.byref(out))
+    try:
+        return ctypes.wstring_at(out.value) if out.value else ""
+    finally:
+        _oleaut32.SysFreeString(out)
+
+
+@contextlib.contextmanager
+def com_object(clsid: str, iid: str) -> Iterator[ctypes.c_void_p]:
+    """A new COM object (COM started on this thread for the duration), released afterwards. Raises OSError."""
+    init = _ole32.CoInitializeEx(None, 2)  # COINIT_APARTMENTTHREADED
+    obj = ctypes.c_void_p()
+    try:
+        _ole32.CoCreateInstance(ctypes.byref(com_guid(clsid)), None, 5, ctypes.byref(com_guid(iid)), ctypes.byref(obj))  # in process or local
+        yield obj
+    finally:
+        com_release(obj)
+        if init >= 0:  # S_OK / S_FALSE: this call's to balance
+            _ole32.CoUninitialize()
+
+
+class _Variant(ctypes.Structure):
+    _fields_ = (("vt", ctypes.c_ushort), ("reserved", ctypes.c_ushort * 3), ("ptr", ctypes.c_void_p), ("pad", ctypes.c_void_p))
+
+
+# endregion
+
+
+# Windows Firewall's own policy object (HNetCfg.FwPolicy2, what netsh and the Firewall window use).
+# Reading it needs no admin (checked with a Basic User token, 2026-10-30)
+_FW_POLICY = "e2b3c97f-6ae1-41ac-817a-f6f92166d7dd"
+_IID_FW_POLICY2 = "98325047-c671-4174-8d81-defcd3f03186"
+_IID_FW_RULE = "af230d27-baba-4e42-aced-f524f22cfce2"
+_IID_ENUM_VARIANT = "00020404-0000-0000-c000-000000000046"
+# vtable slots (netfw.h; IUnknown 0-2 and IDispatch 3-6 first)
+_POLICY_GET_RULES = 18
+_RULES_GET_NEW_ENUM = 11
+_ENUM_NEXT = 3
+_RULE_GET_NAME, _RULE_GET_DESCRIPTION, _RULE_GET_GROUPING = 7, 9, 35
 
 
 def find_rules(name: str = FIREWALL_RULE_NAME, group: str = FIREWALL_GROUP) -> list[tuple[str, str]]:
     """
-    Our rules in Windows Firewall as (display name, description): the netsh-made one and any old
-    PowerShell-made one. No admin needed, ~0.5 s (a hidden PowerShell): never on the game thread.
-    Raises RuntimeError if the firewall can't be read.
+    Our rules in Windows Firewall as (display name, description): the netsh-made one (by name) and
+    any old PowerShell-made one (by group), both matched ignoring case. No admin needed; walks every
+    rule (~1300 on a gaming PC): never on the game thread. Raises RuntimeError if the firewall can't
+    be read.
     """
-    script = f"$name = {_ps_quote(name)}\n$group = {_ps_quote(group)}\n{_FIND_SCRIPT}"
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-    try:
-        res = subprocess.run(
-            [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
-            capture_output=True, text=True, timeout=60, check=False,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )  # fmt: skip
-    except (OSError, subprocess.SubprocessError) as ex:
-        raise RuntimeError(f"couldn't read the firewall rules: {ex}") from ex
-    if res.returncode != 0:
-        raise RuntimeError(f"couldn't read the firewall rules: {(res.stderr or res.stdout).strip()[:300]}")
+    name, group = name.casefold(), group.casefold()
     rules = []
-    for line in res.stdout.splitlines():
-        if line.strip():
-            rule_name, _, description = line.partition("\t")
-            rules.append((rule_name.strip(), description.strip()))
+    try:
+        with com_object(_FW_POLICY, _IID_FW_POLICY2) as policy:
+            all_rules, enum_unknown, enum = ctypes.c_void_p(), ctypes.c_void_p(), ctypes.c_void_p()
+            try:
+                com_call(policy, _POLICY_GET_RULES, ctypes.byref(all_rules))
+                com_call(all_rules, _RULES_GET_NEW_ENUM, ctypes.byref(enum_unknown))
+                enum = com_query(enum_unknown, _IID_ENUM_VARIANT)
+                batch, fetched = (_Variant * 256)(), ctypes.c_ulong()
+                while True:
+                    com_call(enum, _ENUM_NEXT, len(batch), ctypes.byref(batch), ctypes.byref(fetched))
+                    if not fetched.value:
+                        break
+                    for i in range(fetched.value):
+                        item = batch[i]
+                        try:
+                            if item.vt != 9:  # VT_DISPATCH
+                                continue
+                            rule = com_query(ctypes.c_void_p(item.ptr), _IID_FW_RULE)
+                            try:
+                                rule_name = com_bstr(rule, _RULE_GET_NAME)
+                                if rule_name.casefold() == name or com_bstr(rule, _RULE_GET_GROUPING).casefold() == group:
+                                    rules.append((rule_name.strip(), com_bstr(rule, _RULE_GET_DESCRIPTION).strip()))
+                            finally:
+                                com_release(rule)
+                        finally:
+                            _oleaut32.VariantClear(ctypes.byref(item))  # the enumerator's reference
+            finally:
+                com_release(enum)
+                com_release(enum_unknown)
+                com_release(all_rules)
+    except OSError as ex:
+        raise RuntimeError(f"couldn't read the firewall rules: {ex}") from ex
     return rules
 
 

@@ -489,8 +489,8 @@ and checks the files.
 **What goes online, and when.**
 - **Update checks** go to GitHub only, once per launch, and only after you answer Yes to "Check for
   updates automatically?" on the Updates page. Mods download only when you press Update or Install.
-- **BL4 Direct Connect's page** and the setup app's Co-op page look up your public IP (api.ipify.org,
-  else ifconfig.me) to show the address friends join.
+- **BL4 Direct Connect's page** and the setup app's Co-op page look up your public IP with one STUN request
+  (stun.cloudflare.com, else stun.l.google.com) to show the address friends join.
 - **The setup app** checks GitHub for a newer version when it starts, and downloads Microsoft's
   Visual C++ runtime if yours is missing or too old.
 - **Co-op** connects to the IP you join; hosting listens on UDP port 7777 (changeable). The optional

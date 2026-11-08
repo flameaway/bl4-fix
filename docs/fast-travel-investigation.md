@@ -31,9 +31,10 @@ There were two separate problems.
      for one-account testing. Validated: with the guard running on the host, a cross-map co-op
      travel (Harmonica_P to World_P) finished for both players with no manual help.
    - The profile.sav wipes seen during one-account testing are a separate problem. Both copies
-     write the same save folder: the host writes the full profile (~81 KB), the client writes a
-     ~9 KB one, and the last write wins. The guard doesn't change that. Back up saves and restore
-     after testing.
+     write the same save folder, and the last write wins. A kernel file trace (ETW, 2026-11-06)
+     showed which: the client wrote the full profile (88 KB), then the **host** wrote a ~9.5 KB one
+     16 s later. On one account the host saves the joined client's partial profile into the
+     shared folder. The guard doesn't change that. Back up saves and restore after testing.
 
 ## How a fast travel completes (server side)
 

@@ -36,7 +36,7 @@ from mods_base import SETTINGS_DIR, get_pc
 from unrealsdk import logging
 
 from . import clipboard, ui
-from .shared import FRIENDS_FILE_NAME, UAC_HINT, Config, find_rules, is_ipv4
+from .shared import FRIENDS_FILE_NAME, UAC_HINT, WAIT_FOR_MENU, Config, find_rules, is_ipv4
 
 KEY = "bl4direct"
 # The page is drawn for the mod with this name in the Mod Menu (its pyproject name)
@@ -45,7 +45,7 @@ GAME_DIR = SETTINGS_DIR.parent.parent
 # Not "bl4direct": that folder belongs to Detailed Item Cards
 UI_DIR = "OakGame/Content/uiresources/bl4directconnect"
 SCRIPT_URL = "coui://uiresources/bl4directconnect/direct.js"
-UI_FILES = ("direct.js", "direct.css")
+UI_FILES = ("direct.js", "direct.css", "nameplate.js")
 PUBLISH_S = 1.0
 # Loaded from a folder (the dev junction): its files can change while the game runs, so they're
 # re-published while the page shows. A release (.sdkmod) publishes once, at registration.
@@ -150,6 +150,8 @@ def state() -> dict[str, Any]:
         "port": port,
         "intent": api.hosting_intent() is not None,
         "in_game": api.in_gameplay(),
+        # Joining before the main menu leaves you on a black screen (issue #2): Join waits for it
+        "title": api.before_main_menu(),
         "ip": {"state": ui.PublicIp.state, "ip": ui.PublicIp.ip or ""},
         "firewall": config.firewall_up_to_date() if config is not None else api.firewall_up_to_date(),
         # Turned off in the setup app: no rule, and hosting doesn't ask Windows for anything
@@ -323,6 +325,8 @@ def act(action: dict[str, Any]) -> None:
             friend = next((f for f in api.friends() if f.name == name), None)
             if friend is None:
                 say(f"{name} isn't in your friends list any more.", error=True)
+            elif api.before_main_menu():
+                say(WAIT_FOR_MENU, error=True)
             else:
                 _travel(lambda: api.join_friend(friend))
         case _:

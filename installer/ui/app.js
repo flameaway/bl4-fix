@@ -81,7 +81,6 @@ async function boot() {
   wire();
   const statusP = refreshStatus();
   loadFriends();
-  lookupIp();
   showPage(params.get("page") || "loadout");
   await statusP;
   setInterval(pollRunning, 3000);
@@ -97,8 +96,8 @@ async function checkUpdate(manual = false) {
   render();
 }
 
-// Mod updates: the app downloads a newer mod from the release itself at Install
-// (selfupdate.fetch_mods), or installs its own newer copy (status.local)
+// Mod updates: Install puts in this app's own copy when it's newer than the installed one
+// (status.local); a newer mod in the release comes with Update App
 function vkey(v) {
   return (String(v || "").match(/\d+/g) || []).slice(0, 4).map(Number);
 }
@@ -117,10 +116,8 @@ function modUpdate(id) {
   if (!st || !st.valid || !st.versions || !st.installed.includes(id)) return null;
   const have = st.versions[id];
   if (!have || (st.dev_mods || []).includes(id)) return null;
-  const release = S.update && S.update.mods ? S.update.mods[id] : "";
   const local = (st.local || {})[id] || "";
-  const best = newer(release, local) ? release : local;
-  return best && newer(best, have) ? { from: have, to: best } : null;
+  return local && newer(local, have) ? { from: have, to: local } : null;
 }
 
 function modUpdates() {
@@ -207,6 +204,8 @@ function navigate(id) {
 
 function showPage(id) {
   S.page = id;
+  // Only when the page showing them opens: an exe that looks up its own addresses at start looks like spyware to antivirus sandboxes
+  if (id === "coop" && !S.ipLookup) S.ipLookup = lookupIp();
   for (const [key, n] of Object.entries(S.nav)) n.slot.classList.toggle("su_current", key === id);
   render();
   $("#entries").scrollTop = 0;
@@ -427,7 +426,7 @@ function renderCoop() {
     title: "Your public IP", meta: "Send this to friends who'll join you", body: "Friends type it in BL4 Direct Connect's Join box (F6 in game) to join the game you host.",
   });
   row("Port when you host", [stepper(String(f.host_port), (d) => { f.host_port = Math.max(1024, Math.min(65535, f.host_port + d)); markFriendsDirty(); })], {
-    title: "Port when you host", meta: `UDP ${f.host_port}`, body: `Hosting over the internet: forward UDP ${f.host_port} on your router to ${S.info.lan_ip || "this PC"}. Joining someone needs no setup.`,
+    title: "Port when you host", meta: `UDP ${f.host_port}`, body: `Hosting over the internet: forward UDP ${f.host_port} on your router to ${S.lanIp || "this PC"}. Joining someone needs no setup.`,
   });
   row("Allow local network / Tailscale", [toggle(f.allow_lan, (v) => { f.allow_lan = v; markFriendsDirty(); })], {
     title: "Allow local network / Tailscale", body: "Lets anyone on your local network or VPN join the games you host, besides the friends below.",
@@ -508,7 +507,7 @@ function renderSystem() {
 const SAFETY_TEXT =
   "Open source: BL4 Fix's mods are GPL-3.0, at github.com/flameaway/bl4-fix.\n" +
   "Saves: only read, never written. The one exception is a restore you ask for in Save Backups, applied after the game closes, with your old saves kept aside.\n" +
-  "Internet: GitHub for update checks and the downloads you press; api.ipify.org to show your public IP for co-op; Microsoft for the VC++ runtime when it's missing. Nothing else.\n" +
+  "Internet: GitHub for update checks and the downloads you press; a STUN server (Cloudflare, else Google) to show your public IP for co-op; Microsoft for the VC++ runtime when it's missing. Nothing else.\n" +
   "Bug reports: stay on your PC until you attach one yourself, with names, paths and IP addresses masked.\n" +
   "Other modders' repositories: their mods aren't checked by BL4 Fix and run with the game's rights. Add only repositories you trust.\n" +
   "Switch to Vanilla (under Install) moves every mod out of the game's reach if one breaks the game, and Turn Mods Back On returns them.";
@@ -753,8 +752,8 @@ async function install() {
   if (S.busy || !S.status || !S.status.valid) return;
   if (S.status.running) { toast("Close Borderlands 4 first", true); return; }
   if (S.update && S.update.stale) {
-    // A newer app, SDK or new mods (mod updates alone it downloads itself): update it first
-    const first = await confirmDialog("Update the app first?", `A newer BL4 Fix Setup is out:\n${updateSummary(S.update)}\n\nInstall anyway still updates your mods from the release; the new app brings the rest.`, "Update first", false,
+    // A newer app, SDK or mods: update it first
+    const first = await confirmDialog("Update the app first?", `A newer BL4 Fix Setup is out:\n${updateSummary(S.update)}\n\nInstall anyway installs this app's versions.`, "Update first", false,
       { cancelText: "Install anyway", okCls: "", backdrop: null });
     if (first === null) return;
     if (first) return updateApp(true);
@@ -928,6 +927,7 @@ function addLog(text, cls = "") {
 /* ---------- co-op ---------- */
 
 async function lookupIp() {
+  S.lanIp = await S.api.lan_ip();
   S.publicIp = (await S.api.public_ip()) || "Offline?";
   if (S.page === "coop") render();
 }
@@ -1109,7 +1109,7 @@ function mockApi() {
   if (demo === "space") setTimeout(() => spaceScan().then(() => sleep(3000)).then(() => setKeep("German", true)).then(() => sleep(300)).then(() => { if (params.has("bottom")) $("#entries").scrollTop = 99999; }), 600);
   const ok = (key, label, value, hint, good = true) => ({ key, label, ok: good, value, hint });
   return {
-    init: async () => ({ version: "0.5.0", sdk_version: "0.3", icon: "", game_dir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Borderlands 4", default_port: 7777, lan_ip: "192.168.1.42", mods }),
+    init: async () => ({ version: "0.5.0", sdk_version: "0.3", icon: "", game_dir: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Borderlands 4", default_port: 7777, mods }),
     status: async () => {
       await sleep(200);
       return {
@@ -1118,9 +1118,9 @@ function mockApi() {
         dev_mods: [], conflicts: [], compat: "BL4-5554-8f3a2c-0.5.0",
         // &vanilla: mods switched off (core.vanilla_status)
         vanilla: params.has("vanilla") ? { mods: [...installed.map((id) => id + ".sdkmod"), "PersistentLoot.sdkmod"], paks: 3, sdk: false } : null,
-        // &modupdate: two installed mods older than the release (update_check's mods)
+        // &modupdate: two installed mods older than this app's copies (local)
         versions: fresh ? {} : Object.fromEntries(installed.map((id) => [id, params.has("modupdate") && (id === "bl4_minimap" || id === "bl4_item_cards") ? "0.1.0" : "0.2.0"])),
-        local: Object.fromEntries(mods.map((m) => [m.id, "0.2.0"])),
+        local: Object.fromEntries(mods.map((m) => [m.id, params.has("modupdate") && (m.id === "bl4_minimap" || m.id === "bl4_item_cards") ? "0.2.1" : "0.2.0"])),
         checks: [
           ok("vc", "VC++ Runtime", "14.44", "needs 14.44+ (installed for you)"),
           ok("sdk", "Python SDK", fresh ? "missing" : "0.3", "needs 0.3", !fresh),
@@ -1135,6 +1135,7 @@ function mockApi() {
     is_game_dir: async () => true,
     open_folder: async () => {},
     public_ip: async () => { await sleep(300); return "203.0.113.57"; },
+    lan_ip: async () => "192.168.1.42",
     load_friends: async () => ({ host_port: 7777, allow_lan: true, firewall: !params.has("nofw"), firewall_current: true, friends: [
       { name: "Moxxi", address: "198.51.100.23", port: 7777 }, { name: "Zane", address: "203.0.113.9", port: 7778 }, { name: "Amara", address: "192.0.2.144", port: 7777 }] }),
     normalize_ip: async (t) => (/^\d+\.\d+\.\d+\.\d+$/.test(t.trim()) ? t.trim() : ""),
@@ -1151,8 +1152,7 @@ function mockApi() {
     launch_game: async () => "",
     update_check: async () => (params.has("update")
       ? { stale: true, release: "v2026.11.01", version: "0.5.3", current: "0.5.2", new_mods: ["Instant Fast Travel"], newer_mods: ["Minimap", "Reroll"], sdk: false, size: 104000000, can_apply: true }
-      : { stale: false, release: "v2026.10.27", version: "0.5.2", current: "0.5.2", new_mods: [], newer_mods: [], sdk: false, size: 0, can_apply: true,
-          mods: params.has("modupdate") ? { bl4_minimap: "0.2.1", bl4_item_cards: "0.2.1" } : {} }),
+      : { stale: false, release: "v2026.10.27", version: "0.5.2", current: "0.5.2", new_mods: [], newer_mods: [], sdk: false, size: 0, can_apply: true }),
     update_apply: async () => { setTimeout(() => app.onTaskDone("selfupdate", null), 800); return true; },
     open_releases: async () => {},
     set_firewall: async () => { setTimeout(() => app.onTaskDone("firewall", null), 600); return true; },

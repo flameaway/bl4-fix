@@ -140,7 +140,6 @@ class Api:
             "sdk_version": shared.SDK_VERSION,
             "game_dir": str(found[0]) if found else "",
             "default_port": shared.DEFAULT_PORT,
-            "lan_ip": core.lan_ip() or "",
             "updated": selfupdate.finish_update(),  # this run follows an in-place update
             "mods": [
                 {
@@ -169,10 +168,10 @@ class Api:
             "ready": st.ready,
             "running": core.game_running(),
             "installed": sorted(st.mods),
-            # Each installed mod's version, and the newest copy this app has of every mod (its
-            # payload or a download): the page shows what Install would update
+            # Each installed mod's version, and this app's copy of every mod: the page shows
+            # what Install would update
             "versions": core.installed_versions(path),
-            "local": {m.id: core.sdkmod_version(core.mod_source(m.id), m.id) or "" for m in catalog.MODS},
+            "local": {m.id: core.sdkmod_version(core.payload_mod(m.id), m.id) or "" for m in catalog.MODS},
             "chosen": sorted(core.choose_mods(path)),
             "dev_mods": sorted(st.dev_mods),
             # Mods switched off (core.vanilla_status): None, or what sits in BL4Fix_ModsOff
@@ -238,8 +237,6 @@ class Api:
                 raise RuntimeError(core.MODS_OFF)
             if core.game_running():
                 raise RuntimeError("Close Borderlands 4 first.")
-            # The release's newer mods first (the update check's manifest, else fetched now)
-            selfupdate.fetch_mods(path, core.choose_mods(path, set(mods)), self._log, self._manifest)
             core.install(path, self._log, mods=set(mods), use_firewall=fw)
 
         return self._task("install", run)
@@ -382,6 +379,9 @@ class Api:
             return core.public_ip()
         except RuntimeError:
             return ""
+
+    def lan_ip(self) -> str:
+        return core.lan_ip() or ""
 
     def load_friends(self, game_dir: str) -> dict:
         config = core.load_config(Path(game_dir)) if self.is_game_dir(game_dir) else shared.Config()

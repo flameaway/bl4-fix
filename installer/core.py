@@ -74,27 +74,6 @@ def payload_mod(mod_id: str) -> Path:
     return PAYLOAD / f"{mod_id}.sdkmod"
 
 
-def mod_cache_dir() -> Path:
-    """
-    Where the app keeps mods it downloaded from the latest release (selfupdate.fetch_mods), newer
-    than its own payload: %LOCALAPPDATA%/BL4 Fix/mods/<id>.sdkmod. Install takes the newer copy.
-    """
-    return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "BL4 Fix" / "mods"
-
-
-def cached_mod(mod_id: str) -> Path:
-    return mod_cache_dir() / f"{mod_id}.sdkmod"
-
-
-def mod_source(mod_id: str) -> Path:
-    """The newest copy of a mod this app has: its payload's, or one it downloaded (if newer)."""
-    ours, cached = payload_mod(mod_id), cached_mod(mod_id)
-    have = sdkmod_version(cached, mod_id) if cached.is_file() else None
-    if have and _version_key(have) > _version_key(sdkmod_version(ours, mod_id)):
-        return cached
-    return ours
-
-
 def installed_versions(game_dir: Path) -> dict[str, str]:
     """{mod id: version} of every catalog .sdkmod in sdk_mods (set aside: where it is)."""
     found = {}
@@ -650,7 +629,7 @@ def _install_mod(game_dir: Path, info: catalog.ModInfo, new: bool, log=print) ->
         loose.rename(backup)
         log(f"Moved old mod folder to {backup}")
     target = sdk_mods / f"{info.id}.sdkmod"
-    source = mod_source(info.id)
+    source = payload_mod(info.id)
     have, ours = sdkmod_version(target, info.id), sdkmod_version(source, info.id)
     if have and ours and _version_key(have) > _version_key(ours):
         # The in-game updater installed a newer release since this app was built: keep it
@@ -775,29 +754,32 @@ def _make_shortcut(target: Path, log=print) -> None:  # noqa: ANN001
     """Start menu > BL4 Fix Setup, to add or remove mods any time."""
     if (link := _shortcut_path()) is None:
         return
-    script = (
-        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:BL4_LINK);"
-        "$s.TargetPath = $env:BL4_TARGET; $s.WorkingDirectory = $env:BL4_DIR;"
-        "$s.IconLocation = $env:BL4_TARGET + ',0';"
-        "$s.Description = 'Add or remove Borderlands 4 mods'; $s.Save()"
-    )
-    env = {**os.environ, "BL4_LINK": str(link), "BL4_TARGET": str(target), "BL4_DIR": str(target.parent)}
     try:
-        res = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            env=env, capture_output=True, text=True, check=False, timeout=30,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )  # fmt: skip
-    except (OSError, subprocess.TimeoutExpired) as ex:
+        _write_shortcut(link, target, "Add or remove Borderlands 4 mods")
+    except OSError as ex:
         log(f"Couldn't make the Start menu shortcut ({ex}).")
         return
-    if res.returncode == 0:
-        log("Start menu: 'BL4 Fix Setup' adds or removes mods any time.")
-        for old in OLD_SHORTCUT_NAMES:
-            (link.parent / old).unlink(missing_ok=True)
-        _refresh_icons()
-    else:
-        log(f"Couldn't make the Start menu shortcut: {res.stderr.strip()[:200]}")
+    log("Start menu: 'BL4 Fix Setup' adds or removes mods any time.")
+    for old in OLD_SHORTCUT_NAMES:
+        (link.parent / old).unlink(missing_ok=True)
+    _refresh_icons()
+
+
+# Written by the Shell's own ShellLink object (IShellLinkW + IPersistFile) in this process: no
+# hidden PowerShell, which antivirus sandboxes count against the exe
+def _write_shortcut(link: Path, target: Path, description: str) -> None:
+    """Writes a .lnk to `target` (its folder as working directory, its first icon). Raises OSError."""
+    shell_link_clsid, shell_link_iid = "00021401-0000-0000-c000-000000000046", "000214f9-0000-0000-c000-000000000046"
+    with shared.com_object(shell_link_clsid, shell_link_iid) as shell_link:
+        shared.com_call(shell_link, 20, str(target))  # SetPath
+        shared.com_call(shell_link, 9, str(target.parent))  # SetWorkingDirectory
+        shared.com_call(shell_link, 17, str(target), 0)  # SetIconLocation
+        shared.com_call(shell_link, 7, description)  # SetDescription
+        persist = shared.com_query(shell_link, "0000010b-0000-0000-c000-000000000046")  # IPersistFile
+        try:
+            shared.com_call(persist, 6, str(link), 1)  # Save, remembering the file
+        finally:
+            shared.com_release(persist)
 
 
 def apply_firewall(game_dir: Path, log=print) -> None:  # noqa: ANN001
@@ -968,9 +950,9 @@ def prepare_pages(game_dir: Path, chosen: set[str] | frozenset[str], log=print) 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         for mod_id in dict.fromkeys(m for m, _, _ in wanted):
-            # The installed copy (what the game will load), else the newest this app has
+            # The installed copy (what the game will load), else this app's
             installed = game_dir / "sdk_mods" / f"{mod_id}.sdkmod"
-            with zipfile.ZipFile(installed if sdkmod_version(installed, mod_id) else mod_source(mod_id)) as zf:
+            with zipfile.ZipFile(installed if sdkmod_version(installed, mod_id) else payload_mod(mod_id)) as zf:
                 zf.extractall(root)
         for mod_id, page, takes_enabled in wanted:
             enabled = mod_enabled(game_dir, mod_id)
@@ -1272,14 +1254,8 @@ def show_report(path: Path) -> None:
 
 
 def public_ip() -> str:
-    for url in ("https://api.ipify.org", "https://ifconfig.me/ip"):
-        try:
-            with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310
-                ip = resp.read().decode().strip()
-            if shared.is_ipv4(ip):
-                return ip
-        except OSError:
-            continue
+    if ip := shared.public_ip():
+        return ip
     raise RuntimeError("couldn't look up your public IP")
 
 

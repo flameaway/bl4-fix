@@ -176,7 +176,7 @@ The pattern is from MattsBL4ModsMenu (MIT). All of this is verified in BL4 Direc
   - `GbxUIPopupManager` (rich dialogs with buttons, text input and list choices) exists, but no instance was found and `GetLocalPlayerSubsystem` returned None.
   - Main-menu actions (`ui_script_main_menu_C:ContinueCampaign`) are BP events that need the real menu widget. Calling them on the CDO did nothing.
 - **Clipboard:** Win32 via ctypes (`OpenClipboard`/`EmptyClipboard`/`GlobalAlloc`/`SetClipboardData(CF_UNICODETEXT)`). Set `argtypes`/`restype` to pointer types, or 64-bit handles get truncated (verified).
-- **Public IP:** a background thread with `urllib` (`api.ipify.org`). The SDK's Python has SSL. Redraw when the lookup state changes.
+- **Public IP:** a background thread asks a STUN server (`shared.public_ip`: one UDP packet to stun.cloudflare.com, else Google), not a "what's my IP" site (antivirus counts those against an exe). Redraw when the lookup state changes.
 - **Users dislike permanent on-screen banners.** Keep status inside your panel unless asked.
 
 ## 8. Test automation (two instances on one PC)

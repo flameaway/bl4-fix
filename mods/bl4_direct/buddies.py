@@ -249,7 +249,7 @@ def tick() -> None:
             # Queued twice (the game and us): the collector would retry every frame for good
             collector.OnPlayerDisconnected(ps)
             collector.OnPlayerConnected(ps)
-            logging.info(f"[BL4 Direct] teammate panel: {ps.PlayerNamePrivate} was queued {times} times, fixed")
+            logging.info(f"[BL4 Direct] teammate panel: {ps.Name} was queued {times} times, fixed")
             S.missing.pop(index, None)
             continue
         if times or player_id in shown:
@@ -265,7 +265,7 @@ def tick() -> None:
             _step_aside("adding a player didn't queue them as expected")
             return
         S.missing.pop(index, None)
-        logging.info(f"[BL4 Direct] teammate panel: added {ps.PlayerNamePrivate} (the game hadn't)")
+        logging.info(f"[BL4 Direct] teammate panel: added {ps.Name} (the game hadn't)")
 
     # Players who left: take them off the panel if the game didn't
     for index in [i for i in S.known if i not in current]:
@@ -276,7 +276,7 @@ def tick() -> None:
         ps = weak()
         if ps is not None:
             collector.OnPlayerDisconnected(ps)
-            logging.info(f"[BL4 Direct] teammate panel: removed {ps.PlayerNamePrivate}, who left")
+            logging.info(f"[BL4 Direct] teammate panel: removed {ps.Name}, who left")
         else:
             _log_once(f"stale{player_id}", f"player {player_id} left but is still on the panel")
 

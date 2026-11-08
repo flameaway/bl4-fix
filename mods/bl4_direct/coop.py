@@ -504,8 +504,9 @@ def _on_client_message(text: str) -> None:
 
 
 def _name(pc: UObject) -> str:
+    """The player's object name for the log: never their player name (logs go into bug reports)."""
     ps = pc.PlayerState
-    return str(ps.PlayerNamePrivate or ps.Name) if ps is not None else str(pc.Name)
+    return str(ps.Name) if ps is not None else str(pc.Name)
 
 
 def _rpc_text(args: Any, name: str) -> str | None:

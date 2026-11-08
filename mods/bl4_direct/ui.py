@@ -51,7 +51,6 @@ import os
 import sys
 import threading
 import time
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -62,7 +61,7 @@ from unrealsdk import logging
 from unrealsdk.unreal import WeakPointer
 
 from . import frametick, gamekeys
-from .shared import UAC_HINT, UAC_NAME
+from .shared import UAC_HINT, UAC_NAME, WAIT_FOR_MENU, public_ip
 
 DEFAULT_KEY = "F6"
 VK_ESCAPE, VK_RETURN, VK_TAB = 0x1B, 0x0D, 0x09
@@ -184,10 +183,6 @@ UE_EVERY_S = 0.04
 UE_FOR_POSTED = False  # kept for test scripts that set it; gamekeys sees posted keys anyway
 
 
-def _ue_key_down(pc: Any, name: str, *, throttled: bool) -> bool:  # noqa: ARG001
-    return gamekeys.down(name)
-
-
 def _game_window_focused() -> bool:
     hwnd = _user32.GetForegroundWindow()
     pid = ctypes.c_ulong()
@@ -205,11 +200,6 @@ def _async_down(vk: int) -> bool:
 
 def _win_key_down(vk: int) -> bool:
     return _async_down(vk)
-
-
-def _key_reader() -> Callable[[int], bool]:
-    """What _async_down calls (for the closed panel's fast path)."""
-    return gamekeys.vk_down
 
 
 def _alive(obj: Any) -> bool:
@@ -267,16 +257,8 @@ class PublicIp:
 
     @classmethod
     def _worker(cls) -> None:
-        for url in ("https://api.ipify.org", "https://ifconfig.me/ip"):
-            try:
-                with urllib.request.urlopen(url, timeout=6) as resp:  # noqa: S310
-                    ip = resp.read().decode().strip()
-                if api.is_ipv4(ip):
-                    cls.ip, cls.state = ip, "ok"
-                    return
-            except Exception:  # noqa: BLE001, S112
-                continue
-        cls.state = "failed"
+        ip = public_ip()
+        cls.ip, cls.state = ip, "ok" if ip else "failed"
 
 
 # endregion
@@ -578,6 +560,10 @@ def _draw() -> None:
     # Friends
     y += 80
     p.text("FRIENDS", x0 + 24, y, 300, 34, 0.55, color=(0.3, 0.85, 0.95, 1.0))
+    # Joining before the main menu leaves you on a black screen (issue #2): Join waits for it
+    title = api.before_main_menu()
+    if title:
+        p.text(WAIT_FOR_MENU, x0 + 200, y, PANEL_W - 224, 34, 0.45, color=(0.95, 0.75, 0.3, 1.0))
     y += 40
     friends = api.friends()
     if not friends:
@@ -589,7 +575,7 @@ def _draw() -> None:
         p.text(friend.name, x0 + 40, y, 300, 48, 0.55, 5)
         p.text(f"{friend.address}:{friend.port}", x0 + 340, y, 300, 48, 0.5, 5, color=(0.75, 0.8, 0.82, 1.0))
         p.button("JOIN", x0 + PANEL_W - 290, y + 6, 140, 36,
-                 lambda f=friend: _run_after_close(lambda: api.join_friend(f)))
+                 lambda f=friend: _run_after_close(lambda: api.join_friend(f)), enabled=not title)
         p.button("Remove", x0 + PANEL_W - 140, y + 6, 100, 36, lambda f=friend: _remove(f.name),
                  fill=(0.30, 0.10, 0.08, 0.96), size=0.45)
         y += 54
@@ -867,8 +853,7 @@ class _Idle:
     """
 
     at = -1e9  # the last full pass
-    vk: int | None = None  # the open key's Windows code, from the last full pass
-    read: Callable[[int], bool] | None = None  # the key reader (the Mod Menu's vk_down when loaded)
+    key: str | None = None  # the open key's name from the last full pass ("" unbound); None: no fast path
 
 
 IDLE_FULL_S = 0.1
@@ -881,10 +866,10 @@ def _page_busy(page: Any) -> bool:
 
 
 def _on_tick() -> None:
-    if not S.is_open and S.pending is None and (vk := _Idle.vk) is not None:
+    if not S.is_open and S.pending is None and (key := _Idle.key) is not None:
         now = time.monotonic()
         if now - _Idle.at < IDLE_FULL_S:
-            down = vk > 0 and _Idle.read(vk)
+            down = gamekeys.down(key)  # (by name, straight to gamekeys: "" is never held)
             if not down or S.toggle_was_down:
                 S.toggle_was_down = down
                 return
@@ -907,26 +892,17 @@ def _on_tick() -> None:
         return
 
     if not S.is_open:
-        # PlayerInput only sees keys in game input modes; the Windows key state covers the rest
+        # The game's own input, by the bind's name (gamekeys: keyboard, mouse and pad alike)
         name = open_key()
         if name != S.key_seen:
             S.key_seen = name
             S.toggle_was_down = True
-        vk = _key_vk(name)
-        # Windows first (a snapshot read); PlayerInput every frame only for a key Windows can't
-        # name (gamepad), else a few times a second (see _UeKey)
-        down = bool(name) and (
-            (vk is not None and _win_key_down(vk))
-            or ((vk is None or UE_FOR_POSTED) and _ue_key_down(pc, name, throttled=vk is not None))
-        )
+        down = gamekeys.down(name)
         if down and not S.toggle_was_down:
             _toggle_key_pressed()
         S.toggle_was_down = down
-        # The fast path for the next IDLE_FULL_S: only for a key Windows knows (0 = unbound), with
-        # nothing that needs every frame
-        fast = not name or (vk is not None and not UE_FOR_POSTED)
-        _Idle.vk = (vk or 0) if fast and not S.is_open and S.pending is None and not _page_busy(page) else None
-        _Idle.read = _key_reader()
+        # The fast path for the next IDLE_FULL_S, with nothing that needs every frame
+        _Idle.key = (name or "") if not S.is_open and S.pending is None and not _page_busy(page) else None
         return
 
     if pc != S.pc:

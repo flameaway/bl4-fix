@@ -5,7 +5,6 @@ With no arguments, opens the GUI. Command line use (from a terminal):
 
     BL4FixSetup.exe --status
     BL4FixSetup.exe --install [--game DIR] [--skip-intro on|off] [--mods all|none|defaults|ID,ID...]
-                    (downloads the latest release's newer mods first; --offline: this app's copies)
     BL4FixSetup.exe --add-mod ID[,ID...] | --remove-mod ID[,ID...]
     BL4FixSetup.exe --list-mods
     BL4FixSetup.exe --skip-intro on|off
@@ -122,7 +121,7 @@ def cli(args: argparse.Namespace) -> int:
         for info in catalog.MODS:
             mark = "x" if info.id in installed else " "
             have = versions.get(info.id, "-")
-            ours = core.sdkmod_version(core.mod_source(info.id), info.id) or "-"
+            ours = core.sdkmod_version(core.payload_mod(info.id), info.id) or "-"
             print(f"[{mark}] {info.id:24} {have:>7} (app: {ours:>7})  {info.name}{' (always)' if info.required else ''}: {info.blurb}")
         return 0
 
@@ -135,11 +134,6 @@ def cli(args: argparse.Namespace) -> int:
     installing = bool(args.install or mods is not None or skip_intro is not None)
     if installing:
         use_firewall = None if args.firewall is None else args.firewall == "on"
-        if not args.offline and not args.log_file and not core.game_running():
-            # (An elevated copy started by core.install skips this: its parent already downloaded)
-            import selfupdate  # noqa: PLC0415
-
-            selfupdate.fetch_mods(game, core.choose_mods(game, mods, skip_intro))
         # Skip Intro is a mod now: switching it installs or removes it like the others
         core.install(game, skip_intro=skip_intro, mods=mods, use_firewall=use_firewall)
         config = core.load_config(game)  # install may have saved the firewall choice
@@ -264,7 +258,6 @@ def main() -> int:
     parser.add_argument("--add-mod", metavar="IDS", help="install these mods (comma list), keep the rest")
     parser.add_argument("--remove-mod", metavar="IDS", help="remove these mods (comma list), keep the rest")
     parser.add_argument("--list-mods", action="store_true", help="every mod this app can install")
-    parser.add_argument("--offline", action="store_true", help="with --install: don't download newer mods")
     parser.add_argument("--prepare-pages", action="store_true", help="set up the installed mods' game pages now")
     parser.add_argument("--disk-scan", action="store_true", help="what Disk Space would free (changes nothing)")
     parser.add_argument("--disk-free", action="store_true", help="remove unused voice languages / old patch data")

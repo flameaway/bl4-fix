@@ -19,7 +19,7 @@ Writes dist/release/:
   `manual` (so its SHA-256 is covered by the signature too)
 - SHA256SUMS.txt: every file above in sha256sum's format, for players checking a download by hand
 - notes.md, the release text (what changed, from each mod's CHANGELOG.md if it has one), with the
-  setup app's SHA-256 and its VirusTotal link (uploaded there first when VT_API_KEY is set)
+  setup app's SHA-256
 
 Before writing, it compares every mod with the latest published release (unless --offline): a mod
 whose files changed but whose pyproject.toml version didn't is an error, because players would
@@ -51,13 +51,11 @@ import datetime as dt
 import hashlib
 import io
 import json
-import os
 import re
 import shutil
 import sys
 import tomllib
 import urllib.request
-import uuid
 import zipfile
 import zlib
 from pathlib import Path
@@ -149,33 +147,6 @@ def previous_manifest(repo: str) -> dict | None:
     except Exception as ex:  # noqa: BLE001 - first release, or offline
         print(f"no previous release to compare with ({ex})")
         return None
-
-
-def virustotal_upload(exe: Path) -> bool:
-    """Uploads the setup app to VirusTotal for a scan when VT_API_KEY is set (a free account's key),
-    so the release notes' link shows a result. False when not uploaded."""
-    key = os.environ.get("VT_API_KEY")
-    if not key:
-        print("VT_API_KEY not set: the setup app isn't uploaded to VirusTotal")
-        return False
-    headers = {"x-apikey": key, "User-Agent": "bl4-release"}
-    try:
-        # Files over 32 MB (the setup app is ~100 MB) go to a one-time upload link
-        request = urllib.request.Request("https://www.virustotal.com/api/v3/files/upload_url", headers=headers)
-        with urllib.request.urlopen(request, timeout=30) as r:  # noqa: S310
-            url = json.loads(r.read())["data"]
-        boundary = uuid.uuid4().hex
-        head = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{exe.name}"\r\n'
-                "Content-Type: application/octet-stream\r\n\r\n")  # fmt: skip
-        body = head.encode() + exe.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
-        request = urllib.request.Request(url, data=body, headers={**headers, "Content-Type": f"multipart/form-data; boundary={boundary}"})
-        with urllib.request.urlopen(request, timeout=600) as r:  # noqa: S310
-            r.read()
-    except Exception as ex:  # noqa: BLE001 - the release doesn't depend on it
-        print(f"VirusTotal upload failed ({ex}): upload {exe.name} there by hand")
-        return False
-    print("uploaded the setup app to VirusTotal (its scan takes a few minutes)")
-    return True
 
 
 def vkey(version: str) -> tuple[int, ...]:
@@ -274,15 +245,12 @@ def main() -> int:
     if len(notes_md) == 2:  # noqa: PLR2004
         notes_md.append("No mod versions changed.")
     app_sha = manifest["app"]["sha256"]
-    scanned = virustotal_upload(exe)
     write_sums(OUT)
     notes_md += ["", "Install or update: run BL4FixSetup.exe, or press Update all on MODS in game.",
                  f"No exe: extract `{manual.name}` into the game folder (steps in its BL4Fix-README.txt and the README).", "",
                  f"**Check your download:** `{SUMS_NAME}` lists every file's SHA-256; the mod files and `{manual.name}` are"
                  " rebuilt from this tag by GitHub Actions and attested (`gh attestation verify <file> --repo flameaway/bl4-fix`).",
                  f"BL4FixSetup.exe SHA-256 `{app_sha}` (PowerShell: `Get-FileHash BL4FixSetup.exe`).",
-                 f"VirusTotal: https://www.virustotal.com/gui/file/{app_sha}"
-                 + ("" if scanned else " (if it says not found, upload the exe there yourself)"),
                  "Mod files are checked automatically: manifest.json is signed by BL4 Fix's release key and lists each file's SHA-256."]  # fmt: skip
     (OUT / "notes.md").write_text("\n".join(notes_md) + "\n", encoding="utf-8")
 

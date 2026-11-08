@@ -332,12 +332,15 @@
         }
         s.friends.forEach(function (f) {
             var addr = f.address + (f.port !== 7777 ? ":" + f.port : "");
-            api.row(f.name, "Join " + f.name + "'s game at " + f.address + ":" + f.port + ". They must be hosting and have your IP in their list. " +
-                "Remove takes them off your list (and out of your firewall rule once you update it).", [  // prettier-ignore
+            // Joining before the main menu leaves you on a black screen (issue #2): Join waits for it
+            var joinDesc = s.title
+                ? "Wait for the main menu (answer any prompts on the title screen first), then join " + f.name + "."
+                : "Join " + f.name + "'s game at " + f.address + ":" + f.port + ". They must be hosting and have your IP in their list.";
+            api.row(f.name, joinDesc + " Remove takes them off your list (and out of your firewall rule once you update it).", [  // prettier-ignore
                 value(api, addr, "bl4dc_addr bl4dc_small"),
                 button(api, "Join", function () {
                     travel({ do: "join", name: f.name });
-                }, !connected),
+                }, !connected && !s.title),
                 button(api, "Remove", function () {
                     send({ do: "remove", name: f.name });
                 })
