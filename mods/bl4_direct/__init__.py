@@ -42,7 +42,7 @@ from unrealsdk.hooks import Type
 from unrealsdk.unreal import BoundFunction, UObject, WeakPointer, WrappedStruct
 
 # coop loads here too, so a host running only BL4 Direct still answers friends
-from . import arrival, buddies, coop, frametick, health, page, smooth, ui  # noqa: F401
+from . import arrival, buddies, coop, frametick, health, mapplayers, page, smooth, ui  # noqa: F401
 from .shared import (
     DEFAULT_PORT,
     FRIENDS_FILE_NAME,
@@ -349,6 +349,11 @@ def hosting_watchdog() -> None:
     except Exception as ex:  # noqa: BLE001
         log_error(f"teammate panel: {ex!r} - stopped for this session")
         buddies.S.verified = False  # once, not every second
+    try:
+        mapplayers.tick()
+    except Exception as ex:  # noqa: BLE001
+        log_error(f"ECHO map players: {ex!r} - stopped for this session")
+        mapplayers.S.stopped = True  # once, not every second
 
 
 # endregion
