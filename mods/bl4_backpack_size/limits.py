@@ -218,7 +218,7 @@ def _apply_one(kind: str, ps: UObject, size: int) -> None:
     if value == size:
         return
     _set(kind, ps, size)
-    log(f"{ps.PlayerNamePrivate or ps.Name}: {_NAMES[kind]} {value} -> {size}")
+    log(f"{ps.Name}: {_NAMES[kind]} {value} -> {size}")
 
 
 def apply(sizes: dict[str, int | None]) -> None:
@@ -255,7 +255,7 @@ def restore(kind: str | None = None) -> None:
         try:
             if _get(entry.kind, ps) == entry.ours:
                 _set(entry.kind, ps, entry.game_value)
-                log(f"{ps.PlayerNamePrivate or ps.Name}: {_NAMES[entry.kind]} back to {entry.game_value}")
+                log(f"{ps.Name}: {_NAMES[entry.kind]} back to {entry.game_value}")
         except Exception as ex:  # noqa: BLE001 - put back the rest anyway
             logging.error(f"[Backpack Size] {ps.Name} {_NAMES[entry.kind]}: {ex!r}")
     _changed[:] = keep

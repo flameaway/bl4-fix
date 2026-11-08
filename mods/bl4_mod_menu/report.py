@@ -103,29 +103,45 @@ def _iso(t: float | None) -> str | None:
 
 
 class Redactor:
-    """Masks the Windows user, Steam names, BL4 Direct friends, IPs and account ids."""
+    """Masks the Windows user, Steam names, BL4 Direct friends, IPs, emails and account ids."""
 
-    _IPV4 = re.compile(r"(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w.])")
-    _IPV6 = re.compile(r"(?<![\w:.])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![\w:.])")
+    # An address may end a sentence ("Connecting to 1.2.3.4."): a dot after it is fine, a digit isn't
+    _IPV4 = re.compile(r"(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![0-9A-Za-z]|\.\d)")
+    _IPV6 = re.compile(r"(?<![\w:.])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![0-9A-Za-z:]|\.\d)")
     _STEAMID = re.compile(r"(?<!\d)7656119\d{10}(?!\d)")
+    # Two patterns, not one alternation: each starts with a literal the regex engine jumps to
+    _STEAM3 = re.compile(r"\[U:1:\d+\]")
+    _STEAM2 = re.compile(r"STEAM_[0-5]:[01]:\d+")
+    # An email is found from its "@domain" (the engine jumps to "@"), then its name before the "@"
+    _EMAIL_DOMAIN = re.compile(r"@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}")
+    _EMAIL_NAME = re.compile(r"[\w.+-]{1,64}\Z")
     _HEX32 = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{32}(?![0-9A-Za-z])")
     _XML_IDS = re.compile(r"<(MachineId|LoginId|EpicAccountId|UserName|UserActivityHint|CommandLine)>[^<]*</\1>")
     _USERS_DIR = re.compile(r"(?i)([A-Z]:[\\/]+Users[\\/]+)(?!Public\b|Default\b)([^\\/\s\"'<>|:*?]+)")
+    # A work or school OneDrive folder is named after the organization
+    _ONEDRIVE = re.compile(r"(OneDrive) - [^\\/\"'<>|:*?\r\n]+")
     _CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
     def __init__(self, game_dir: Path | None = None) -> None:
         self._ips: dict[str, str] = {}
-        self._words: list[tuple[re.Pattern[str], str]] = []
         home = os.environ.get("USERPROFILE") or str(Path.home())
         user = os.environ.get("USERNAME") or Path(home).name
         names = {user: "<user>", os.environ.get("COMPUTERNAME", ""): "<pc>"}
         for i, name in enumerate(self._steam_names(game_dir), 1):
             names.setdefault(name, f"<steam-name-{i}>")
-        for i, name in enumerate(self._friend_names(game_dir), 1):
+        for i, (name, address) in enumerate(self._friends(game_dir), 1):
             names.setdefault(name, f"<friend-{i}>")
-        # Longest first, so "Bob Smith" goes before "Bob"
-        for name in sorted((n for n in names if n and len(n) >= 3), key=len, reverse=True):
-            self._words.append((re.compile(rf"(?i)(?<![\w]){re.escape(name)}(?![\w])"), names[name]))
+            # A host name (an IP is masked with the other IPs)
+            if not re.fullmatch(r"[\d.:\[\]]*", address):
+                names.setdefault(address, f"<friend-{i}-address>")
+        # One pattern for all of them (a pass per name was the slowest part of a report), longest
+        # first so "Bob Smith" goes before "Bob"
+        kept = sorted((n for n in names if n and len(n) >= 3), key=len, reverse=True)
+        self._tokens: dict[str, str] = {}
+        for name in kept:
+            self._tokens.setdefault(name.lower(), names[name])
+        alternation = "|".join(map(re.escape, kept))
+        self._words = re.compile(rf"(?i)(?<!\w)(?:{alternation})(?!\w)") if kept else None
 
     @staticmethod
     def _steam_names(game_dir: Path | None) -> list[str]:
@@ -141,14 +157,15 @@ class Redactor:
         return list(dict.fromkeys(found))
 
     @staticmethod
-    def _friend_names(game_dir: Path | None) -> list[str]:
+    def _friends(game_dir: Path | None) -> list[tuple[str, str]]:
+        """(name, address) of each BL4 Direct friend."""
         if game_dir is None:
             return []
         data = _read_json(Path(game_dir) / "sdk_mods" / "settings" / "bl4_direct_friends.json")
         friends = data.get("friends") if isinstance(data, dict) else None
         if not isinstance(friends, list):
             return []
-        return [str(f["name"]) for f in friends if isinstance(f, dict) and f.get("name")]
+        return [(str(f["name"]), str(f.get("address") or "")) for f in friends if isinstance(f, dict) and f.get("name")]
 
     def _ip_token(self, ip: str, kind: str) -> str:
         if ip not in self._ips:
@@ -174,12 +191,26 @@ class Redactor:
             return text
         return self._ip_token(text, "ip6")
 
+    def _emails(self, text: str) -> str:
+        out: list[str] = []
+        last = 0
+        for m in self._EMAIL_DOMAIN.finditer(text):
+            name = self._EMAIL_NAME.search(text, max(last, m.start() - 64), m.start())
+            if name is not None:
+                out += (text[last : name.start()], "<email>")
+                last = m.end()
+        return "".join(out) + text[last:] if out else text
+
     def __call__(self, text: str) -> str:
         text = self._USERS_DIR.sub(r"\1<user>", text)
-        for pattern, token in self._words:
-            text = pattern.sub(token, text)
+        text = self._ONEDRIVE.sub(r"\1 - <org>", text)
+        text = self._emails(text)
+        if self._words is not None:
+            text = self._words.sub(lambda m: self._tokens.get(m.group(0).lower(), "<name>"), text)
         text = self._XML_IDS.sub(lambda m: f"<{m.group(1)}>(removed)</{m.group(1)}>", text)
         text = self._STEAMID.sub("<steamid>", text)
+        text = self._STEAM3.sub("<steamid>", text)
+        text = self._STEAM2.sub("<steamid>", text)
         text = self._HEX32.sub("<id>", text)
         text = self._IPV4.sub(self._v4, text)
         return self._IPV6.sub(self._v6, text)
