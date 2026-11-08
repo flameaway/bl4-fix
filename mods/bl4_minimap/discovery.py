@@ -281,6 +281,7 @@ class Discovery:
     @classmethod
     def clear(cls) -> None:
         cls.provider = WeakPointer()
+        cls.next_search = 0.0  # (the next update's search is a first one: else none until a pause or a new map)
         cls.entries, cls.places, cls.buckets, cls.others = b"", {}, {}, []
         cls._none()
         cls.next_read = 0.0

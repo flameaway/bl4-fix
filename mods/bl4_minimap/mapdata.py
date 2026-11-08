@@ -140,31 +140,29 @@ def _icons_of(actor: UObject, poi_component: UObject) -> list[dict[str, Any]]:
     for comp in actor.K2_GetComponentsByClass(poi_component):
         if not comp.bVisible or comp.K2_GetComponentScale().X <= 0:
             continue  # an old one from an earlier opening, on its way out
-        textures, scalars = _params(comp.MaterialInstance)
-        texture = textures.get(str(comp.MaterialTextureParamName))
-        if texture is None or scalars.get(str(comp.MaterialIsHiddenParamName), 0.0) > 0.5:
+        texture, hidden = _look(comp)
+        if texture is None or hidden:
             continue
         icons.append({
             "x": round(loc.X * MAP_TO_WORLD, 1),
             "y": round(loc.Y * MAP_TO_WORLD, 1),
             "texture": texture._path_name(),  # noqa: SLF001
-            "blip": scalars.get(str(comp.MaterialIsBlipParamName), 0.0) > 0.5,
-            "pinned": scalars.get(str(comp.MaterialPinOpacityParamName), 0.0) > 0.5,
             "area": bool(comp.bIsAreaComponent),
         })
     return icons
 
 
-def _params(material: UObject | None) -> tuple[dict[str, Any], dict[str, float]]:
-    textures: dict[str, Any] = {}
-    scalars: dict[str, float] = {}
+def _look(comp: UObject) -> tuple[UObject | None, bool]:
+    """
+    An icon component's texture and whether it's hidden, from its material instance's own getters:
+    two UFunction calls where walking its parameter arrays (3 textures, 4 scalars, a struct and a
+    name each) took 4x as long, 42 -> 10 ms for World_P's 651 icons, the same answers (2026-11-08).
+    """
+    material = comp.MaterialInstance
     if material is None:
-        return textures, scalars
-    for p in getattr(material, "TextureParameterValues", []):
-        textures[str(p.ParameterInfo.Name)] = p.ParameterValue
-    for p in getattr(material, "ScalarParameterValues", []):
-        scalars[str(p.ParameterInfo.Name)] = float(p.ParameterValue)
-    return textures, scalars
+        return None, False
+    texture = material.K2_GetTextureParameterValue(comp.MaterialTextureParamName)
+    return texture, material.K2_GetScalarParameterValue(comp.MaterialIsHiddenParamName) > 0.5  # noqa: PLR2004
 
 
 def _name_number(actor: UObject) -> int:
@@ -249,7 +247,7 @@ def _curve(start: Any, start_tangent: Any, end: Any, end_tangent: Any) -> list[t
 
 class MapData:
     key: tuple[str, str] | None = None  # (character, world)
-    icons: list[dict[str, Any]] = []  # noqa: RUF012  # {"x", "y", "texture", "blip", "pinned"} world units
+    icons: list[dict[str, Any]] = []  # noqa: RUF012  # {"x", "y", "texture", "area"} world units
     routes: list[list[tuple[float, float]]] = []  # noqa: RUF012  # world-unit polylines
     route_pin: tuple[float, float] | None = None  # your waypoint pin when the route was copied (x, y)
     route_color = DEFAULT_ROUTE_COLOR  # the copied line's colour (the map colours it by mission)

@@ -104,12 +104,18 @@ class _Live:
     manager = WeakPointer()
     vtable = 0  # the class's vtable (from its CDO): checked before every read
     searched: str | None = None  # the world we last searched in (one search per world, or while paused)
+    found = False  # `manager` was set by the last search (so it going away means search again)
 
     @classmethod
     def _find(cls, world: str, paused: bool) -> UObject | None:
         manager = cls.manager()
         if manager is not None:
             return manager
+        if cls.found:
+            # The one we had is gone while the world's name stayed: the map was loaded again (hosting
+            # co-op reloads it, and co-op never pauses), or we'd caught the old one in the overlap
+            cls.found = False
+            cls.searched = None
         if cls.searched == world and not paused:
             return None
         cls.searched = world
@@ -122,6 +128,7 @@ class _Live:
                 manager = candidate
         if manager is not None:
             cls.manager = WeakPointer(manager)
+            cls.found = True
         return manager
 
     @classmethod

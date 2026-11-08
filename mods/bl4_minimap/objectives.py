@@ -358,6 +358,7 @@ class Objectives:
     @classmethod
     def clear(cls) -> None:
         cls.provider = WeakPointer()
+        cls.next_search = 0.0  # (the next update's search is a first one: else none until a pause or a new map)
         cls.points = []
         cls.types = []
         cls.untracked = []

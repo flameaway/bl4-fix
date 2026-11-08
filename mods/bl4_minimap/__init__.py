@@ -17,7 +17,6 @@ How it fits together:
 
 from __future__ import annotations
 
-import ctypes
 import math
 import re
 import sys
@@ -113,12 +112,6 @@ UI_SCALE_S = 1.0  # the viewport's UI scale (a UFunction call) only changes when
 TILES_MIN_GAP_S = 0.02
 TILES_GAP_S = 0.1
 TILES_IDLE_GAP_S = 0.25  # every tile around you loaded and sharp: a new one is wanted only after a long walk
-
-# ctypes.windll, not PyDLL: these calls must let go of the GIL. Only the focus check uses them; keys
-# come from the game's own input (gamekeys).
-_user32 = ctypes.windll.user32
-_kernel32 = ctypes.windll.kernel32
-
 
 def log(msg: str) -> None:
     logging.info(f"[Minimap] {msg}")
@@ -300,62 +293,19 @@ saved_on_option = BoolOption("Minimap on", True, is_hidden=True)
 # endregion
 # region Keys
 
-_NAMED_KEYS = {
-    "Tab": 0x09, "CapsLock": 0x14, "Insert": 0x2D, "Delete": 0x2E, "Home": 0x24, "End": 0x23,
-    "PageUp": 0x21, "PageDown": 0x22, "Tilde": 0xC0, "Comma": 0xBC, "Period": 0xBE, "Slash": 0xBF,
-    "Semicolon": 0xBA, "LeftBracket": 0xDB, "RightBracket": 0xDD, "Backslash": 0xDC, "Apostrophe": 0xDE,
-    "Equals": 0xBB, "Hyphen": 0xBD, "Add": 0x6B, "Subtract": 0x6D,
-}  # fmt: skip
-_DIGITS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"]
-
-
-def virtual_key(name: str | None) -> int | None:
-    """Windows key code for an Unreal key name."""
-    if not name:
-        return None
-    if len(name) == 1 and name.isalnum():
-        return ord(name.upper())
-    if name in _DIGITS:
-        return ord("0") + _DIGITS.index(name)
-    if name[0] == "F" and name[1:].isdigit() and 1 <= int(name[1:]) <= 24:  # noqa: PLR2004
-        return 0x70 + int(name[1:]) - 1
-    if name.startswith("NumPad") and name[6:] in _DIGITS:
-        return 0x60 + _DIGITS.index(name[6:])
-    return _NAMED_KEYS.get(name)
-
-
-def _game_window_focused() -> bool:
-    hwnd = _user32.GetForegroundWindow()
-    pid = ctypes.c_ulong()
-    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    return pid.value == _kernel32.GetCurrentProcessId()
-
-
-def _async_down(vk: int) -> bool:
-    """
-    Whether a key is held, from the game's own input (gamekeys, shared by our mods; False while the
-    game isn't in front). Until 2026-10-30 this read Windows (GetAsyncKeyState, through BL4 Mod
-    Menu's key thread when it was loaded).
-    """
-    return gamekeys.vk_down(vk)
 
 class Keys:
-    was_down: dict[int, bool] = {}  # noqa: RUF012
-
-    vk_for: tuple[Any, int | None] = (None, None)  # (key name, its key code): parsed once per name
+    was_down: dict[str, bool] = {}  # noqa: RUF012
 
     @classmethod
     def pressed(cls, option: KeybindOption) -> bool:
-        """True once per press of the option's key."""
+        """True once per press of the option's key (the game's own input, by name: gamekeys)."""
         name = option.value
-        if cls.vk_for[0] != name:
-            cls.vk_for = (name, virtual_key(name))
-        vk = cls.vk_for[1]
-        if vk is None:
+        if not name:
             return False
-        down = _async_down(vk)
-        was = cls.was_down.get(vk, True)  # a key held when we start doesn't count
-        cls.was_down[vk] = down
+        down = gamekeys.down(name)
+        was = cls.was_down.get(name, True)  # a key held when we start doesn't count
+        cls.was_down[name] = down
         return down and not was
 
 
@@ -363,29 +313,20 @@ class Keys:
 # too: no jump on the press). While zooming the option holds the exact range, not whole metres, so
 # every frame moves by the same amount; letting go rounds it and saves.
 ZOOM_RATE = 300.0  # metres of range a second while held
-_VK_ADD, _VK_SUBTRACT = 0x6B, 0x6D  # the keypad's + and -: zoom too, whatever the options say
 
 
 class Zoom:
     direction = 0  # -1 zooming in, 1 out, 0 neither key held
     last = 0.0  # the previous tick
 
-    vk_for: dict[str, tuple[Any, int | None]] = {}  # noqa: RUF012  # option name: (key name, its key code)
-
-    @classmethod
-    def _held(cls, option: KeybindOption, keypad: int) -> bool:
-        name = option.value
-        cached = cls.vk_for.get(option.identifier)
-        if cached is None or cached[0] != name:
-            cached = cls.vk_for[option.identifier] = (name, virtual_key(name))
-        vk = cached[1]
-        return (vk is not None and _async_down(vk)) or _async_down(keypad)
-
     @classmethod
     def tick(cls, now: float) -> bool:
         """Zooms while a zoom key is held; True when the range changed."""
-        zoom_in = cls._held(zoom_in_key, _VK_ADD)
-        zoom_out = cls._held(zoom_out_key, _VK_SUBTRACT)
+        # Every frame: by key name straight to gamekeys (it reads the game's input by name). The
+        # keypad's + and - zoom too, whatever the options say
+        down = gamekeys.down
+        zoom_in = down(zoom_in_key.value) or down("Add")
+        zoom_out = down(zoom_out_key.value) or down("Subtract")
         direction = 0 if zoom_in == zoom_out else (-1 if zoom_in else 1)
         elapsed = min(now - cls.last, 0.1)  # (a long hitch doesn't jump the whole way)
         cls.last = now
@@ -675,7 +616,8 @@ def _live_objectives(live: type[objectives.Objectives]) -> tuple[list[tuple[floa
     The live objective points to draw (x, y, z, mission type) and the tracked ones (where the route
     goes). The game lists the waypoints of missions you aren't tracking too (every contract you've
     accepted): those show only with "Always show contracts" / "Always show rift events"; other
-    untracked kinds show as before. With nothing tracked, the route goes to what's shown.
+    untracked kinds show as before. With nothing tracked there's no route, as on the ECHO map (it
+    went to the nearest untracked side mission's giver, 2026-11-08).
     """
     n = len(live.points)
     types = live.types if len(live.types) == n else [""] * n
@@ -687,7 +629,7 @@ def _live_objectives(live: type[objectives.Objectives]) -> tuple[list[tuple[floa
         elif (kind == "contract" and not contracts_option.value) or (kind in RIFT_TYPES and not rifts_option.value):
             continue
         shown.append((x, y, z, kind))
-    return shown, tracked or [(x, y, z) for x, y, z, _ in shown]
+    return shown, tracked
 
 
 def _objective_texture(kind: int, mission_type: str = "") -> str:
@@ -1001,6 +943,13 @@ def _frame(pc: UObject, full: bool, slow: bool) -> None:
     if State.hidden or suspended:
         if paused:
             tiles.Tiles.paused_tick(pc)  # saves finished map tiles behind the menu (a GPU readback each)
+        elif not scene.Scene.in_viewer and scene.Scene.world() is world:
+            # Co-op never pauses, so the search for the big map's camera (every object, 15-20 ms)
+            # that waits for a pause never ran there: the big map is made a moment after the level
+            # loads, after the level's one search, and page mode showed a black map for the whole
+            # session (2026-11-07, both lab games). A menu or the portal hides the hitch just the
+            # same; Viewer.get spaces searches VIEWER_SEARCH_S apart and none run once it's found.
+            scene.Scene.ready(pc, world, paused=True)
         State.hidden_until = now + HIDDEN_POLL_S
         _hide_all(pc)
         return
@@ -1347,7 +1296,8 @@ def on_frame() -> None:
             _page_switch()
         if State.page_on:
             uilink.tick()  # the page asks it where our feed is (does work at most once a frame overall)
-            page.publish()  # dev: the page script, when its source changed (a clock compare most calls)
+            if not page.Page.packed:  # (a packed .sdkmod's script can't change: no call at all)
+                page.publish()  # dev: the page script, when its source changed (a clock compare most calls)
     except Exception as ex:  # noqa: BLE001
         if not State.error_logged:
             logging.error(f"[Minimap] page mode: {ex!r}")

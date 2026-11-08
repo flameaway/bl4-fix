@@ -122,7 +122,8 @@ def _class_icon(ps: UObject, pawn: UObject) -> str | None:
     The PlayerState's ReplicatedCharacterDef is the first choice, but on a client the host's reads
     None (seen 2026-10-28), so a teammate flipped between their icon and the plain dot. Every
     player pawn has one class-specific skill-net component (`..._Exo`, `..._Paladin`, ...) on host
-    and client alike: that's the fallback. Remembered per pawn once known.
+    and client alike: the last fallback, after the character's display-name def (`UXNameRepData.
+    DisplayDef`, "DarkSiren": Vex has no such component). Remembered per pawn once known.
     """
     key = (pawn._get_address(), pawn.InternalIndex)  # noqa: SLF001
     known = Scan.class_icons.get(key)
@@ -134,6 +135,15 @@ def _class_icon(ps: UObject, pawn: UObject) -> str | None:
     def_name = str(ps.ReplicatedCharacterDef or "")
     if def_name and def_name != "None":
         found = CHAR_DEFS.get(def_name.lower().removeprefix("char_").replace("_", ""))
+    if found is None:
+        # The character's replicated display-name def is named after the class ("DarkSiren") on
+        # host and client alike. Vex has no skill-net class component, so on a client a Vex host
+        # was only a dot until this (2026-11-07, two-instance lab)
+        try:
+            display = str(pawn.UXNameRepData.DisplayDef._name or "")  # noqa: SLF001
+        except Exception:  # noqa: BLE001 - a patch renamed it: the component scan below still runs
+            display = ""
+        found = CHAR_DEFS.get(display.lower().replace("_", ""))
     if found is None:
         if Scan.spec_class is None:
             Scan.spec_class = unrealsdk.find_class("GbxSkillNetSpecializationComponent")
@@ -210,8 +220,8 @@ def collect(pc: UObject, pawn: UObject, world: UObject, *, loot_on: bool = False
         except AttributeError:
             pass
     for actor in enemies:
-        x, y, _ = location(actor)
-        out.append(Marker(BOSS if actor._get_address() in bosses else ENEMY, x, y, False))  # noqa: SLF001
+        x, y, z = location(actor)
+        out.append(Marker(BOSS if actor._get_address() in bosses else ENEMY, x, y, False, z))  # noqa: SLF001
 
     now = time.monotonic()
     if now >= Scan.players_at:

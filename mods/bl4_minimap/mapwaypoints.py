@@ -445,6 +445,7 @@ class MapWaypoints:
         cls.wake.set()
         cls.taken = cls.ticket + 1
         cls.shard = WeakPointer()
+        cls.next_search = 0.0  # (the next update's search is a first one: else none until a pause or a new map)
         cls.levels = {}
         cls.points, cls.read_ok = [], False
         cls.next_read = 0.0
